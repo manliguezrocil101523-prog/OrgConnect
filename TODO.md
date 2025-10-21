@@ -1,0 +1,33 @@
+# TODO: Add Comments to All Code Files
+
+- [x] lib/main.dart (already has comments)
+- [x] lib/core/supabase_client.dart (already has comments)
+- [x] lib/core/app_state.dart (needs comments)
+- [x] lib/screens/role_router.dart (done)
+- [x] lib/screens/role_selection_screen.dart (done)
+- [x] lib/screens/Admin_Role/admin_authorization_screen.dart (done)
+- [x] lib/screens/Admin_Role/admin_dashboard_screen.dart (done)
+- [ ] lib/screens/Admin_Role/admin_manage_accounts.dart
+- [ ] lib/screens/Admin_Role/admin_manage_organization.dart
+- [ ] lib/screens/Admin_Role/admin_reports.dart
+- [x] lib/screens/auth/auth_page.dart (done)
+- [ ] lib/screens/auth/sign_in_page.dart
+- [ ] lib/screens/auth/sign_up_page.dart
+- [x] lib/screens/auth/welcome_page.dart (done)
+- [ ] lib/screens/notifications/notification_screen.dart
+- [ ] lib/screens/Officer_Role/officer_applications_screen.dart
+- [ ] lib/screens/Officer_Role/officer_authorization_screen.dart
+- [ ] lib/screens/Officer_Role/officer_dashboard_screen.dart
+- [ ] lib/screens/Officer_Role/officer_events_screen.dart
+- [ ] lib/screens/Officer_Role/officer_members_screen.dart
+- [ ] lib/screens/Officer_Role/officer_org_auth.dart
+- [ ] lib/screens/Officer_Role/officer_rule_screen.dart
+- [ ] lib/screens/Officer_Role/org1dashboard.dart
+- [ ] ... (org2 to org22)
+- [ ] lib/screens/organizations/org_form_screen.dart
+- [ ] lib/screens/organizations/org_list_screen.dart
+- [ ] lib/screens/organizations/org_profile_screen.dart
+- [ ] lib/screens/profile/profile_screen.dart
+- [ ] lib/screens/Student_Role/student_dashboard_events.dart
+- [x] lib/screens/Student_Role/student_dashboard_screen.dart (done)
+- [ ] lib/screens/Student_Role/student_rule_screen.dart
