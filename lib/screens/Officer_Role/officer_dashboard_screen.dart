@@ -4,7 +4,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 
 class StudentDashboard extends StatefulWidget {
-  const StudentDashboard({Key? key}) : super(key: key);
+  const StudentDashboard({super.key});
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -52,10 +52,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
             const SizedBox(height: 16),
             ...events.map((event) => ListTile(
-              title: Text(event.title),
-              subtitle: Text(event.description),
-              trailing: Text(_formatTime(event.date)),
-            )),
+                  title: Text(event.title),
+                  subtitle: Text(event.description),
+                  trailing: Text(_formatTime(event.date)),
+                )),
           ],
         ),
       ),
@@ -63,7 +63,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   String _formatTime(DateTime dateTime) {
-    final hour = dateTime.hour > 12 ? dateTime.hour - 12 : (dateTime.hour == 0 ? 12 : dateTime.hour);
+    final hour = dateTime.hour > 12
+        ? dateTime.hour - 12
+        : (dateTime.hour == 0 ? 12 : dateTime.hour);
     final minute = dateTime.minute.toString().padLeft(2, '0');
     final period = dateTime.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';
@@ -91,20 +93,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
       groups[label] = (groups[label] ?? [])..add(event);
     }
     // Sort groups by date
-    final sortedKeys = groups.keys.toList()..sort((a, b) {
-      if (a == 'Today') return -1;
-      if (b == 'Today') return 1;
-      if (a == 'Tomorrow') return -1;
-      if (b == 'Tomorrow') return 1;
-      if (a == 'In 2 days') return -1;
-      if (b == 'In 2 days') return 1;
-      if (a == 'This week') return -1;
-      if (b == 'This week') return 1;
-      if (a == 'Next week') return -1;
-      if (b == 'Next week') return 1;
-      if (a == 'Past') return 1; // Past at end
-      return a.compareTo(b);
-    });
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) {
+        if (a == 'Today') return -1;
+        if (b == 'Today') return 1;
+        if (a == 'Tomorrow') return -1;
+        if (b == 'Tomorrow') return 1;
+        if (a == 'In 2 days') return -1;
+        if (b == 'In 2 days') return 1;
+        if (a == 'This week') return -1;
+        if (b == 'This week') return 1;
+        if (a == 'Next week') return -1;
+        if (b == 'Next week') return 1;
+        if (a == 'Past') return 1; // Past at end
+        return a.compareTo(b);
+      });
     return sortedKeys.map((key) => groups[key]!).toList();
   }
 
@@ -122,8 +125,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.groups_outlined),
-            onPressed: () => Navigator.pushNamed(context, '/orglist'),
+            icon: const Icon(Icons.home),
+            onPressed: () => Navigator.pop(context),
           ),
         ],
       ),
@@ -131,8 +134,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
         animation: AppState.instance,
         builder: (context, _) {
           _loadEvents();
-          final events = List<Event>.from(AppState.instance.eventsForCurrentStudent())
-            ..sort((a, b) => a.date.compareTo(b.date));
+          final events =
+              List<Event>.from(AppState.instance.eventsForCurrentStudent())
+                ..sort((a, b) => a.date.compareTo(b.date));
 
           final eventGroups = _groupEventsByRelativeDate(events);
 
@@ -147,7 +151,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -246,21 +250,28 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withValues(alpha: 0.05),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
                           ],
                         ),
                         child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                           leading: Container(
                             padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(color: StudentDashboard.tealHeader, borderRadius: BorderRadius.circular(10)),
-                            child: const Icon(Icons.calendar_today, color: Colors.white),
+                            decoration: BoxDecoration(
+                                color: StudentDashboard.tealHeader,
+                                borderRadius: BorderRadius.circular(10)),
+                            child: const Icon(Icons.calendar_today,
+                                color: Colors.white),
                           ),
-                          title: Text(e.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('${e.orgName}\n$dateLbl\n${e.description}'),
+                          title: Text(e.title,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle:
+                              Text('${e.orgName}\n$dateLbl\n${e.description}'),
                           isThreeLine: true,
                         ),
                       );

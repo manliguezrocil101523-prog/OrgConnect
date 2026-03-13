@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
 class OfficerMembersScreen extends StatelessWidget {
-  const OfficerMembersScreen({Key? key}) : super(key: key);
+  const OfficerMembersScreen({super.key});
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -28,7 +28,7 @@ class OfficerMembersScreen extends StatelessWidget {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(20.0),
-                child: Text('No members yet. Tap + to add.', style: TextStyle(fontSize: 14)),
+                child: Text('No members yet.', style: TextStyle(fontSize: 14)),
               ),
             );
           }
@@ -44,22 +44,25 @@ class OfficerMembersScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   leading: CircleAvatar(
                     backgroundColor: tealHeader,
                     child: Text(
                       m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
                     ),
                   ),
-                  title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(m.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text('${m.position} • ${m.orgName}'),
                   onTap: () => _showMemberDialog(context, existing: m),
                   trailing: Row(
@@ -67,12 +70,15 @@ class OfficerMembersScreen extends StatelessWidget {
                     children: [
                       IconButton(
                         tooltip: 'Edit',
-                        icon: const Icon(Icons.edit_outlined, color: Colors.black87),
-                        onPressed: () => _showMemberDialog(context, existing: m),
+                        icon: const Icon(Icons.edit_outlined,
+                            color: Colors.black87),
+                        onPressed: () =>
+                            _showMemberDialog(context, existing: m),
                       ),
                       IconButton(
                         tooltip: 'Remove',
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                        icon: const Icon(Icons.delete_outline,
+                            color: Colors.redAccent),
                         onPressed: () {
                           AppState.instance.removeMember(m.id);
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -100,7 +106,8 @@ class OfficerMembersScreen extends StatelessWidget {
   void _showMemberDialog(BuildContext context, {Member? existing}) {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final orgCtrl = TextEditingController(text: existing?.orgName ?? '');
-    String position = existing?.position.isNotEmpty == true ? existing!.position : 'Member';
+    String position =
+        existing?.position.isNotEmpty == true ? existing!.position : 'Member';
 
     showDialog(
       context: context,
@@ -120,9 +127,12 @@ class OfficerMembersScreen extends StatelessWidget {
                 items: const [
                   DropdownMenuItem(value: 'Member', child: Text('Member')),
                   DropdownMenuItem(value: 'Officer', child: Text('Officer')),
-                  DropdownMenuItem(value: 'President', child: Text('President')),
-                  DropdownMenuItem(value: 'Vice President', child: Text('Vice President')),
-                  DropdownMenuItem(value: 'Secretary', child: Text('Secretary')),
+                  DropdownMenuItem(
+                      value: 'President', child: Text('President')),
+                  DropdownMenuItem(
+                      value: 'Vice President', child: Text('Vice President')),
+                  DropdownMenuItem(
+                      value: 'Secretary', child: Text('Secretary')),
                 ],
                 onChanged: (v) => setState(() => position = v ?? 'Member'),
                 decoration: const InputDecoration(labelText: 'Position'),
@@ -140,19 +150,22 @@ class OfficerMembersScreen extends StatelessWidget {
               child: const Text('CANCEL'),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: tealHeader, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: tealHeader, foregroundColor: Colors.white),
               onPressed: () {
                 final name = nameCtrl.text.trim();
                 final org = orgCtrl.text.trim();
                 if (name.isEmpty || org.isEmpty) return;
                 if (existing == null) {
-                  AppState.instance.addMember(name: name, position: position, orgName: org);
+                  AppState.instance
+                      .addMember(name: name, position: position, orgName: org);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Added $name')),
                   );
                 } else {
                   AppState.instance.updateMember(
-                    existing.copyWith(name: name, position: position, orgName: org),
+                    existing.copyWith(
+                        name: name, position: position, orgName: org),
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Updated $name')),

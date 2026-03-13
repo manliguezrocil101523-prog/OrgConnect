@@ -6,10 +6,10 @@ class OfficerEventsScreen extends StatelessWidget {
   final String orgName;
 
   const OfficerEventsScreen({
-    Key? key,
+    super.key,
     required this.orgId,
     required this.orgName,
-  }) : super(key: key);
+  });
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -30,12 +30,14 @@ class OfficerEventsScreen extends StatelessWidget {
       body: AnimatedBuilder(
         animation: AppState.instance,
         builder: (context, _) {
-          final events = AppState.instance.events.where((e) => e.orgId == orgId || e.orgName == orgName).toList();
+          final events = AppState.instance.events
+              .where((e) => e.orgId == orgId || e.orgName == orgName)
+              .toList();
           if (events.isEmpty) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(20.0),
-                child: Text('No events yet. Tap + to add.', style: TextStyle(fontSize: 14)),
+                child: Text('No events yet.', style: TextStyle(fontSize: 14)),
               ),
             );
           }
@@ -51,26 +53,33 @@ class OfficerEventsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   leading: Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: tealHeader, borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.event_available_outlined, color: Colors.white),
+                    decoration: BoxDecoration(
+                        color: tealHeader,
+                        borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.event_available_outlined,
+                        color: Colors.white),
                   ),
-                  title: Text(e.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text('${e.orgName} • ${_dateLabel(e.date)}\n${e.description}'),
+                  title: Text(e.title,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(
+                      '${e.orgName} • ${_dateLabel(e.date)}\n${e.description}'),
                   isThreeLine: true,
                   onTap: () => _showEventDialog(context, existing: e),
                   trailing: IconButton(
                     tooltip: 'Remove',
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    icon: const Icon(Icons.delete_outline,
+                        color: Colors.redAccent),
                     onPressed: () {
                       AppState.instance.removeEvent(e.id);
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -99,7 +108,8 @@ class OfficerEventsScreen extends StatelessWidget {
 
   void _showEventDialog(BuildContext context, {Event? existing}) {
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
-    final dateCtrl = TextEditingController(text: existing != null ? _dateLabel(existing.date) : '');
+    final dateCtrl = TextEditingController(
+        text: existing != null ? _dateLabel(existing.date) : '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
 
     DateTime? selected = existing?.date;
@@ -121,7 +131,8 @@ class OfficerEventsScreen extends StatelessWidget {
                 TextField(
                   controller: dateCtrl,
                   readOnly: true,
-                  decoration: const InputDecoration(labelText: 'Date (YYYY-MM-DD)'),
+                  decoration:
+                      const InputDecoration(labelText: 'Date (YYYY-MM-DD)'),
                   onTap: () async {
                     final now = DateTime.now();
                     final picked = await showDatePicker(
@@ -131,7 +142,8 @@ class OfficerEventsScreen extends StatelessWidget {
                       lastDate: DateTime(now.year + 3),
                       builder: (context, child) => Theme(
                         data: Theme.of(context).copyWith(
-                          colorScheme: const ColorScheme.light(primary: tealHeader),
+                          colorScheme:
+                              const ColorScheme.light(primary: tealHeader),
                         ),
                         child: child!,
                       ),
@@ -159,20 +171,31 @@ class OfficerEventsScreen extends StatelessWidget {
               child: const Text('CANCEL'),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: tealHeader, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: tealHeader, foregroundColor: Colors.white),
               onPressed: () {
                 final title = titleCtrl.text.trim();
                 final desc = descCtrl.text.trim();
                 final date = selected ?? DateTime.now();
                 if (title.isEmpty) return;
                 if (existing == null) {
-                  AppState.instance.addEvent(title: title, date: date, description: desc, orgName: orgName, orgId: orgId);
+                  AppState.instance.addEvent(
+                      title: title,
+                      date: date,
+                      description: desc,
+                      orgName: orgName,
+                      orgId: orgId);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Added $title')),
                   );
                 } else {
                   AppState.instance.updateEvent(
-                    existing.copyWith(title: title, date: date, description: desc, orgName: orgName, orgId: orgId),
+                    existing.copyWith(
+                        title: title,
+                        date: date,
+                        description: desc,
+                        orgName: orgName,
+                        orgId: orgId),
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Updated $title')),

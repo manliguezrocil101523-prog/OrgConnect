@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'org_profile_screen.dart';
 
 class OrgListScreen extends StatelessWidget {
+  const OrgListScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,11 +29,12 @@ class OrgListScreen extends StatelessWidget {
                 // Centered Back button (teal style per theme)
                 Center(
                   child: ElevatedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () =>
+                        Navigator.pushReplacementNamed(context, '/home'),
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Back'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF79CFC4),
+                      backgroundColor: const Color(0xFF79CFC4),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
@@ -46,174 +49,48 @@ class OrgListScreen extends StatelessWidget {
 
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Column(
-                    children: [
-                      // Row 1
-                      SizedBox(
-                        height: 160, // ✅ FIXED height so Expanded works
-                        child: Row(
-                          children: [
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 1",
-                                        "assets/primerabida.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 2",
-                                        "assets/eltiatro.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 3",
-                                        "assets/cronica.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 4",
-                                        "assets/bccmusicality.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 5",
-                                        "assets/drumandlyre.jpg"))),
-                          ],
-                        ),
-                      ),
-
-                      // Row 2
-                      SizedBox(
-                        height: 160,
-                        child: Row(
-                          children: [
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 6",
-                                        "assets/pageturnersbookclub.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 7",
-                                        "assets/genderunited.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 8",
-                                        "assets/collegeelegante.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(
-                                        context, "Org 9", "assets/scap.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 10",
-                                        "assets/bccnigthngale.jpg"))),
-                          ],
-                        ),
-                      ),
-
-                      // Row 3
-                      SizedBox(
-                        height: 160,
-                        child: Row(
-                          children: [
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 11",
-                                        "assets/speakiconics.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 12",
-                                        "assets/culturadefelipino.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 13",
-                                        "assets/inkwell.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 14",
-                                        "assets/christiancampusministry.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 15",
-                                        "assets/bccaces.jpg"))),
-                          ],
-                        ),
-                      ),
-
-                      // Row 4
-                      SizedBox(
-                        height: 160,
-                        child: Row(
-                          children: [
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 16",
-                                        "assets/craftycreatorsclub.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(
-                                        context, "Org 17", "assets/ssg.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 18",
-                                        "assets/kasangasquad.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 19",
-                                        "assets/codehex.jpg"))),
-                            Expanded(
-                                child: Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: buildOrgCard(context, "Org 20",
-                                        "assets/motoclub.jpg"))),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 18),
-
-                      // Last Row (2 cards centered)
-                      SizedBox(
-                        height: 160,
-                        child: Row(
-                          children: [
-                            const Spacer(flex: 2),
-                            Expanded(
-                              flex: 3,
-                              child: Padding(
-                                padding: const EdgeInsets.all(6.0),
-                                child: buildOrgCard(
-                                    context, "Org 21", "assets/bccdc.jpg"),
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-                            Expanded(
-                              flex: 3,
-                              child: Padding(
-                                padding: const EdgeInsets.all(6.0),
-                                child: buildOrgCard(context, "Org 22",
-                                    "assets/peerfacilatatorscircles.jpg"),
-                              ),
-                            ),
-                            const Spacer(flex: 2),
-                          ],
-                        ),
-                      ),
-                    ],
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio:
+                          1.2, // Adjusted aspect ratio for full logo visibility
+                    ),
+                    itemCount: 22,
+                    itemBuilder: (context, index) {
+                      final orgNumber = index + 1;
+                      final orgName = "Org $orgNumber";
+                      final imagePaths = [
+                        "assets/primerabida.jpg",
+                        "assets/eltiatro.jpg",
+                        "assets/cronica.jpg",
+                        "assets/bccmusicality.jpg",
+                        "assets/drumandlyre.jpg",
+                        "assets/pageturnersbookclub.jpg",
+                        "assets/genderunited.jpg",
+                        "assets/collegeelegante.jpg",
+                        "assets/scap.jpg",
+                        "assets/bccnigthngale.jpg",
+                        "assets/speakiconics.jpg",
+                        "assets/culturadefelipino.jpg",
+                        "assets/inkwell.jpg",
+                        "assets/christiancampusministry.jpg",
+                        "assets/bccaces.jpg",
+                        "assets/craftycreatorsclub.jpg",
+                        "assets/ssg.jpg",
+                        "assets/kasangasquad.jpg",
+                        "assets/codehex.jpg",
+                        "assets/motoclub.jpg",
+                        "assets/bccdc.jpg",
+                        "assets/peerfacilatatorscircles.jpg",
+                      ];
+                      final imagePath = imagePaths[index];
+                      return buildOrgCard(context, orgName, imagePath, index);
+                    },
                   ),
                 ),
 
@@ -242,11 +119,13 @@ class OrgListScreen extends StatelessWidget {
   }
 
   // Clickable card widget
-  Widget buildOrgCard(BuildContext context, String name, String imagePath) {
-    final orgId = _getOrgIdFromName(name);
+  Widget buildOrgCard(
+      BuildContext context, String name, String imagePath, int index) {
+    final orgId = (index + 1).toString().padLeft(3, '0');
 
     return GestureDetector(
       onTap: () {
+        // Navigate to the organization profile screen
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -277,7 +156,7 @@ class OrgListScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(5),
                   child: Image.asset(
                     imagePath,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     height: double.infinity,
                     width: double.infinity,
                   ),
@@ -288,10 +167,5 @@ class OrgListScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _getOrgIdFromName(String name) {
-    final orgNumber = int.parse(name.replaceAll('Org ', ''));
-    return orgNumber.toString();
   }
 }

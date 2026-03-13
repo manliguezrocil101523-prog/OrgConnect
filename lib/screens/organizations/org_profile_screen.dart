@@ -18,7 +18,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
   Widget build(BuildContext context) {
     final org =
         AppState.instance.organizations.firstWhere((o) => o.id == widget.orgId);
-    final darkGreen = const Color(0xFF79CFC4);
+    const darkGreen = Color(0xFF79CFC4);
 
     return Scaffold(
       body: Container(
@@ -46,7 +46,8 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
                     // Centered Back button
                     Center(
                       child: ElevatedButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () =>
+                            Navigator.pushReplacementNamed(context, '/home'),
                         icon: const Icon(Icons.arrow_back),
                         label: const Text('Back'),
                         style: ElevatedButton.styleFrom(
@@ -117,10 +118,10 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
                               side: _selectedTab == 'profile'
                                   ? null
                                   : BorderSide(
-                                      color: darkGreen.withOpacity(0.4)),
+                                      color: darkGreen.withValues(alpha: 0.4)),
                             ),
                             child: const Text(
-                              'Profile',
+                              'About',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -148,7 +149,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
                               side: _selectedTab == 'apply'
                                   ? null
                                   : BorderSide(
-                                      color: darkGreen.withOpacity(0.4)),
+                                      color: darkGreen.withValues(alpha: 0.4)),
                             ),
                             child: const Text(
                               'Apply',
@@ -173,7 +174,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -210,7 +211,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFF79CFC4).withOpacity(0.1),
+                color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -319,7 +320,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withOpacity(0.1),
+              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -370,12 +371,12 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withOpacity(0.1),
+              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.contact_mail,
-              color: const Color(0xFF79CFC4),
+              color: Color(0xFF79CFC4),
               size: 20,
             ),
           ),
@@ -384,9 +385,9 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Contact Information',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Colors.grey,
@@ -439,12 +440,12 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withOpacity(0.1),
+              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.people,
-              color: const Color(0xFF79CFC4),
+              color: Color(0xFF79CFC4),
               size: 20,
             ),
           ),
@@ -453,9 +454,9 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Officers',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Colors.grey,
@@ -491,12 +492,12 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withOpacity(0.1),
+              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.event_note,
-              color: const Color(0xFF79CFC4),
+              color: Color(0xFF79CFC4),
               size: 20,
             ),
           ),
@@ -505,9 +506,9 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Activities & Events',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Colors.grey,

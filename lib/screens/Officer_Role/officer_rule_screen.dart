@@ -3,16 +3,17 @@ import '../../core/app_state.dart';
 import 'officer_applications_screen.dart';
 import 'officer_members_screen.dart';
 import 'officer_events_screen.dart';
+import 'officer_authorization_screen.dart';
 
 class BaseOfficerDashboard extends StatelessWidget {
   final String orgId; // 👈 change from int → String
   final String orgName;
 
   const BaseOfficerDashboard({
-    Key? key,
+    super.key,
     required this.orgId,
     required this.orgName,
-  }) : super(key: key);
+  });
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -30,6 +31,15 @@ class BaseOfficerDashboard extends StatelessWidget {
               const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.0),
         ),
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const OfficerAuthorizationScreen(),
+            ),
+          ),
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -57,13 +67,8 @@ class BaseOfficerDashboard extends StatelessWidget {
                 _tile(
                   context,
                   'Manage Applications',
-                  Icons.fact_check_outlined,
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const OfficerApplicationsScreen(),
-                    ),
-                  ),
+                  Icons.list_alt_outlined,
+                  () => _showApplicationFilters(context),
                 ),
                 const SizedBox(height: 14),
                 _tile(
@@ -118,6 +123,89 @@ class BaseOfficerDashboard extends StatelessWidget {
             fontSize: 14,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showApplicationFilters(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: mintBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Application Filters',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: tealHeader,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _filterButton(context, 'All', Icons.list_alt, null),
+                  _filterButton(context, 'Pending', Icons.pending, 'pending'),
+                  _filterButton(context, 'For Approval', Icons.approval, 'forApproval'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _filterButton(
+                      context, 'Interviewees', Icons.people, 'interviewed'),
+                  _filterButton(
+                      context, 'Approved', Icons.check_circle, 'approved'),
+                  _filterButton(context, 'Declined', Icons.cancel, 'declined'),
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _filterButton(
+      BuildContext context, String label, IconData icon, String? filter) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: ElevatedButton.icon(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OfficerApplicationsScreen(filter: filter),
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: tealHeader,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: tealHeader, width: 1),
+            ),
+          ),
+          icon: Icon(icon, size: 16),
+          label: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ),

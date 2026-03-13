@@ -3,7 +3,7 @@ import '../../core/app_state.dart';
 import 'officer_rule_screen.dart';
 
 class OfficerAuthorizationScreen extends StatefulWidget {
-  const OfficerAuthorizationScreen({Key? key}) : super(key: key);
+  const OfficerAuthorizationScreen({super.key});
 
   @override
   State<OfficerAuthorizationScreen> createState() =>
@@ -34,7 +34,7 @@ class _OfficerAuthorizationScreenState
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SingleChildScrollView(
@@ -91,7 +91,7 @@ class _OfficerAuthorizationScreenState
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -106,7 +106,7 @@ class _OfficerAuthorizationScreenState
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            color: tealHeader,
                           ),
                         ),
                       ),
@@ -191,8 +191,10 @@ class _OfficerAuthorizationScreenState
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? tealHeader.withOpacity(0.1) : Colors.transparent,
-          border: Border(
+          color: isSelected
+              ? tealHeader.withValues(alpha: 0.1)
+              : Colors.transparent,
+          border: const Border(
             bottom: BorderSide(color: Color(0xFFE0E0E0), width: 1),
           ),
         ),
@@ -206,7 +208,7 @@ class _OfficerAuthorizationScreenState
                 borderRadius: BorderRadius.circular(8),
               ),
               child: isSelected
-                  ? Icon(
+                  ? const Icon(
                       Icons.check,
                       color: Colors.white,
                       size: 20,
@@ -216,7 +218,8 @@ class _OfficerAuthorizationScreenState
                       child: Image.asset(
                         org.logoAsset,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Icon(
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(
                           Icons.business,
                           color: Colors.grey,
                           size: 20,
@@ -239,6 +242,13 @@ class _OfficerAuthorizationScreenState
                   ),
                   Text(
                     'ID: ${org.id}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  Text(
+                    'Org Adviser: ${org.adviser}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
+
 class AdminOrganizationsScreen extends StatelessWidget {
-  const AdminOrganizationsScreen({Key? key}) : super(key: key);
+  const AdminOrganizationsScreen({super.key});
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -35,20 +36,24 @@ class AdminOrganizationsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   leading: CircleAvatar(
                     backgroundColor: tealHeader,
-                    child: Text(o.name.isNotEmpty ? o.name[0].toUpperCase() : '?',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: Text(
+                        o.name.isNotEmpty ? o.name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
-                  title: Text(o.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(o.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(o.shortDesc),
                   onTap: () => _showOrgDialog(context, o),
                   trailing: IconButton(
@@ -59,7 +64,8 @@ class AdminOrganizationsScreen extends StatelessWidget {
                         SnackBar(content: Text('Removed ${o.name}')),
                       );
                     },
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    icon: const Icon(Icons.delete_outline,
+                        color: Colors.redAccent),
                   ),
                 ),
               );
@@ -84,7 +90,8 @@ class AdminOrganizationsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(existing == null ? 'Add Organization' : 'Edit Organization'),
+        title:
+            Text(existing == null ? 'Add Organization' : 'Edit Organization'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -109,20 +116,23 @@ class AdminOrganizationsScreen extends StatelessWidget {
             child: const Text('CANCEL'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: tealHeader, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: tealHeader, foregroundColor: Colors.white),
             onPressed: () {
               final name = nameCtrl.text.trim();
               final logo = logoCtrl.text.trim();
               final desc = descCtrl.text.trim();
               if (name.isEmpty) return;
               if (existing == null) {
-                AppState.instance.addOrganization(name: name, logoAsset: logo, shortDesc: desc);
+                AppState.instance.addOrganization(
+                    name: name, logoAsset: logo, shortDesc: desc);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Added $name')),
                 );
               } else {
                 AppState.instance.updateOrganization(
-                  existing.copyWith(name: name, logoAsset: logo, shortDesc: desc),
+                  existing.copyWith(
+                      name: name, logoAsset: logo, shortDesc: desc),
                 );
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Updated $name')),
@@ -137,4 +147,3 @@ class AdminOrganizationsScreen extends StatelessWidget {
     );
   }
 }
-

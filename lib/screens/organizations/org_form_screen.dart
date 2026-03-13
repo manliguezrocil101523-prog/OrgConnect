@@ -8,10 +8,10 @@ class OrgFormScreen extends StatefulWidget {
   final String logoAsset;
 
   const OrgFormScreen({
-    Key? key,
+    super.key,
     required this.title,
     required this.logoAsset,
-  }) : super(key: key);
+  });
 
   @override
   State<OrgFormScreen> createState() => _OrgFormScreenState();
@@ -22,10 +22,10 @@ class OrgFormContent extends StatefulWidget {
   final String logoAsset;
 
   const OrgFormContent({
-    Key? key,
+    super.key,
     required this.title,
     required this.logoAsset,
-  }) : super(key: key);
+  });
 
   @override
   State<OrgFormContent> createState() => _OrgFormContentState();
@@ -35,10 +35,6 @@ class _OrgFormScreenState extends State<OrgFormScreen> {
   // Design colors
   static const Color mintBg = Color(0xFFEAF6F0); // very light mint
   static const Color tealHeader = Color(0xFF79CFC4); // header band
-  static const Color pillFill = Color(0xFF8FD4CC); // text field fill
-  static const Color buttonGradStart = Color(0xFF3DD13A);
-  static const Color buttonGradEnd = Color(0xFF1FB31A);
-  static const Color accentViolet = Color(0xFF4A148C); // for APPLY label
 
   // Controllers
   final TextEditingController studentIdCtrl = TextEditingController();
@@ -50,7 +46,6 @@ class _OrgFormScreenState extends State<OrgFormScreen> {
   final TextEditingController facebookCtrl = TextEditingController();
   final TextEditingController reasonCtrl = TextEditingController();
   final TextEditingController skillsCtrl = TextEditingController();
-  final TextEditingController availabilityCtrl = TextEditingController();
   final TextEditingController experienceCtrl = TextEditingController();
   final TextEditingController emergencyCtrl = TextEditingController();
 
@@ -70,76 +65,9 @@ class _OrgFormScreenState extends State<OrgFormScreen> {
     facebookCtrl.dispose();
     reasonCtrl.dispose();
     skillsCtrl.dispose();
-    availabilityCtrl.dispose();
     experienceCtrl.dispose();
     emergencyCtrl.dispose();
     super.dispose();
-  }
-
-  bool get _isEnabled =>
-      agreed &&
-      studentIdCtrl.text.trim().isNotEmpty &&
-      nameCtrl.text.trim().isNotEmpty &&
-      contactCtrl.text.trim().isNotEmpty;
-
-  String _formatToday() {
-    final now = DateTime.now();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${months[now.month - 1]} ${now.day}, ${now.year}';
-  }
-
-  Future<void> _pickAttachments() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: true,
-        type: FileType.custom,
-        allowedExtensions: [
-          'jpg',
-          'jpeg',
-          'png',
-          'gif',
-          'heic',
-          'webp',
-          'mp4',
-          'mov',
-          'm4v',
-          'avi',
-          'mkv',
-          'webm'
-        ],
-        withData: true,
-      );
-      if (result != null && result.files.isNotEmpty) {
-        setState(() => attachments.addAll(result.files));
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Attachment pick failed: $e')),
-      );
-    }
-  }
-
-  IconData _iconForExt(String? ext) {
-    final e = (ext ?? '').toLowerCase();
-    const imgExts = {'jpg', 'jpeg', 'png', 'gif', 'heic', 'webp'};
-    const vidExts = {'mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm'};
-    if (imgExts.contains(e)) return Icons.image;
-    if (vidExts.contains(e)) return Icons.movie_creation_outlined;
-    return Icons.insert_drive_file_outlined;
   }
 
   @override
@@ -172,7 +100,6 @@ class _OrgFormScreenState extends State<OrgFormScreen> {
 
 class _OrgFormContentState extends State<OrgFormContent> {
   // Design colors
-  static const Color mintBg = Color(0xFFEAF6F0); // very light mint
   static const Color tealHeader = Color(0xFF79CFC4); // header band
   static const Color pillFill = Color(0xFF8FD4CC); // text field fill
   static const Color buttonGradStart = Color(0xFF3DD13A);
@@ -189,7 +116,6 @@ class _OrgFormContentState extends State<OrgFormContent> {
   final TextEditingController facebookCtrl = TextEditingController();
   final TextEditingController reasonCtrl = TextEditingController();
   final TextEditingController skillsCtrl = TextEditingController();
-  final TextEditingController availabilityCtrl = TextEditingController();
   final TextEditingController experienceCtrl = TextEditingController();
   final TextEditingController emergencyCtrl = TextEditingController();
 
@@ -209,7 +135,6 @@ class _OrgFormContentState extends State<OrgFormContent> {
     facebookCtrl.dispose();
     reasonCtrl.dispose();
     skillsCtrl.dispose();
-    availabilityCtrl.dispose();
     experienceCtrl.dispose();
     emergencyCtrl.dispose();
     super.dispose();
@@ -306,11 +231,11 @@ class _OrgFormContentState extends State<OrgFormContent> {
                   vertical: screenWidth < 600 ? verticalPadding * 0.8 : 18,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.65),
+                  color: Colors.white.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
@@ -321,7 +246,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     _pillField(
                         controller: studentIdCtrl,
                         label: 'STUDENT ID NUMBER',
-                        hint: 'e.g., 2023-01234'),
+                        hint: 'e.g., 202324-1234'),
                     _pillField(
                         controller: nameCtrl,
                         label: 'FULL NAME',
@@ -338,32 +263,27 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     _pillField(
                         controller: contactCtrl,
                         label: 'CONTACT NUMBER',
-                        hint: '+63 912 345 6789',
+                        hint: '09123456789',
                         keyboardType: TextInputType.phone),
                     _pillField(
                         controller: emailCtrl,
-                        label: 'EMAIL ADDRESS',
-                        hint: 'name@school.edu.ph',
+                        label: 'EMAIL',
+                        hint: 'youremail@gmail.com',
                         keyboardType: TextInputType.emailAddress),
                     _pillField(
-                        controller: facebookCtrl,
-                        label: 'FACEBOOK ACCOUNT',
-                        hint: 'facebook.com/your.profile',
-                        keyboardType: TextInputType.url),
+                      controller: facebookCtrl,
+                      label: 'FACEBOOK ACCOUNT',
+                      hint: 'facebook name',
+                      keyboardType: TextInputType.url),
                     _pillField(
                         controller: reasonCtrl,
                         label: 'REASON FOR JOINING (SHORT)',
-                        hint: 'Why do you want to join? (1–2 sentences)',
-                        maxLines: 3,
+                        hint: 'Why do you want to join?',
                         keyboardType: TextInputType.multiline),
                     _pillField(
                         controller: skillsCtrl,
                         label: 'SKILLS / TALENTS',
                         hint: 'acting, directing, scriptwriting…'),
-                    _pillField(
-                        controller: availabilityCtrl,
-                        label: 'AVAILABILITY / PREFERRED SCHEDULE',
-                        hint: 'Weekdays evenings / Weekends'),
                     _pillField(
                         controller: experienceCtrl,
                         label: 'PREVIOUS EXPERIENCE',
@@ -376,10 +296,10 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     const SizedBox(height: 4),
 
                     // Sent Attachments section
-                    Align(
+                    const Align(
                       alignment: Alignment.centerLeft,
                       child: Row(
-                        children: const [
+                        children: [
                           Icon(Icons.attach_file,
                               size: 16, color: Colors.black87),
                           SizedBox(width: 6),
@@ -400,7 +320,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.6),
+                        color: Colors.white.withValues(alpha: 0.6),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.black12),
                       ),
@@ -493,7 +413,8 @@ class _OrgFormContentState extends State<OrgFormContent> {
                                     shape: BoxShape.circle,
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
+                                        color:
+                                            Colors.black.withValues(alpha: 0.2),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       )
@@ -594,7 +515,8 @@ class _OrgFormContentState extends State<OrgFormContent> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6B5B95).withOpacity(0.10),
+                          color:
+                              const Color(0xFF6B5B95).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Text(
@@ -633,9 +555,9 @@ class _OrgFormContentState extends State<OrgFormContent> {
 
     return GestureDetector(
       onTap: enabled
-          ? () {
-              // Persist application in in-memory AppState (minimalist, non-destructive)
-              AppState.instance.submitApplication(
+          ? () async {
+              // Persist application in in-memory AppState (and Supabase)
+              await AppState.instance.submitApplication(
                 orgName: widget.title,
                 studentId: studentIdCtrl.text.trim(),
                 name: nameCtrl.text.trim(),
@@ -646,9 +568,16 @@ class _OrgFormContentState extends State<OrgFormContent> {
                 attachments: attachments.map((f) => f.name).toList(),
               );
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Application submitted.')),
-              );
+              // Show success snackbar
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Application submitted to ${widget.title}!'),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              }
 
               // Keep the navigation as-is to avoid altering your current flow
             }
@@ -664,7 +593,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
             borderRadius: BorderRadius.circular(40),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.12),
+                color: Colors.black.withValues(alpha: 0.12),
                 blurRadius: 10,
                 offset: const Offset(0, 6),
               ),
@@ -716,7 +645,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
             borderRadius: radius,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),

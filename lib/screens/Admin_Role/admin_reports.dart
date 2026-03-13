@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
 class AdminReportsScreen extends StatelessWidget {
-  const AdminReportsScreen({Key? key}) : super(key: key);
+  const AdminReportsScreen({super.key});
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -26,31 +26,35 @@ class AdminReportsScreen extends StatelessWidget {
           final users = AppState.instance.users;
           final apps = AppState.instance.applications;
           final members = AppState.instance.members;
-          final events = AppState.instance.events;
+          final events = AppState.instance.events
+              .where((e) => !e.title.toLowerCase().contains('interview'))
+              .toList();
           final orgs = AppState.instance.organizations;
 
           int countRole(UserRole r) => users.where((u) => u.role == r).length;
-          int pending = apps.where((a) => a.status == ApplicationStatus.pending).length;
-          int accepted = apps.where((a) => a.status == ApplicationStatus.accepted).length;
-          int declined = apps.where((a) => a.status == ApplicationStatus.declined).length;
+          int pending =
+              apps.where((a) => a.status == ApplicationStatus.pending).length;
+          int forApproval =
+              apps.where((a) => a.status == ApplicationStatus.for_approval).length;
+          int accepted =
+              apps.where((a) => a.status == ApplicationStatus.accepted).length;
+          int declined =
+              apps.where((a) => a.status == ApplicationStatus.declined).length;
+          int interviewees =
+              apps.where((a) => a.status == ApplicationStatus.interview_scheduled).length;
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               _statCard('Organizations', orgs.length, Icons.apartment_outlined),
               const SizedBox(height: 10),
-              _statCard('Users (Students)', countRole(UserRole.student), Icons.school_outlined),
+              _statCard('Applications: ${apps.length}', null,
+                  Icons.fact_check_outlined,
+                  subtitle:
+                      'Pending: $pending  •  For Approval: $forApproval  •  Accepted: $accepted  •  Declined: $declined  •  Interviewees: $interviewees'),
               const SizedBox(height: 10),
-              _statCard('Users (Officers)', countRole(UserRole.officer), Icons.badge_outlined),
-              const SizedBox(height: 10),
-              _statCard('Users (Admins)', countRole(UserRole.admin), Icons.admin_panel_settings_outlined),
-              const SizedBox(height: 10),
-              _statCard('Applications: ${apps.length}', null, Icons.fact_check_outlined,
-                  subtitle: 'Pending: $pending  •  Accepted: $accepted  •  Declined: $declined'),
-              const SizedBox(height: 10),
-              _statCard('Members', members.length, Icons.groups_outlined),
-              const SizedBox(height: 10),
-              _statCard('Events', events.length, Icons.event_available_outlined),
+              _statCard(
+                  'Events', events.length, Icons.event_available_outlined),
             ],
           );
         },
@@ -58,7 +62,8 @@ class AdminReportsScreen extends StatelessWidget {
     );
   }
 
-  Widget _statCard(String title, int? value, IconData icon, {String? subtitle}) {
+  Widget _statCard(String title, int? value, IconData icon,
+      {String? subtitle}) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -66,7 +71,7 @@ class AdminReportsScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           )

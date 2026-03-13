@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 /// Roles supported by the app
 enum UserRole { student, officer, admin }
 
 /// Application status lifecycle
-enum ApplicationStatus { pending, accepted, declined }
+enum ApplicationStatus { pending, for_approval, accepted, interview_scheduled, declined }
 
 /// In-app notifications
 class Notification {
@@ -14,6 +17,7 @@ class Notification {
   final DateTime date;
   bool read;
   final String? orgId;
+  final String? studentId;
 
   Notification({
     required this.id,
@@ -22,6 +26,7 @@ class Notification {
     required this.date,
     this.read = false,
     this.orgId,
+    this.studentId,
   });
 
   Notification copyWith({
@@ -31,6 +36,7 @@ class Notification {
     DateTime? date,
     bool? read,
     String? orgId,
+    String? studentId,
   }) {
     return Notification(
       id: id ?? this.id,
@@ -39,6 +45,7 @@ class Notification {
       date: date ?? this.date,
       read: read ?? this.read,
       orgId: orgId ?? this.orgId,
+      studentId: studentId ?? this.studentId,
     );
   }
 }
@@ -100,6 +107,7 @@ class Application {
   final String skills;
   final DateTime createdAt;
   ApplicationStatus status;
+  final DateTime? interviewAt;
   final List<String> attachments; // file names only (in-memory placeholder)
 
   Application({
@@ -112,6 +120,7 @@ class Application {
     required this.reason,
     required this.skills,
     required this.createdAt,
+    this.interviewAt,
     this.status = ApplicationStatus.pending,
     this.attachments = const [],
     this.orgId,
@@ -127,6 +136,7 @@ class Application {
     String? reason,
     String? skills,
     DateTime? createdAt,
+    DateTime? interviewAt,
     ApplicationStatus? status,
     List<String>? attachments,
     String? orgId,
@@ -141,6 +151,7 @@ class Application {
       reason: reason ?? this.reason,
       skills: skills ?? this.skills,
       createdAt: createdAt ?? this.createdAt,
+      interviewAt: interviewAt ?? this.interviewAt,
       status: status ?? this.status,
       attachments: attachments ?? this.attachments,
       orgId: orgId ?? this.orgId,
@@ -222,6 +233,7 @@ class User {
   final String email;
   final UserRole role;
   final bool active;
+  final String? studentId;
 
   User({
     required this.id,
@@ -229,6 +241,7 @@ class User {
     required this.email,
     required this.role,
     required this.active,
+    this.studentId,
   });
 
   User copyWith(
@@ -236,13 +249,15 @@ class User {
           String? name,
           String? email,
           UserRole? role,
-          bool? active}) =>
+          bool? active,
+          String? studentId}) =>
       User(
         id: id ?? this.id,
         name: name ?? this.name,
         email: email ?? this.email,
         role: role ?? this.role,
         active: active ?? this.active,
+        studentId: studentId ?? this.studentId,
       );
 }
 
@@ -323,12 +338,13 @@ class Organization {
 }
 
 /// Simple singleton app state using ChangeNotifier.
-/// In-memory only to keep your current project simple and theme-focused.
+/// Persists student profile data using SharedPreferences.
 class AppState extends ChangeNotifier {
   AppState._internal() {
+    loadStudentProfile();
     organizations = [
       Organization(
-        id: '1',
+        id: '001',
         name: 'PRIMERA BIDA',
         logoAsset: 'assets/primerabida.jpg',
         shortDesc: 'Premier theater organization showcasing student talent',
@@ -352,17 +368,17 @@ class AppState extends ChangeNotifier {
           'Drama Workshops',
           'Student Play Productions'
         ],
-        officerPassword: '1',
+        officerPassword: '001',
       ),
       Organization(
-        id: '2',
-        name: 'EL TIATRO',
+        id: '002',
+        name: 'EL TEATRO',
         logoAsset: 'assets/eltiatro.jpg',
         shortDesc: 'Experimental theater group pushing creative boundaries',
         acronym: 'ET',
         category: 'Arts & Performance',
         about:
-            'El Tiatro is an experimental theater group that pushes the boundaries of traditional theater, exploring innovative forms of storytelling and performance art.',
+            'El Teatro is an experimental theater group that pushes the boundaries of traditional theater, exploring innovative forms of storytelling and performance art.',
         missionVision:
             'To challenge conventional theater norms and inspire creative innovation among students.',
         adviser: 'Prof. Roberto Garcia',
@@ -379,10 +395,10 @@ class AppState extends ChangeNotifier {
           'Improv Nights',
           'Performance Art Shows'
         ],
-        officerPassword: '2',
+        officerPassword: '002',
       ),
       Organization(
-        id: '3',
+        id: '003',
         name: 'CRONICA',
         logoAsset: 'assets/cronica.jpg',
         shortDesc: 'Student publication covering campus news and events',
@@ -406,10 +422,10 @@ class AppState extends ChangeNotifier {
           'Campus News Coverage',
           'Feature Writing Workshops'
         ],
-        officerPassword: '3',
+        officerPassword: '003',
       ),
       Organization(
-        id: '4',
+        id: '004',
         name: 'BCC MUSICALITY',
         logoAsset: 'assets/bccmusicality.jpg',
         shortDesc: 'Music organization promoting musical talents',
@@ -433,10 +449,10 @@ class AppState extends ChangeNotifier {
           'Music Workshops',
           'Talent Shows'
         ],
-        officerPassword: '4',
+        officerPassword: '004',
       ),
       Organization(
-        id: '5',
+        id: '005',
         name: 'BCC DRUM AND LYRE CORPS',
         logoAsset: 'assets/drumandlyre.jpg',
         shortDesc: 'Marching band organization',
@@ -460,10 +476,10 @@ class AppState extends ChangeNotifier {
           'Parades',
           'Competitions'
         ],
-        officerPassword: '5',
+        officerPassword: '005',
       ),
       Organization(
-        id: '6',
+        id: '006',
         name: 'BCC PAGE TURNERS BOOK CLUB',
         logoAsset: 'assets/pageturnersbookclub.jpg',
         shortDesc: 'Literary organization for book lovers',
@@ -487,10 +503,10 @@ class AppState extends ChangeNotifier {
           'Author Meetups',
           'Reading Challenges'
         ],
-        officerPassword: '6',
+        officerPassword: '006',
       ),
       Organization(
-        id: '7',
+        id: '007',
         name: 'GENDER UNITED',
         logoAsset: 'assets/genderunited.jpg',
         shortDesc: 'Organization promoting gender equality',
@@ -514,10 +530,10 @@ class AppState extends ChangeNotifier {
           'Awareness Campaigns',
           'Support Groups'
         ],
-        officerPassword: '7',
+        officerPassword: '007',
       ),
       Organization(
-        id: '8',
+        id: '008',
         name: 'COLLEGE ELEGANTE',
         logoAsset: 'assets/collegeelegante.jpg',
         shortDesc: 'Fashion and lifestyle organization',
@@ -541,10 +557,10 @@ class AppState extends ChangeNotifier {
           'Style Workshops',
           'Lifestyle Events'
         ],
-        officerPassword: '8',
+        officerPassword: '008',
       ),
       Organization(
-        id: '9',
+        id: '009',
         name: 'SCAP',
         logoAsset: 'assets/scap.jpg',
         shortDesc: 'Student Council of Academic Programs',
@@ -568,10 +584,10 @@ class AppState extends ChangeNotifier {
           'Student Feedback Sessions',
           'Program Reviews'
         ],
-        officerPassword: '9',
+        officerPassword: '009',
       ),
       Organization(
-        id: '10',
+        id: '010',
         name: 'BCC NIGHTINGALE',
         logoAsset: 'assets/bccnigthngale.jpg',
         shortDesc: 'Healthcare and wellness organization',
@@ -595,10 +611,10 @@ class AppState extends ChangeNotifier {
           'Wellness Workshops',
           'Support Programs'
         ],
-        officerPassword: '10',
+        officerPassword: '010',
       ),
       Organization(
-        id: '11',
+        id: '011',
         name: 'SPEAK ICONICS',
         logoAsset: 'assets/speakiconics.jpg',
         shortDesc: 'Public speaking and debate organization',
@@ -622,17 +638,17 @@ class AppState extends ChangeNotifier {
           'Debate Competitions',
           'Speech Contests'
         ],
-        officerPassword: '11',
+        officerPassword: '011',
       ),
       Organization(
-        id: '12',
-        name: 'CULTURA DE FELIPINO',
+        id: '012',
+        name: 'KULTURA DE FILIPINO',
         logoAsset: 'assets/culturadefelipino.jpg',
         shortDesc: 'Filipino culture and heritage organization',
         acronym: 'CDF',
         category: 'Cultural & Heritage',
         about:
-            'Cultura de Felipino promotes Filipino culture, traditions, and heritage among students through various cultural activities.',
+            'Kultura De Filipino promotes Filipino culture, traditions, and heritage among students through various cultural activities.',
         missionVision:
             'To preserve and celebrate Filipino cultural heritage and traditions.',
         adviser: 'Prof. Antonio Cruz',
@@ -649,10 +665,10 @@ class AppState extends ChangeNotifier {
           'Traditional Dance',
           'Heritage Workshops'
         ],
-        officerPassword: '12',
+        officerPassword: '012',
       ),
       Organization(
-        id: '13',
+        id: '013',
         name: 'INK-WELL SOCIETY',
         logoAsset: 'assets/inkwell.jpg',
         shortDesc: 'Creative writing and poetry organization',
@@ -676,10 +692,10 @@ class AppState extends ChangeNotifier {
           'Poetry Readings',
           'Literary Magazine'
         ],
-        officerPassword: '13',
+        officerPassword: '013',
       ),
       Organization(
-        id: '14',
+        id: '014',
         name: 'CHRISTIAN CAMPUS MINISTRY',
         logoAsset: 'assets/christiancampusministry.jpg',
         shortDesc: 'Faith-based organization for spiritual growth',
@@ -703,10 +719,10 @@ class AppState extends ChangeNotifier {
           'Fellowship Meetings',
           'Community Service'
         ],
-        officerPassword: '14',
+        officerPassword: '014',
       ),
       Organization(
-        id: '15',
+        id: '015',
         name: 'BCC ACES',
         logoAsset: 'assets/bccaces.jpg',
         shortDesc: 'Academic excellence organization',
@@ -730,10 +746,10 @@ class AppState extends ChangeNotifier {
           'Academic Workshops',
           'Tutoring Programs'
         ],
-        officerPassword: '15',
+        officerPassword: '015',
       ),
       Organization(
-        id: '16',
+        id: '016',
         name: 'CRAFTY CREATORS CLUB',
         logoAsset: 'assets/craftycreatorsclub.jpg',
         shortDesc: 'Arts and crafts organization',
@@ -757,10 +773,10 @@ class AppState extends ChangeNotifier {
           'Art Exhibitions',
           'DIY Projects'
         ],
-        officerPassword: '16',
+        officerPassword: '016',
       ),
       Organization(
-        id: '17',
+        id: '017',
         name: 'BCC SUPREME STUDENT GOVERMENT',
         logoAsset: 'assets/ssg.jpg',
         shortDesc: 'Student government organization',
@@ -784,10 +800,10 @@ class AppState extends ChangeNotifier {
           'Policy Reviews',
           'Campus Improvements'
         ],
-        officerPassword: '17',
+        officerPassword: '017',
       ),
       Organization(
-        id: '18',
+        id: '018',
         name: 'KASANGA SQUAD',
         logoAsset: 'assets/kasangasquad.jpg',
         shortDesc: 'Dance and performance group',
@@ -811,10 +827,10 @@ class AppState extends ChangeNotifier {
           'Choreography Workshops',
           'Dance Competitions'
         ],
-        officerPassword: '18',
+        officerPassword: '018',
       ),
       Organization(
-        id: '19',
+        id: '019',
         name: 'CODEHEX',
         logoAsset: 'assets/codehex.jpg',
         shortDesc: 'Programming and technology organization',
@@ -834,10 +850,10 @@ class AppState extends ChangeNotifier {
           'Workshop Coordinator: Lucas Cruz'
         ],
         activitiesHighlights: ['Coding Workshops', 'Hackathons', 'Tech Talks'],
-        officerPassword: '19',
+        officerPassword: '019',
       ),
       Organization(
-        id: '20',
+        id: '020',
         name: 'BCC MOTO CLUB',
         logoAsset: 'assets/motoclub.jpg',
         shortDesc: 'Motorcycle enthusiasts club',
@@ -861,10 +877,10 @@ class AppState extends ChangeNotifier {
           'Group Rides',
           'Maintenance Clinics'
         ],
-        officerPassword: '20',
+        officerPassword: '020',
       ),
       Organization(
-        id: '21',
+        id: '021',
         name: 'BCC DANCE COMPANY',
         logoAsset: 'assets/bccdc.jpg',
         shortDesc: 'Professional dance company',
@@ -888,10 +904,10 @@ class AppState extends ChangeNotifier {
           'Professional Performances',
           'Training Programs'
         ],
-        officerPassword: '21',
+        officerPassword: '021',
       ),
       Organization(
-        id: '22',
+        id: '022',
         name: 'BCC PEERS FACILATATORS CIRLCES',
         logoAsset: 'assets/peerfacilatatorscircles.jpg',
         shortDesc: 'Peer support and mentoring organization',
@@ -915,7 +931,7 @@ class AppState extends ChangeNotifier {
           'Support Groups',
           'Academic Assistance'
         ],
-        officerPassword: '22',
+        officerPassword: '022',
       ),
     ];
   }
@@ -927,68 +943,18 @@ class AppState extends ChangeNotifier {
   UserRole? selectedRole;
 
   // Current logged-in student profile (null initially for new users)
-  StudentProfile? currentStudent = null;
+  StudentProfile? currentStudent;
+
+  // SharedPreferences instance
+  SharedPreferences? _prefs;
 
   // Current officer org context after authorization
   String? currentOfficerOrgId;
 
   // Data stores
-  final List<Application> applications = <Application>[
-    Application(
-      id: 'app-1',
-      orgName: 'BCC Debate Society',
-      orgId: '1',
-      studentId: 'demo-student-1',
-      name: 'Demo Student',
-      contact: '+63 912 345 6789',
-      email: 'student@university.edu',
-      reason:
-          'I want to improve my public speaking skills and engage in intellectual discussions.',
-      skills: 'Research, Critical Thinking, Public Speaking',
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      status: ApplicationStatus.pending,
-    ),
-    Application(
-      id: 'app-2',
-      orgName: 'BCC Musicality',
-      orgId: '3',
-      studentId: 'demo-student-1',
-      name: 'Demo Student',
-      contact: '+63 912 345 6789',
-      email: 'student@university.edu',
-      reason: 'I love music and want to be part of a creative community.',
-      skills: 'Singing, Music Theory, Performance',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      status: ApplicationStatus.accepted,
-    ),
-  ];
+  final List<Application> applications = <Application>[];
   final List<Member> members = <Member>[];
-  final List<Event> events = <Event>[
-    Event(
-      id: 'event-1',
-      orgName: 'PRIMERA BIDA',
-      orgId: '1',
-      title: 'Annual Debate Competition',
-      description: 'Join us for the biggest debate competition of the year!',
-      date: DateTime.now().add(const Duration(days: 7)),
-    ),
-    Event(
-      id: 'event-2',
-      orgName: 'BCC MUSICALITY',
-      orgId: '4',
-      title: 'Spring Concert',
-      description: 'Experience beautiful music from our talented members.',
-      date: DateTime.now().add(const Duration(days: 14)),
-    ),
-    Event(
-      id: 'event-3',
-      orgName: 'BCC DRUM AND LYRE CORPS',
-      orgId: '5',
-      title: 'Dance Workshop',
-      description: 'Learn new dance moves and techniques.',
-      date: DateTime.now().add(const Duration(days: 3)),
-    ),
-  ];
+  final List<Event> events = <Event>[];
   final List<User> users = <User>[
     User(
         id: _genId(),
@@ -1007,36 +973,101 @@ class AppState extends ChangeNotifier {
         name: 'Student User',
         email: 'student@example.com',
         role: UserRole.student,
-        active: true),
+        active: true,
+        studentId: '123456789'),
   ];
   final List<Notification> notifications = <Notification>[];
 
   // Notifications
-  void addNotification(Notification notification) {
-    notifications.add(notification);
-    notifyListeners();
+  Future<void> fetchNotifications() async {
+    try {
+      final response = await supabase.Supabase.instance.client
+          .from('notifications')
+          .select('*')
+          .order('date', ascending: false);
+
+      notifications.clear();
+      for (var item in response) {
+        notifications.add(Notification(
+          id: item['id'],
+          title: item['title'],
+          message: item['message'],
+          date: DateTime.parse(item['date']),
+          read: item['read'] ?? false,
+          orgId: item['org_id'],
+          studentId: item['student_id'],
+        ));
+      }
+      notifyListeners();
+    } catch (e) {
+      // Handle error, perhaps log or show snackbar
+    }
   }
 
-  bool updateNotification(Notification notification) {
-    final idx = notifications.indexWhere((n) => n.id == notification.id);
-    if (idx == -1) return false;
-    notifications[idx] = notification;
-    notifyListeners();
-    return true;
+  Future<void> addNotification(Notification notification) async {
+    try {
+      await supabase.Supabase.instance.client.from('notifications').insert({
+        'id': notification.id,
+        'title': notification.title,
+        'message': notification.message,
+        'date': notification.date.toIso8601String(),
+        'read': notification.read,
+        'org_id': notification.orgId,
+        'student_id': notification.studentId,
+      });
+      notifications.add(notification);
+      notifyListeners();
+    } catch (e) {
+      // Handle error
+    }
   }
 
-  bool removeNotification(String id) {
-    final before = notifications.length;
-    notifications.removeWhere((n) => n.id == id);
-    final removed = notifications.length < before;
-    if (removed) notifyListeners();
-    return removed;
+  Future<bool> updateNotification(Notification notification) async {
+    try {
+      await supabase.Supabase.instance.client
+          .from('notifications')
+          .update({
+            'title': notification.title,
+            'message': notification.message,
+            'date': notification.date.toIso8601String(),
+            'read': notification.read,
+            'org_id': notification.orgId,
+            'student_id': notification.studentId,
+          })
+          .eq('id', notification.id);
+
+      final idx = notifications.indexWhere((n) => n.id == notification.id);
+      if (idx == -1) return false;
+      notifications[idx] = notification;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
-  void markNotificationRead(String id) {
+  Future<bool> removeNotification(String id) async {
+    try {
+      await supabase.Supabase.instance.client
+          .from('notifications')
+          .delete()
+          .eq('id', id);
+
+      final before = notifications.length;
+      notifications.removeWhere((n) => n.id == id);
+      final removed = notifications.length < before;
+      if (removed) notifyListeners();
+      return removed;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> markNotificationRead(String id) async {
     final idx = notifications.indexWhere((n) => n.id == id);
     if (idx != -1 && !notifications[idx].read) {
       notifications[idx] = notifications[idx].copyWith(read: true);
+      await updateNotification(notifications[idx]);
       notifyListeners();
     }
   }
@@ -1073,16 +1104,18 @@ class AppState extends ChangeNotifier {
   }
 
   // Student profile
-  void setStudentProfile(StudentProfile profile) {
+  Future<void> setStudentProfile(StudentProfile profile) async {
     currentStudent = profile;
     notifyListeners();
+    await _saveStudentProfile();
   }
 
-  void updateStudentProfile(StudentProfile Function(StudentProfile) updater) {
+  Future<void> updateStudentProfile(StudentProfile Function(StudentProfile) updater) async {
     final s = currentStudent;
     if (s == null) return;
     currentStudent = updater(s);
     notifyListeners();
+    await _saveStudentProfile();
   }
 
   // Officer auth context
@@ -1097,7 +1130,7 @@ class AppState extends ChangeNotifier {
   }
 
   // Applications
-  Application submitApplication({
+  Future<Application> submitApplication({
     required String orgName,
     required String studentId,
     required String name,
@@ -1106,7 +1139,7 @@ class AppState extends ChangeNotifier {
     required String reason,
     required String skills,
     List<String> attachments = const [],
-  }) {
+  }) async {
     final found = _findOrgByName(orgName);
     final app = Application(
       id: _genId(),
@@ -1122,6 +1155,27 @@ class AppState extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     applications.add(app);
+    // Persist to Supabase applications table (best-effort)
+    try {
+      await supabase.Supabase.instance.client.from('applications').upsert({
+        'id': app.id,
+        'org_name': app.orgName,
+        'org_id': app.orgId,
+        'student_id': app.studentId,
+        'name': app.name,
+        'contact': app.contact,
+        'email': app.email,
+        'reason': app.reason,
+        'skills': app.skills,
+        'attachments': jsonEncode(app.attachments),
+        'created_at': app.createdAt.toIso8601String(),
+        'status': app.status.toString().split('.').last,
+      }).select();
+    } catch (e) {
+      // Log and continue; UI still works with local data
+      print('Error persisting application to Supabase: $e');
+    }
+
     notifyListeners();
     return app;
   }
@@ -1130,12 +1184,27 @@ class AppState extends ChangeNotifier {
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
     applications[idx] = applications[idx].copyWith(status: status);
+    // Debug log to trace status changes
+    try {
+      print('setApplicationStatus: applicationId=$applicationId status=${status.toString()}');
+    } catch (_) {}
+    // Persist status change to Supabase (best-effort)
+    try {
+      final a = applications[idx];
+      supabase.Supabase.instance.client.from('applications').upsert({
+        'id': a.id,
+        'status': a.status.toString().split('.').last,
+      }).select();
+    } catch (e) {
+      print('Error updating application status in Supabase: $e');
+    }
+
     notifyListeners();
     return true;
   }
 
-  bool approveApplication(String applicationId,
-      {String defaultPosition = 'Member'}) {
+  Future<bool> approveApplication(String applicationId,
+      {String defaultPosition = 'Member'}) async {
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
     final app = applications[idx];
@@ -1158,6 +1227,55 @@ class AppState extends ChangeNotifier {
         currentStudent =
             currentStudent!.copyWith(joinedOrgIds: joined.toList());
       }
+    }
+
+    // Send notification to the student
+    await addNotification(Notification(
+      id: _genId(),
+      title: 'Application Accepted',
+      message: 'Your application to ${app.orgName} has been accepted. You are now a member.',
+      date: DateTime.now(),
+      studentId: app.studentId,
+      orgId: app.orgId,
+    ));
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Schedule an interview for an application and mark its status accordingly.
+  Future<bool> scheduleInterview(String applicationId, DateTime interviewAt) async {
+    final idx = applications.indexWhere((a) => a.id == applicationId);
+    if (idx == -1) return false;
+    final app = applications[idx];
+
+    applications[idx] = app.copyWith(
+      status: ApplicationStatus.for_approval,
+      interviewAt: interviewAt,
+    );
+
+    final orgId = app.orgId ?? _findOrgByName(app.orgName)?.id;
+
+    // Notify the student
+    await addNotification(Notification(
+      id: _genId(),
+      title: 'Interview Scheduled',
+      message:
+          'Your interview for ${app.orgName} has been scheduled on ${interviewAt.toLocal().toString()}.',
+      date: DateTime.now(),
+      orgId: orgId,
+      studentId: app.studentId,
+    ));
+
+    // Persist interview schedule to Supabase (best-effort)
+    try {
+      await supabase.Supabase.instance.client.from('applications').upsert({
+        'id': app.id,
+        'status': 'interview_scheduled',
+        'interview_at': interviewAt.toIso8601String(),
+      }).select();
+    } catch (e) {
+      print('Error saving interview schedule to Supabase: $e');
     }
 
     notifyListeners();
@@ -1215,6 +1333,12 @@ class AppState extends ChangeNotifier {
     events.add(e);
     notifyListeners();
     return e;
+  }
+
+  /// Remove multiple applications by id and notify listeners.
+  void removeApplications(List<String> ids) {
+    applications.removeWhere((a) => ids.contains(a.id));
+    notifyListeners();
   }
 
   // Convenience for officer context
@@ -1326,6 +1450,75 @@ class AppState extends ChangeNotifier {
       return organizations.firstWhere((o) => o.id == id);
     } catch (_) {
       return null;
+    }
+  }
+
+  // Persistence methods for student profile
+  Future<void> loadStudentProfile() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final profileJson = _prefs!.getString('student_profile');
+    if (profileJson != null) {
+      try {
+        final data = jsonDecode(profileJson) as Map<String, dynamic>;
+        currentStudent = StudentProfile(
+          id: data['id'] ?? '',
+          name: data['name'] ?? '',
+          email: data['email'] ?? '',
+          studentId: data['studentId'] ?? '',
+          contact: data['contact'] ?? '',
+          facebook: data['facebook'] ?? '',
+          avatarUrl: data['avatarUrl'] ?? '',
+          joinedOrgIds: List<String>.from(data['joinedOrgIds'] ?? []),
+        );
+      } catch (e) {
+        // If parsing fails, keep currentStudent as null
+      }
+    }
+  }
+
+  Future<void> _saveStudentProfile() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    if (currentStudent != null) {
+      final data = {
+        'id': currentStudent!.id,
+        'name': currentStudent!.name,
+        'email': currentStudent!.email,
+        'studentId': currentStudent!.studentId,
+        'contact': currentStudent!.contact,
+        'facebook': currentStudent!.facebook,
+        'avatarUrl': currentStudent!.avatarUrl,
+        'joinedOrgIds': currentStudent!.joinedOrgIds,
+      };
+      
+      // Save to SharedPreferences
+      await _prefs!.setString('student_profile', jsonEncode(data));
+      
+      // Save to Supabase profiles table
+      try {
+        final profileData = {
+          'id': currentStudent!.id,
+          'name': currentStudent!.name,
+          'email': currentStudent!.email,
+          'student_id': currentStudent!.studentId,
+          'contact': currentStudent!.contact,
+          'facebook': currentStudent!.facebook,
+          'avatar_url': currentStudent!.avatarUrl,
+          'joined_org_ids': jsonEncode(currentStudent!.joinedOrgIds),
+        };
+        
+        print('Saving profile to Supabase with data: $profileData');
+        
+        final response = await supabase.Supabase.instance.client
+            .from('profiles')
+            .upsert(profileData)
+            .select();
+        
+        print('Profile saved to Supabase successfully: $response');
+      } catch (e) {
+        print('Error saving profile to Supabase: $e');
+      }
+    } else {
+      await _prefs!.remove('student_profile');
     }
   }
 }

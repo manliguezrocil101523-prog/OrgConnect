@@ -2,10 +2,11 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:my_app/core/supabase_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/app_state.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -44,33 +45,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final user = SupabaseClientManager.client.auth.currentUser;
-    if (user != null) {
-      try {
-        final profile = await SupabaseClientManager.client
-            .from('profiles')
-            .select()
-            .eq('id', user.id)
-            .maybeSingle(); // ✅ safer than .single()
+    // Ensure profile is loaded from persistent storage
+    await AppState.instance.loadStudentProfile();
 
-        setState(() {
-          _profile = profile;
-          if (profile != null) {
-            _populateControllers();
-          } else {
-            _isEditing = true; // new profile
-          }
-          _isLoading = false;
-        });
-      } catch (e) {
-        setState(() {
-          _isEditing = true;
-          _isLoading = false;
-        });
-      }
+    // Load current student profile from AppState
+    final currentProfile = AppState.instance.currentStudent;
+    if (currentProfile != null) {
+      _profile = {
+        'student_id': currentProfile.studentId,
+        'name': currentProfile.name,
+        'email': currentProfile.email,
+        'contact': currentProfile.contact,
+        'facebook': currentProfile.facebook,
+        'avatar_url': currentProfile.avatarUrl,
+      };
+      _populateControllers();
     } else {
-      setState(() => _isLoading = false);
+      // If no profile exists, check SharedPreferences directly
+      final prefs = await SharedPreferences.getInstance();
+      final profileJson = prefs.getString('student_profile');
+      if (profileJson != null) {
+        try {
+          final data = jsonDecode(profileJson) as Map<String, dynamic>;
+          _profile = {
+            'student_id': data['studentId'] ?? '',
+            'name': data['name'] ?? '',
+            'email': data['email'] ?? '',
+            'contact': data['contact'] ?? '',
+            'facebook': data['facebook'] ?? '',
+            'avatar_url': data['avatarUrl'] ?? '',
+          };
+          _populateControllers();
+        } catch (e) {
+          // If parsing fails, keep _profile as null
+        }
+      }
     }
+    setState(() {
+      _isEditing = false; // Start in view mode to display saved info
+      _isLoading = false;
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload profile when returning to this screen
+    _loadProfile();
   }
 
   void _populateControllers() {
@@ -114,93 +135,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final user = SupabaseClientManager.client.auth.currentUser;
-    if (user == null) return;
-
     setState(() => _isLoading = true);
+
     try {
-      final profileData = {
-        'id': user.id,
-        'name': nameCtrl.text.trim(),
-        'student_id': studentIdCtrl.text.trim(),
-        'email': emailCtrl.text.trim(),
-        'contact': contactCtrl.text.trim(),
-        'facebook': facebookCtrl.text.trim(),
-        'avatar_url': _avatarBytes != null
+      // Update the profile in AppState
+      final updatedProfile = StudentProfile(
+        id: AppState.instance.currentStudent?.id ?? '',
+        name: nameCtrl.text.trim(),
+        email: emailCtrl.text.trim(),
+        studentId: studentIdCtrl.text.trim(),
+        contact: contactCtrl.text.trim(),
+        facebook: facebookCtrl.text.trim(),
+        avatarUrl: _avatarBytes != null
             ? 'data:image/png;base64,${base64Encode(_avatarBytes!)}'
-            : _profile?['avatar_url'],
-        'joined_org_ids': (_profile?['joined_org_ids'] is List)
-            ? _profile!['joined_org_ids']
-            : [],
-      };
-
-      if (_profile == null) {
-        await SupabaseClientManager.client.from('profiles').insert(profileData);
-      } else {
-        await SupabaseClientManager.client
-            .from('profiles')
-            .update(profileData)
-            .eq('id', user.id);
-      }
-
-      await _loadProfile(); // reload profile
-      setState(() => _isEditing = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile saved successfully')),
+            : AppState.instance.currentStudent?.avatarUrl ?? '',
+        joinedOrgIds: AppState.instance.currentStudent?.joinedOrgIds ?? [],
       );
+
+      // Await the profile save to complete (includes Supabase upsert)
+      await AppState.instance.setStudentProfile(updatedProfile);
+
+      if (mounted) {
+        setState(() => _isEditing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile saved successfully to database!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        setState(() => _isLoading = false);
+      }
     } catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save profile: $e')),
+          SnackBar(
+            content: Text('Error saving profile: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: mintBg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       backgroundColor: mintBg,
-     appBar: AppBar(
-  backgroundColor: tealHeader,
-  elevation: 0,
-  title: const Text(
-    'Student Profile',
-    style: TextStyle(
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.0,
-    ),
-  ),
-  centerTitle: true,
-  leading: IconButton(
-    icon: const Icon(Icons.arrow_back),
-    onPressed: () {
-      Navigator.pop(context); // ✅ only normal back
-    },
-  ),
-  actions: _profile != null
-      ? [
+      appBar: AppBar(
+        backgroundColor: tealHeader,
+        elevation: 0,
+        title: const Text(
+          'Student Profile',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
+          ),
+        ),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context); // ✅ only normal back
+          },
+        ),
+        actions: [
           IconButton(
             icon: Icon(_isEditing ? Icons.save : Icons.edit),
             onPressed: _isEditing
                 ? _saveProfile
                 : () => setState(() => _isEditing = true),
           ),
-        ]
-      : null,
-),
-
-
+        ],
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final double circleSize =
@@ -228,7 +242,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   color: const Color(0xFF1B5E20), width: 3),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.10),
+                                  color: Colors.black.withValues(alpha: 0.10),
                                   blurRadius: 14,
                                   offset: const Offset(0, 6),
                                 ),
@@ -273,17 +287,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     const SizedBox(height: 24),
 
-                    // Form Fields
+                    // Form Fields or Profile Info
                     if (_isEditing) ...[
                       _buildTextField(
-                          'Student ID', studentIdCtrl, 'e.g., 2023-01234'),
+                          'Student ID', studentIdCtrl, 'e.g., 202324-1234'),
                       _buildTextField('Full Name', nameCtrl, 'First Last'),
-                      _buildTextField(
-                          'Email', emailCtrl, 'name@school.edu.ph'),
-                      _buildTextField(
-                          'Contact', contactCtrl, '+63 912 345 6789'),
-                      _buildTextField('Facebook', facebookCtrl,
-                          'facebook.com/your.profile'),
+                      _buildTextField('Email', emailCtrl, 'name@school.edu.ph'),
+                        _buildTextField(
+                          'Contact', contactCtrl, '09123456789'),
+                        _buildTextField('Facebook', facebookCtrl,
+                          'facebook name'),
                       const SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: _saveProfile,
@@ -298,33 +311,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         child: const Text('Save Profile'),
                       ),
-                    ] else if (_profile != null) ...[
-                      _buildProfileInfo('Student ID', _profile!['student_id']),
-                      _buildProfileInfo('Full Name', _profile!['name']),
-                      _buildProfileInfo('Email', _profile!['email']),
-                      _buildProfileInfo(
-                          'Contact', _profile!['contact'] ?? 'Not provided'),
-                      _buildProfileInfo(
-                          'Facebook', _profile!['facebook'] ?? 'Not provided'),
-                      if (_profile!['joined_org_ids'] is List &&
-                          (_profile!['joined_org_ids'] as List).isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Joined Organizations',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
+                    ] else ...[
+                      // Display saved profile information
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        ...(_profile!['joined_org_ids'] as List).map((orgId) =>
-                            Text(
-                              orgId.toString(),
-                              style: const TextStyle(
-                                  fontSize: 14, color: Colors.black54),
-                            )),
-                      ],
+                        child: Column(
+                          children: [
+                            _buildProfileInfo('Student ID',
+                                _profile?['student_id'] ?? 'Not set'),
+                            _buildProfileInfo(
+                                'Full Name', _profile?['name'] ?? 'Not set'),
+                            _buildProfileInfo(
+                                'Email', _profile?['email'] ?? 'Not set'),
+                            _buildProfileInfo(
+                                'Contact', _profile?['contact'] ?? 'Not set'),
+                            _buildProfileInfo(
+                                'Facebook', _profile?['facebook'] ?? 'Not set'),
+                          ],
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -359,7 +375,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(40),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -371,8 +387,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               filled: true,
               fillColor: const Color(0xFF8FD4CC),
               hintText: hint,
-              hintStyle:
-                  const TextStyle(color: Colors.black87, fontSize: 13.5),
+              hintStyle: const TextStyle(color: Colors.black87, fontSize: 13.5),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               border: OutlineInputBorder(

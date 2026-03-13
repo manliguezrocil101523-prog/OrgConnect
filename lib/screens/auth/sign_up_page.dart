@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:my_app/core/supabase_client.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -10,40 +10,51 @@ class SignUpPage extends StatefulWidget {
 }
 
 class _SignUpPageState extends State<SignUpPage> {
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _studentIdController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  bool rememberMe = true;
   bool _isFormValid = false;
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   final darkGreen = const Color(0xFF79CFC4);
 
   @override
   void initState() {
     super.initState();
-    _nameController.addListener(_validateForm);
+    _firstNameController.addListener(_validateForm);
+    _lastNameController.addListener(_validateForm);
     _studentIdController.addListener(_validateForm);
+    _emailController.addListener(_validateForm);
     _passwordController.addListener(_validateForm);
   }
 
   void _validateForm() {
     setState(() {
-      _isFormValid = _nameController.text.trim().isNotEmpty &&
+      _isFormValid = _firstNameController.text.trim().isNotEmpty &&
+          _lastNameController.text.trim().isNotEmpty &&
           _studentIdController.text.trim().isNotEmpty &&
+          _emailController.text.trim().isNotEmpty &&
           _passwordController.text.trim().isNotEmpty;
     });
   }
 
   Future<void> _signUpUser() async {
-    final supabase = SupabaseClientManager.client;
-
-    final name = _nameController.text.trim();
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final name = '$firstName $lastName';
     final studentId = _studentIdController.text.trim();
+    final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (name.isEmpty || studentId.isEmpty || password.isEmpty) {
+    if (firstName.isEmpty ||
+        lastName.isEmpty ||
+        studentId.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please fill in all fields'),
@@ -56,62 +67,80 @@ class _SignUpPageState extends State<SignUpPage> {
     setState(() => _isLoading = true);
 
     try {
-      // Step 1: Create a virtual email from Student ID
-      final email = "$studentId@student.orgconnect.com";
-
-      // Step 2: Sign up in Supabase Auth
-      final response = await supabase.auth.signUp(
+      // 1️⃣ Sign up user via Supabase Auth (disable email confirmation)
+      final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: password,
+        emailRedirectTo: null, // Disable email confirmation
       );
 
-      if (response.user == null) {
-        throw Exception('Sign-up failed. Please try again.');
+      final user = response.user;
+
+      if (user != null) {
+        // 2️⃣ Insert additional profile data into 'profiles' table
+        await Supabase.instance.client
+            .from('profiles')
+            .insert({
+              'id': user.id,
+              'name': name,
+              'student_id': studentId,
+              'email': email,
+            })
+            .select()
+            .single();
+
+        // 3️⃣ Set the profile in AppState for immediate access
+        final profile = StudentProfile(
+          id: user.id,
+          name: name,
+          email: email,
+          studentId: studentId,
+          contact: '',
+          facebook: '',
+          avatarUrl: '',
+        );
+        AppState.instance.setStudentProfile(profile);
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account created successfully! Welcome!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Navigate to sign in page after successful sign up
+        Navigator.pushReplacementNamed(context, '/signin');
       }
-
-      // Step 3: Store additional info in "users" and "profiles" tables
-      await supabase.from('users').insert({
-        'id': response.user!.id,
-        'role': 'student',
-      });
-      await supabase.from('profiles').insert({
-        'id': response.user!.id,
-        'name': name,
-        'student_id': studentId,
-        'email': email,
-        'joined_org_ids': [],
-      });
-
-      // Step 4: Save user info locally in app state
-      final profile = StudentProfile(
-        id: response.user!.id,
-        name: name,
-        email: email,
-        studentId: studentId,
-        contact: '',
-        facebook: '',
-        avatarUrl: '',
-        joinedOrgIds: [],
-      );
-      AppState.instance.setStudentProfile(profile);
-
-      // Step 5: Navigate to dashboard
+    } on AuthException catch (e) {
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created successfully!'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Text('Sign up failed: ${e.message}'),
+          backgroundColor: Colors.red,
         ),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(
+          content: Text('Unexpected error: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _studentIdController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -139,7 +168,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   height: 140,
                   width: 140,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: darkGreen,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: const [
                       BoxShadow(
@@ -157,75 +186,100 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // Text Fields
+                // Input Fields
                 TextField(
-                  controller: _nameController,
-                  decoration: _inputDecoration('Name'),
-                ),
+                    controller: _firstNameController,
+                    decoration: _inputDecoration('First Name')),
                 const SizedBox(height: 20),
                 TextField(
-                  controller: _studentIdController,
-                  decoration: _inputDecoration('Student ID'),
-                ),
+                    controller: _lastNameController,
+                    decoration: _inputDecoration('Last Name')),
                 const SizedBox(height: 20),
                 TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: _inputDecoration('Password'),
+                    controller: _studentIdController,
+                    keyboardType: TextInputType.number,
+                    decoration: _inputDecoration('Student ID')),
+                const SizedBox(height: 20),
+                TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: _inputDecoration('Email')),
+                const SizedBox(height: 20),
+                TextField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      fillColor: Colors.white,
+                      filled: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: const BorderSide(color: Colors.black12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: darkGreen, width: 1.5),
+                      ),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                          color: darkGreen,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                    )),
+                const SizedBox(height: 30),
+                // Sign Up Button
+                ElevatedButton(
+                  onPressed: _isFormValid && !_isLoading ? _signUpUser : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isFormValid ? darkGreen : Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 150),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    elevation: 4,
+                    shadowColor: darkGreen.withValues(alpha: 0.4),
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Sign Up',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                  ),
                 ),
                 const SizedBox(height: 16),
-
-                // Remember Me
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Checkbox(
-                      value: rememberMe,
-                      activeColor: darkGreen,
-                      onChanged: (val) =>
-                          setState(() => rememberMe = val ?? false),
-                    ),
-                    const Text('Remember me', style: TextStyle(fontSize: 14)),
-                  ],
-                ),
-                const SizedBox(height: 30),
-
-                // Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () =>
-                            Navigator.pushReplacementNamed(context, '/signin'),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: darkGreen,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          side: BorderSide(color: darkGreen.withOpacity(0.4)),
-                        ),
-                        child: const Text('Sign in'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed:
-                            _isFormValid && !_isLoading ? _signUpUser : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              _isFormValid ? darkGreen : Colors.grey,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                        ),
-                        child: _isLoading
-                            ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text('Sign up'),
+                    const Text("Already have an account? "),
+                    GestureDetector(
+                      onTap: () =>
+                          Navigator.pushReplacementNamed(context, '/signin'),
+                      child: Text(
+                        "Sign In",
+                        style: TextStyle(
+                            color: darkGreen, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -255,3 +309,5 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 }
+
+extension on PostgrestResponse {}

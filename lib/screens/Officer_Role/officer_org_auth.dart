@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
 class OfficerOrgAuthScreen extends StatefulWidget {
-  const OfficerOrgAuthScreen({Key? key}) : super(key: key);
+  const OfficerOrgAuthScreen({super.key});
 
   @override
   State<OfficerOrgAuthScreen> createState() => _OfficerOrgAuthScreenState();
@@ -23,7 +23,8 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
   Organization? get _selectedOrg {
     if (_selectedOrgId == null) return null;
     try {
-      return AppState.instance.organizations.firstWhere((o) => o.id == _selectedOrgId);
+      return AppState.instance.organizations
+          .firstWhere((o) => o.id == _selectedOrgId);
     } catch (_) {
       return null;
     }
@@ -48,7 +49,7 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
     setState(() => _authenticating = true);
     await Future<void>.delayed(const Duration(milliseconds: 200));
 
-    if (pass != org.officerPassword) {
+    if (mounted && pass != org.officerPassword) {
       setState(() => _authenticating = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Incorrect password.')),
@@ -60,6 +61,7 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
     setState(() => _authenticating = false);
 
     // Route back through role router so it can render the correct destination
+    if (!mounted) return;
     Navigator.pushReplacementNamed(context, '/role');
   }
 
@@ -79,11 +81,11 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.65),
+                color: Colors.white.withValues(alpha: 0.65),
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 12,
                     offset: const Offset(0, 6),
                   ),
@@ -93,7 +95,7 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 8),
-                  Text(
+                  const Text(
                     'Select Organization',
                     style: TextStyle(
                       fontSize: 14,
@@ -115,7 +117,8 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: const Color(0xFF8FD4CC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -123,9 +126,8 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
                     ),
                     onChanged: (v) => setState(() => _selectedOrgId = v),
                   ),
-
                   const SizedBox(height: 16),
-                  Text(
+                  const Text(
                     'Officer Password',
                     style: TextStyle(
                       fontSize: 14,
@@ -142,19 +144,21 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
                       filled: true,
                       fillColor: const Color(0xFF8FD4CC),
                       hintText: 'Enter password',
-                      hintStyle: const TextStyle(color: Colors.black87, fontSize: 13.5),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      hintStyle: const TextStyle(
+                          color: Colors.black87, fontSize: 13.5),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 14),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                        icon: Icon(
+                            _obscure ? Icons.visibility_off : Icons.visibility),
                         onPressed: () => setState(() => _obscure = !_obscure),
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 20),
                   SizedBox(
                     height: 48,
@@ -163,22 +167,26 @@ class _OfficerOrgAuthScreenState extends State<OfficerOrgAuthScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF79CFC4),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: _authenticating
                           ? const SizedBox(
                               height: 22,
                               width: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
                             )
                           : const Text(
                               'Enter Dashboard',
-                              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.0),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.0),
                             ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
+                  const Text(
                     'Tip: Admin can set per-organization officer passwords in Organization settings.',
                     style: TextStyle(fontSize: 12, color: Color(0xFF616161)),
                     textAlign: TextAlign.center,

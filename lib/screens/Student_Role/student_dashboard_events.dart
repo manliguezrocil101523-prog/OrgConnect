@@ -4,7 +4,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 
 class StudentDashboard extends StatefulWidget {
-  const StudentDashboard({Key? key}) : super(key: key);
+  const StudentDashboard({super.key});
 
   static const Color mintBg = Color(0xFFEAF6F0);
   static const Color tealHeader = Color(0xFF79CFC4);
@@ -71,6 +71,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       appBar: AppBar(
         backgroundColor: StudentDashboard.tealHeader,
         elevation: 0,
+        automaticallyImplyLeading: false,
         iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
           'Dashboard',
@@ -83,12 +84,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
         centerTitle: true,
         actions: [
           IconButton(
-             icon: Icon(Icons.home, color: Colors.white, size: 28),
-            onPressed: () => Navigator.pushNamed(context, '/role'),
+            icon: const Icon(Icons.home, color: Colors.white, size: 28),
+            onPressed: () {
+              // Clear role and navigate to role selection
+              AppState.instance.setRole(null);
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                '/role',
+                (route) => false,
+              );
+            },
           ),
         ],
       ),
-
       body: AnimatedBuilder(
         animation: AppState.instance,
         builder: (context, _) {
@@ -99,13 +106,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   app.studentId == AppState.instance.currentStudent?.studentId)
               .toList();
 
-          final interviewEvents = events
-              .where((event) => event.title.toLowerCase().contains('interview'))
-              .toList();
-          final regularEvents = events
-              .where(
-                  (event) => !event.title.toLowerCase().contains('interview'))
-              .toList();
+              // Keep events for calendar, but do not surface interview-specific
+              // notifications in the dashboard's event list. Interview events
+              // will still be present in `AppState.events` (and thus on the
+              // calendar), but they are filtered out from the list of events
+              // shown under "Organization Events" so students will instead
+              // receive interview details via the Notifications screen.
+              final regularEvents = events
+                .where((event) =>
+                  !event.title.toLowerCase().contains('interview'))
+                .toList();
 
           return SingleChildScrollView(
             padding: EdgeInsets.symmetric(
@@ -141,7 +151,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
@@ -153,7 +163,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       firstDay: DateTime.utc(2020, 1, 1),
                       lastDay: DateTime.utc(2030, 12, 31),
                       focusedDay: _focusedDay,
-                      selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                      selectedDayPredicate: (day) =>
+                          isSameDay(_selectedDay, day),
                       onDaySelected: (selectedDay, focusedDay) {
                         setState(() {
                           _selectedDay = selectedDay;
@@ -164,10 +175,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       eventLoader: (day) => _events[day] ?? [],
                       calendarStyle: CalendarStyle(
                         todayDecoration: BoxDecoration(
-                          color: StudentDashboard.tealHeader.withOpacity(0.2),
+                          color: StudentDashboard.tealHeader
+                              .withValues(alpha: 0.2),
                           shape: BoxShape.circle,
                         ),
-                        selectedDecoration: BoxDecoration(
+                        selectedDecoration: const BoxDecoration(
                           color: StudentDashboard.tealHeader,
                           shape: BoxShape.circle,
                         ),
@@ -191,14 +203,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 const SizedBox(height: 24),
 
                 // Sections with cards
-                if (interviewEvents.isNotEmpty)
-                  _buildSection(
-                    title: 'Interview Notifications',
-                    children: interviewEvents
-                        .map((event) => _buildInterviewCard(event))
-                        .toList(),
-                  ),
-
                 if (applications.isNotEmpty)
                   _buildSection(
                     title: 'My Applications',
@@ -223,18 +227,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             size: 90, color: Colors.grey),
                         const SizedBox(height: 16),
                         const Text(
-                          'No activities yet',
+                          'No events yet',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: Colors.grey,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Join organizations to see their events here.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey[600]),
                         ),
                       ],
                     ),
@@ -247,7 +245,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildSection({required String title, required List<Widget> children}) {
+  Widget _buildSection(
+      {required String title, required List<Widget> children}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -263,22 +262,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
         const SizedBox(height: 8),
         ...children,
       ],
-    );
-  }
-
-  Widget _buildInterviewCard(Event event) {
-    return Card(
-      color: Colors.orange.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: ListTile(
-        leading: const Icon(Icons.schedule, color: Colors.orange),
-        title: Text(event.title,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(event.description),
-        trailing: Text(_formatDateTime(event.date),
-            style: const TextStyle(color: Colors.grey, fontSize: 12)),
-      ),
     );
   }
 
@@ -302,17 +285,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
     String label;
     switch (status) {
       case ApplicationStatus.pending:
-        bg = Colors.orange.withOpacity(0.1);
+        bg = Colors.orange.withValues(alpha: 0.1);
         fg = Colors.orange;
         label = 'Pending';
         break;
+      case ApplicationStatus.for_approval:
+        bg = Colors.orange.withValues(alpha: 0.1);
+        fg = Colors.orange;
+        label = 'For Approval';
+        break;
       case ApplicationStatus.accepted:
-        bg = Colors.green.withOpacity(0.1);
+        bg = Colors.green.withValues(alpha: 0.1);
         fg = Colors.green;
         label = 'Accepted';
         break;
+      case ApplicationStatus.interview_scheduled:
+        bg = Colors.orange.withValues(alpha: 0.1);
+        fg = Colors.orange;
+        label = 'Interview Scheduled';
+        break;
       case ApplicationStatus.declined:
-        bg = Colors.red.withOpacity(0.1);
+        bg = Colors.red.withValues(alpha: 0.1);
         fg = Colors.red;
         label = 'Declined';
         break;
@@ -321,7 +314,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration:
           BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
-      child: Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
+      child:
+          Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -335,7 +329,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
             color: isUpcoming ? Colors.teal : Colors.grey, size: 30),
         title: Text(event.title,
             style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(event.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(event.description,
+            maxLines: 2, overflow: TextOverflow.ellipsis),
         trailing: Text(
           _formatDateTime(event.date),
           style: const TextStyle(color: Colors.grey, fontSize: 12),
@@ -365,8 +360,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
     switch (status) {
       case ApplicationStatus.pending:
         return 'Pending Review';
+      case ApplicationStatus.for_approval:
+        return 'For Approval';
       case ApplicationStatus.accepted:
         return 'Accepted';
+      case ApplicationStatus.interview_scheduled:
+        return 'Interview Scheduled';
       case ApplicationStatus.declined:
         return 'Declined';
     }

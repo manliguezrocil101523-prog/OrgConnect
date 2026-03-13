@@ -1,77 +1,203 @@
-import 'package:flutter/material.dart'; // Import Flutter's material design library
-import '../../core/app_state.dart'; // Import AppState for managing global state
+import 'package:flutter/material.dart';
+import 'package:my_app/screens/Student_Role/student_dashboard_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/app_state.dart';
 
-// A StatefulWidget that represents the Sign In page
 class SignInPage extends StatefulWidget {
-  const SignInPage({super.key}); // Constructor with optional key
+  const SignInPage({super.key});
 
   @override
-  State<SignInPage> createState() => _SignInPageState(); // Create the state object
+  State<SignInPage> createState() => _SignInPageState();
 }
 
-// The state class for SignInPage
 class _SignInPageState extends State<SignInPage> {
-  final _studentIdController = TextEditingController(); // Controller for Student ID input
-  final _passwordController = TextEditingController(); // Controller for Password input
-  bool _isFormValid = false; // Tracks whether form is valid (both fields filled)
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
-  final darkGreen = const Color(0xFF79CFC4); // Custom theme color
+  bool _isFormValid = false;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  final darkGreen = const Color(0xFF79CFC4);
 
   @override
   void initState() {
     super.initState();
-    // Add listeners to input fields to validate the form when user types
-    _studentIdController.addListener(_validateForm);
+    _emailController.addListener(_validateForm);
     _passwordController.addListener(_validateForm);
+
+    // Run once to check initial state
+    WidgetsBinding.instance.addPostFrameCallback((_) => _validateForm());
   }
 
   @override
   void dispose() {
-    // Remove listeners when widget is disposed to prevent memory leaks
-    _studentIdController.removeListener(_validateForm);
+    _emailController.removeListener(_validateForm);
     _passwordController.removeListener(_validateForm);
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  // Validates the form: both studentId and password must not be empty
   void _validateForm() {
-    setState(() {
-      _isFormValid = _studentIdController.text.trim().isNotEmpty &&
-          _passwordController.text.trim().isNotEmpty;
-    });
+    final isValid = _emailController.text.trim().isNotEmpty &&
+        _passwordController.text.trim().isNotEmpty;
+
+    if (isValid != _isFormValid) {
+      setState(() {
+        _isFormValid = isValid;
+      });
+    }
+  }
+
+  Future<void> _signIn() async {
+    if (!_isFormValid) return;
+
+    setState(() => _isLoading = true);
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    try {
+      // Sign in with email and password
+      final res = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      if (mounted && res.user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid email or password'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Fetch user profile from Supabase table
+      final profileData = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('email', email)
+          .single();
+
+      final profile = StudentProfile(
+        id: profileData['email'],
+        name: profileData['name'] ?? '',
+        email: profileData['email'] ?? '',
+        studentId: profileData['student_id'] ?? '',
+        contact: profileData['contact'] ?? '',
+        facebook: profileData['facebook'] ?? '',
+        avatarUrl: profileData['avatar_url'] ?? '',
+        joinedOrgIds: List<String>.from(profileData['joined_org_ids'] ?? []),
+      );
+
+      AppState.instance.setStudentProfile(profile);
+
+      // Navigate to student dashboard after login
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const StudentDashboardScreen()),
+      );
+    } on AuthException catch (e) {
+      if (e.message.toLowerCase().contains('email not confirmed')) {
+        _showEmailConfirmationDialog(email);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showEmailConfirmationDialog(String email) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Email Not Confirmed'),
+          content: Text(
+            'Your email ($email) has not been confirmed yet. Please check your email for a confirmation link and click it to verify your account.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+            TextButton(
+              onPressed: () async {
+                try {
+                  await Supabase.instance.client.auth.resend(
+                    type: OtpType.signup,
+                    email: email,
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Confirmation email sent! Please check your inbox.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  Navigator.of(context).pop();
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to resend email: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Resend Email'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold( // Base page structure
-      body: Container( // Container with full screen gradient background
+    return Scaffold(
+      body: Container(
         width: double.infinity,
         height: double.infinity,
         decoration: const BoxDecoration(
-          gradient: LinearGradient( // Top-to-bottom gradient
+          gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFE8F5E9), // Light green
-              Color(0xFFB2DFDB), // Teal shade
-            ],
+            colors: [Color.fromARGB(255, 248, 248, 248), Color(0xFFB2DFDB)],
           ),
         ),
-        child: SafeArea( // Ensures content stays inside safe screen area
-          child: SingleChildScrollView( // Allows scrolling on small screens
+        child: SafeArea(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: Column( // Layout widgets vertically
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const SizedBox(height: 40), // Spacing at top
-                // Logo container
+                const SizedBox(height: 40),
                 Container(
                   height: 140,
                   width: 140,
                   decoration: BoxDecoration(
-                    color: Colors.white, // White background
-                    borderRadius: BorderRadius.circular(20), // Rounded corners
-                    boxShadow: const [ // Drop shadow
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: const [
                       BoxShadow(
                         color: Colors.black26,
                         blurRadius: 6,
@@ -81,149 +207,88 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                   child: Center(
                     child: Image.asset(
-                      'assets/orgconnectLogo.jpg', // App logo
+                      'assets/orgconnectLogo.jpg',
                       fit: BoxFit.contain,
                     ),
                   ),
                 ),
                 const SizedBox(height: 32),
-                const SizedBox(height: 32),
-                // Student ID input field
                 TextField(
-                  controller: _studentIdController, // Connect controller
-                  decoration: buildInputDecoration('Student ID'), // Custom input style
-                  keyboardType: TextInputType.text, // Text input
+                  controller: _emailController,
+                  decoration: _inputDecoration('Email'),
+                  keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 20),
-                // Password input field
                 TextField(
                   controller: _passwordController,
-                  decoration: buildInputDecoration('Password'),
-                  obscureText: true, // Hide text for password
-                ),
-                const SizedBox(height: 12),
-                // "Forgot Password?" link
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {}, // TODO: Add forgot password logic
-                    child: Text(
-                      'Forgot Password?',
-                      style: TextStyle(color: darkGreen, fontSize: 13),
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    hintText: 'Password',
+                    fillColor: Colors.white,
+                    filled: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: Colors.black12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(color: darkGreen, width: 1.5),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                        color: darkGreen,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
                     ),
                   ),
                 ),
                 const SizedBox(height: 30),
-                // Row with Sign In and Sign Up buttons
-                Row(
-                  children: [
-                    // Sign In button
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _isFormValid // Enabled only if form is valid
-                            ? () {
-                                // Validate again in case of errors
-                                if (_studentIdController.text.trim().isEmpty ||
-                                    _passwordController.text.trim().isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content:
-                                          Text('Please fill in all fields'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  return;
-                                }
-                                // Create a profile from the entered data
-                                final profile = StudentProfile(
-                                  id: 'student-${DateTime.now().millisecondsSinceEpoch}', // Unique ID
-                                  name: _studentIdController.text.trim(), // Temp name = student ID
-                                  email: '',
-                                  studentId: _studentIdController.text.trim(),
-                                  contact: '',
-                                  facebook: '',
-                                  avatarUrl: '',
-                                  joinedOrgIds: [],
-                                );
-                                // Save profile to global app state
-                                AppState.instance.setStudentProfile(profile);
-                                // Navigate to home page
-                                Navigator.pushReplacementNamed(
-                                    context, '/home');
-                              }
-                            : null, // Disabled if form invalid
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              _isFormValid ? darkGreen : Colors.grey, // Active vs disabled color
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: const Text('Sign in'),
-                      ),
+                ElevatedButton(
+                  onPressed: _isFormValid && !_isLoading ? _signIn : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isFormValid ? darkGreen : Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 150),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
                     ),
-                    const SizedBox(width: 12),
-                    // Sign Up button
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () =>
-                            Navigator.pushReplacementNamed(context, '/signup'), // Go to SignUp page
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: darkGreen,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
                           ),
-                          side: BorderSide(color: darkGreen.withOpacity(0.4)), // Outline color
+                        )
+                      : const Text('Sign In'),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text("Don't have an account yet? "),
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/signup'),
+                      child: Text(
+                        'Sign up',
+                        style: TextStyle(
+                          color: darkGreen,
+                          fontWeight: FontWeight.bold,
                         ),
-                        child: const Text('Sign up'),
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 140),
-                // Continue button (same logic as Sign In)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isFormValid
-                        ? () {
-                            if (_studentIdController.text.trim().isEmpty ||
-                                _passwordController.text.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Please fill in all fields'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                              return;
-                            }
-                            final profile = StudentProfile(
-                              id: 'student-${DateTime.now().millisecondsSinceEpoch}',
-                              name: _studentIdController.text.trim(),
-                              email: '',
-                              studentId: _studentIdController.text.trim(),
-                              contact: '',
-                              facebook: '',
-                              avatarUrl: '',
-                              joinedOrgIds: [],
-                            );
-                            AppState.instance.setStudentProfile(profile);
-                            Navigator.pushReplacementNamed(context, '/home');
-                          }
-                        : null, // Disabled if invalid
-                    style: _isFormValid
-                        ? buildMainButtonStyle()
-                        : buildMainButtonStyle().copyWith(
-                            backgroundColor:
-                                WidgetStateProperty.all(Colors.grey),
-                          ),
-                    child: const Text('Continue'),
-                  ),
                 ),
               ],
             ),
@@ -233,38 +298,22 @@ class _SignInPageState extends State<SignInPage> {
     );
   }
 
-  // Helper method to build input decorations for text fields
-  InputDecoration buildInputDecoration(String hint) {
+  InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
-      hintText: hint, // Placeholder text
+      hintText: hint,
       fillColor: Colors.white,
-      filled: true, // Filled background
+      filled: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(24),
-        borderSide: BorderSide(color: Colors.black12),
+        borderSide: const BorderSide(color: Colors.black12),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(24),
-        borderSide: BorderSide(color: darkGreen, width: 1.5), // Highlight when focused
+        borderSide: BorderSide(color: darkGreen, width: 1.5),
       ),
-    );
-  }
-
-  // Helper method to build the main button style
-  ButtonStyle buildMainButtonStyle() {
-    return ElevatedButton.styleFrom(
-      backgroundColor: darkGreen, // Main color
-      foregroundColor: Colors.white, // Text color
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24), // Rounded corners
-      ),
-      textStyle: const TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: 18,
-      ),
-      elevation: 3, // Slight shadow
     );
   }
 }
+
+extension on PostgrestResponse {}
