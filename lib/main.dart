@@ -16,10 +16,8 @@ void main() async {
 
   // ✅ Initialize Supabase
   await Supabase.initialize(
-    url:
-        'https://pkyqeuumkjhdjyadsydd.supabase.co', // Replace with your Supabase URL
-    anonKey:
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBreXFldXVta2poZGp5YWRzeWRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2NzE1MDAsImV4cCI6MjA3NjI0NzUwMH0.fllfVxDRHdMuKAfHOhzHEc5bB557UPlRoy-NY-bAgbA'
+    url: 'https://pkyqeuumkjhdjyadsydd.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBreXFldXVta2poZGp5YWRzeWRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2NzE1MDAsImV4cCI6MjA3NjI0NzUwMH0.fllfVxDRHdMuKAfHOhzHEc5bB557UPlRoy-NY-bAgbA'
   );
 
   // Initialize AppState to load saved profile
