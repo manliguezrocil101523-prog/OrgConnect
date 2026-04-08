@@ -44,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 constraints: const BoxConstraints(maxWidth: 540),
                 child: Column(
                   children: [
-                    // Avatar
+                    
                     Container(
                       width: circleSize,
                       height: circleSize,
@@ -72,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 24),
 
-                    // Buttons
+                    
                     _actionButton(
                       context: context,
                       label: 'Profile',
@@ -90,18 +90,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
 
                     const SizedBox(height: 12),
-                    // Removed Dashboard button as per user request
-                    // _actionButton(
-                    //   context: context,
-                    //   label: 'Dashboard',
-                    //   icon: Icons.dashboard_outlined,
-                    //   onTap: () => Navigator.push(
-                    //     context,
-                    //     MaterialPageRoute(
-                    //         builder: (_) => const StudentDashboard()),
-                    //   ),
-                    // ),
-
+                    
+                    
                     _actionButton(
                       context: context,
                       label: 'Notifications',

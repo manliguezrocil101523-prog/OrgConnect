@@ -1,172 +1,357 @@
-import 'package:flutter/material.dart'; // Import Flutter's material design library for building UI components in the role selection screen
-import '../core/app_state.dart'; // Import the app state manager for accessing and updating global application state in the role selection screen
-import 'role_router.dart'; // Import the role router widget for navigating based on selected user role
-import 'Officer_Role/officer_authorization_screen.dart'; // Import the officer authorization screen for officer role authentication
-import 'Admin_Role/admin_authorization_screen.dart'; // Import the admin authorization screen for admin role authentication
+import 'package:flutter/material.dart';
+import '../core/app_state.dart';
+import 'role_router.dart';
+import 'Officer_Role/officer_authorization_screen.dart';
+import 'Admin_Role/admin_authorization_screen.dart';
 
+// ── Palette (matches sign_in_page) ────────────────────────────────────────────
+const _kIndigo = Color(0xFF4F46E5);
+const _kCyan = Color(0xFF06B6D4);
+const _kIndigoSoft = Color(0xFFEEF2FF);
+const _kBg = Color(0xFFF5F7FF);
+const _kText = Color(0xFF1E1B4B);
+const _kSubText = Color(0xFF6366F1);
+const _kWhite = Colors.white;
+
+// ── Role meta ─────────────────────────────────────────────────────────────────
+class _RoleMeta {
+  const _RoleMeta({
+    required this.role,
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.gradientColors,
+  });
+
+  final UserRole role;
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> gradientColors;
+}
+
+const _roles = [
+  _RoleMeta(
+    role: UserRole.student,
+    label: 'Student',
+    subtitle: 'Browse orgs & events',
+    icon: Icons.school_rounded,
+    gradientColors: [Color(0xFF4F46E5), Color(0xFF818CF8)],
+  ),
+  _RoleMeta(
+    role: UserRole.officer,
+    label: 'Organization Officer',
+    subtitle: 'Manage your organization',
+    icon: Icons.badge_rounded,
+    gradientColors: [Color(0xFF0EA5E9), Color(0xFF06B6D4)],
+  ),
+  _RoleMeta(
+    role: UserRole.admin,
+    label: 'Admin',
+    subtitle: 'Full system access',
+    icon: Icons.admin_panel_settings_rounded,
+    gradientColors: [Color(0xFF6366F1), Color(0xFF06B6D4)],
+  ),
+];
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 class RoleSelectionScreen extends StatelessWidget {
-  // Define the RoleSelectionScreen class extending StatelessWidget for a screen that doesn't manage state, used for selecting user roles in the organization management system
-  const RoleSelectionScreen(
-      {super.key}); // Constructor for RoleSelectionScreen with optional key parameter for widget identification in the Flutter widget tree
+  const RoleSelectionScreen({super.key});
 
-  static const Color mintBg = Color(
-      0xFFEAF6F0); // Define a static constant color for the background, using a mint green shade for the screen's background in the app's theme
-  static const Color tealHeader = Color(
-      0xFF79CFC4); // Define a static constant color for headers, using a teal shade for app bars and buttons in the app's theme
-
-  @override // Override the build method from StatelessWidget to define the UI structure of the role selection screen
+  @override
   Widget build(BuildContext context) {
-    // Build method that constructs the widget tree for the role selection screen, taking BuildContext for accessing theme and navigation
-    final state = AppState
-        .instance; // Get the singleton instance of AppState to access global application state
-    if (state.selectedRole != null) {
-      // Check if a role has already been selected in the app state
-      return const RoleRouter(); // Return the RoleRouter widget if a role is selected, to route to the appropriate screen based on the role
+    if (AppState.instance.selectedRole != null) {
+      return const RoleRouter();
     }
+
     return Scaffold(
-      // Return a Scaffold widget as the root of the screen's layout, providing structure for app bar and body
-      backgroundColor:
-          mintBg, // Set the background color of the Scaffold to the mint background color defined above
-      appBar: AppBar(
-        // Define the app bar for the screen with title and styling
-        backgroundColor:
-            tealHeader, // Set the background color of the app bar to the teal header color
-        elevation:
-            0, // Remove shadow elevation from the app bar for a flat design
-        title: const Text(
-          // Set the title text for the app bar
-          'Select Role', // Title text indicating the purpose of the screen
-          style: TextStyle(
-              fontWeight: FontWeight.w700,
-              letterSpacing:
-                  1.0), // Style the title text with bold weight and letter spacing
-        ),
-        centerTitle: true, // Center the title in the app bar
-        leading: IconButton(
-          // Add leading icon button for back navigation to calendar dashboard
-          icon: const Icon(Icons.arrow_back), // Set the icon to arrow back
-          onPressed: () => Navigator.pushReplacementNamed(context,
-              '/calendar'), // Navigate to calendar dashboard, replacing current route
-        ),
-      ),
-      body: Center(
-        // Center the body content vertically and horizontally
-        child: Padding(
-          // Add padding around the body content
-          padding: const EdgeInsets.all(
-              20.0), // Set padding of 20 pixels on all sides
-          child: ConstrainedBox(
-            // Constrain the width of the content for better layout on larger screens
-            constraints: const BoxConstraints(
-                maxWidth: 560), // Set maximum width to 560 pixels
+      backgroundColor: _kBg,
+      body: Stack(
+        children: [
+          _BackgroundDecor(),
+          SafeArea(
             child: Column(
-              // Arrange children in a vertical column
-              mainAxisAlignment: MainAxisAlignment
-                  .center, // Center the column's children vertically
               children: [
-                // List of child widgets in the column
-                _roleButton(
-                    context,
-                    'Student',
-                    Icons
-                        .school_outlined, // Call the helper method to create a button for Student role with icon
-                    UserRole.student), // Pass the Student role enum value
-                const SizedBox(
-                    height:
-                        16), // Add vertical space of 16 pixels between buttons
-                _roleButton(
-                    context,
-                    'Organization Officer', // Call the helper method for Officer role
-                    Icons.badge_outlined,
-                    UserRole.officer), // Pass icon and role
-                const SizedBox(height: 16), // Add vertical space
-                _roleButton(
-                    context,
-                    'Admin', // Call for Admin role
-                    Icons.admin_panel_settings_outlined,
-                    UserRole.admin), // Pass icon and role
+                _TopBar(context),
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 24,
+                      ),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 480),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _HeaderSection(),
+                            const SizedBox(height: 36),
+                            ..._roles.map(
+                              (meta) => Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: _RoleCard(meta: meta),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-        ),
+        ],
       ),
     );
+  }
+}
+
+// ── Top bar ───────────────────────────────────────────────────────────────────
+class _TopBar extends StatelessWidget {
+  const _TopBar(this.context);
+  final BuildContext context;
+
+  @override
+  Widget build(BuildContext ctx) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+            color: _kIndigo,
+            style: IconButton.styleFrom(
+              backgroundColor: _kIndigoSoft,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () =>
+                Navigator.pushReplacementNamed(ctx, '/calendar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+class _HeaderSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Icon badge
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [_kIndigo, _kCyan],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: _kIndigo.withOpacity(0.30),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.people_alt_rounded,
+            color: _kWhite,
+            size: 34,
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Choose Your Role',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: _kText,
+            letterSpacing: -0.4,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Select how you want to use OrgConnect',
+          style: TextStyle(
+            fontSize: 14,
+            color: _kSubText,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Role card ─────────────────────────────────────────────────────────────────
+class _RoleCard extends StatelessWidget {
+  const _RoleCard({required this.meta});
+  final _RoleMeta meta;
+
+  void _handleTap(BuildContext context) {
+    AppState.instance.setRole(meta.role);
+    switch (meta.role) {
+      case UserRole.student:
+        Navigator.pushReplacementNamed(context, '/signin');
+        break;
+      case UserRole.officer:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const OfficerAuthorizationScreen(),
+          ),
+        );
+        break;
+      case UserRole.admin:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const AdminAuthorizationScreen(),
+          ),
+        );
+        break;
+    }
   }
 
-  Widget _roleButton(
-      // Define a private helper method to create role selection buttons
-      BuildContext context,
-      String label,
-      IconData icon,
-      UserRole role) {
-    // Parameters: context for navigation, label text, icon, and role enum
-    return SizedBox(
-      // Return a SizedBox to control the button's width
-      width: double.infinity, // Set width to fill available space
-      child: ElevatedButton.icon(
-        // Create an elevated button with an icon
-        onPressed: () {
-          // Define the callback when the button is pressed
-          AppState.instance
-              .setRole(role); // Set the selected role in the app state
-          // Route to appropriate screen based on role // Comment indicating the start of routing logic
-          switch (role) {
-            // Switch statement to handle different roles
-            case UserRole.student: // Case for student role
-              // Student goes to SignIn/SignUp flow first // Comment explaining student routing
-              Navigator.pushReplacementNamed(context,
-                  '/signin'); // Navigate to sign-in screen, replacing current route
-              break; // Break from switch
-            case UserRole.officer: // Case for officer role
-              // Officer needs to select organization and authenticate // Comment explaining officer routing
-              Navigator.push(
-                // Push a new route for officer authorization
-                context, // BuildContext
-                MaterialPageRoute(
-                  // MaterialPageRoute for navigation
-                  builder: (context) =>
-                      const OfficerAuthorizationScreen(), // Builder function returning the officer auth screen
-                ),
-              );
-              break; // Break
-            case UserRole.admin: // Case for admin role
-              // Admin needs password authentication // Comment explaining admin routing
-              Navigator.push(
-                // Push route for admin auth
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      const AdminAuthorizationScreen(), // Return admin auth screen
-                ),
-              );
-              break; // Break
-          }
-        },
-        style: ElevatedButton.styleFrom(
-          // Define the style for the elevated button
-          backgroundColor: tealHeader, // Set background color to teal
-          foregroundColor: Colors.white, // Set text and icon color to white
-          padding: const EdgeInsets.symmetric(
-              vertical: 16, horizontal: 16), // Set padding inside button
-          shape: RoundedRectangleBorder(
-            // Set shape to rounded rectangle
-            borderRadius:
-                BorderRadius.circular(28), // Border radius of 28 pixels
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _handleTap(context),
+        borderRadius: BorderRadius.circular(20),
+        splashColor: meta.gradientColors.first.withOpacity(0.08),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          decoration: BoxDecoration(
+            color: _kWhite,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: meta.gradientColors.first.withOpacity(0.10),
+                blurRadius: 24,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          elevation: 2, // Set elevation for shadow
-        ),
-        icon: Icon(icon, size: 20), // Set the icon with size 20
-        label: Text(
-          // Set the label text
-          label.toUpperCase(), // Convert label to uppercase
-          style: const TextStyle(
-            // Style the text
-            fontSize: 14, // Font size 14
-            fontWeight: FontWeight.w800, // Bold weight
-            letterSpacing: 1.1, // Letter spacing
+          child: Row(
+            children: [
+              // Icon container
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: meta.gradientColors,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: meta.gradientColors.first.withOpacity(0.28),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(meta.icon, color: _kWhite, size: 24),
+              ),
+              const SizedBox(width: 16),
+              // Labels
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      meta.label,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _kText,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      meta.subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _kSubText.withOpacity(0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Arrow
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _kIndigoSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: meta.gradientColors.first,
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+// ── Background decoration ─────────────────────────────────────────────────────
+class _BackgroundDecor extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned(
+          top: -60,
+          right: -60,
+          child: _Circle(size: 220, color: _kIndigo.withOpacity(0.12)),
+        ),
+        Positioned(
+          bottom: -80,
+          left: -50,
+          child: _Circle(size: 260, color: _kCyan.withOpacity(0.10)),
+        ),
+        Positioned(
+          top: 140,
+          left: -30,
+          child: _Circle(size: 100, color: _kIndigo.withOpacity(0.07)),
+        ),
+      ],
+    );
+  }
+}
+
+class _Circle extends StatelessWidget {
+  const _Circle({required this.size, required this.color});
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      );
 }

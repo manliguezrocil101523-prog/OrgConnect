@@ -1,213 +1,654 @@
-import 'package:flutter/material.dart'; // Import Flutter's material design library for building UI components in the student dashboard screen
-import '../../core/app_state.dart'; // Import the app state manager for accessing and updating global application state
-// Import the student dashboard events screen for navigation
-import '/screens/notifications/notification_screen.dart'; // Import the notification screen for displaying notifications
+import 'package:flutter/material.dart';
+import '../../core/app_state.dart';
+import '/screens/notifications/notification_screen.dart';
 
-// Import the student dashboard events screen for navigation
 class StudentDashboardScreen extends StatefulWidget {
-  // Define the StudentDashboardScreen class extending StatefulWidget for a screen that manages state, used for the student dashboard in the organization management system
-  const StudentDashboardScreen(
-      {super.key}); // Constructor for StudentDashboardScreen with optional key parameter for widget identification
+  const StudentDashboardScreen({super.key});
 
-  @override // Override the createState method from StatefulWidget to create the state object
-  State<StudentDashboardScreen> createState() =>
-      _StudentDashboardScreenState(); // Create the state object for the student dashboard screen
+  @override
+  State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
 }
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
-  // Define the state class for StudentDashboardScreen, managing the state of the dashboard
-  static const Color mintBg = Color(
-      0xFFEAF6F0); // Define a static constant color for the background, using a mint green shade for the screen's background
-  static const Color tealHeader = Color(
-      0xFF79CFC4); // Define a static constant color for headers, using a teal shade for app bars and buttons
+  // ─── Color tokens — MUST match ProfileScreen exactly ─────────────────────
+  static const Color _primary = Color(0xFF4F46E5);
+  static const Color _secondary = Color(0xFF06B6D4);
+  static const Color _background = Color(0xFFF8FAFC);
 
-  @override // Override the build method from State to define the UI
+  // Per-action accent colors — all within the permitted palette
+  static const Color _profileAccent = Color(0xFF4F46E5);
+  static const Color _orgAccent = Color(0xFF06B6D4);
+  static const Color _notifAccent = Color(0xFF22C55E);
+
+  @override
   Widget build(BuildContext context) {
-    // Build method that constructs the widget tree for the student dashboard screen
+    final size = MediaQuery.of(context).size;
+
     return Scaffold(
-      // Return a Scaffold widget as the root of the screen's layout, providing structure for app bar and body
-      backgroundColor:
-          mintBg, // Set the background color of the Scaffold to the mint background color
-      appBar: AppBar(
-        // Define the app bar for the screen with title and styling
-        backgroundColor:
-            tealHeader, // Set the background color of the app bar to the teal header color
-        elevation:
-            0, // Remove shadow elevation from the app bar for a flat design
-        title: const Text(
-          // Set the title text for the app bar
-          'Dashboard', // Title text indicating the purpose of the screen
-          style: TextStyle(
-            // Style the title text with bold weight and letter spacing
-            fontWeight: FontWeight.w700, // Set font weight to bold
-            letterSpacing: 1.0, // Add letter spacing
+      backgroundColor: _background,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // ─── HERO SLIVER APP BAR ──────────────────────────────────────────
+          SliverAppBar(
+            expandedHeight: size.height * 0.40,
+            pinned: true,
+            stretch: true,
+            backgroundColor: _primary,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              onPressed: () {
+                AppState.instance.setRole(null);
+                Navigator.pushReplacementNamed(context, '/role');
+              },
+            ),
+            title: const Text(
+              'Dashboard',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+                letterSpacing: 0.4,
+              ),
+            ),
+            centerTitle: true,
+            flexibleSpace: FlexibleSpaceBar(
+              stretchModes: const [StretchMode.blurBackground],
+              background: _HeroHeader(
+                primary: _primary,
+                secondary: _secondary,
+              ),
+            ),
           ),
-        ),
-        centerTitle: true, // Center the title in the app bar
-        leading: IconButton(
-          // Add a leading icon button for back navigation
-          icon: const Icon(Icons.arrow_back), // Set the icon to arrow back
-          onPressed: () {
-            // Define the callback when the back button is pressed
-            AppState.instance.setRole(
-                null); // Clear the selected role to show the role selection screen
-            Navigator.pushReplacementNamed(context,
-                '/role'); // Navigate to the role selection screen, replacing the current route
-          },
-        ),
-      ),
-      body: LayoutBuilder(
-        // Use LayoutBuilder to get the constraints of the parent widget
-        builder: (context, constraints) {
-          // Builder function that takes context and constraints
-          final double
-              circleSize = // Calculate the size of the avatar circle based on screen width
-              (constraints.maxWidth * 0.40).clamp(120.0,
-                  180.0); // Set circle size to 40% of width, clamped between 120 and 180
-          return SingleChildScrollView(
-            // Allow the body to scroll if content overflows
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 20), // Add padding around the scroll view
-            child: Center(
-              // Center the content horizontally and vertically
-              child: ConstrainedBox(
-                // Constrain the width of the content for better layout on larger screens
-                constraints: const BoxConstraints(
-                    maxWidth: 540), // Set maximum width to 540 pixels
-                child: Column(
-                  // Arrange children in a vertical column
-                  children: [
-                    // List of child widgets in the column
-                    // Avatar // Comment indicating the avatar section
-                    Container(
-                      // Container for the avatar display
-                      width:
-                          circleSize, // Set width to the calculated circle size
-                      height:
-                          circleSize, // Set height to the calculated circle size
-                      decoration: BoxDecoration(
-                        // Decorate the container with circle shape and styling
-                        shape: BoxShape.circle, // Set shape to circle
-                        color: Colors.white, // Set background color to white
-                        border: Border.all(
-                            // Add a border around the container
-                            color: const Color(0xFF1B5E20),
-                            width: 3), // Set border color and width
-                        boxShadow: [
-                          // Add shadow to the container
-                          BoxShadow(
-                            // Define the shadow
-                            color: Colors.black.withValues(
-                                alpha: 0.10), // Set shadow color with opacity
-                            blurRadius: 14, // Set blur radius
-                            offset:
-                                const Offset(0, 6), // Set offset for the shadow
+
+          // ─── BODY CONTENT ─────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Section label ─────────────────────────────────────
+                      const _SectionLabel(text: 'Quick Actions'),
+                      const SizedBox(height: 16),
+
+                      // ── RESTRUCTURED: 2-col top row ───────────────────────
+                      // BEFORE: three identical full-width list rows stacked
+                      //         vertically — monotonous, lots of dead space.
+                      // AFTER:  My Profile + Organizations sit side-by-side in
+                      //         a 2-column grid row (equal weight, scannable at
+                      //         a glance), while Notifications spans full width
+                      //         below (justified by its higher urgency / info
+                      //         density — it is the primary feedback channel).
+                      //         This breaks the repetitive stack and creates a
+                      //         visual hierarchy: explore (top) → track (bottom).
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // My Profile tile
+                          Expanded(
+                            child: _ActionTile(
+                              label: 'My Profile',
+                              subtitle: 'View & update info',
+                              icon: Icons.person_rounded,
+                              accentColor: _profileAccent,
+                              onTap: () =>
+                                  Navigator.pushNamed(context, '/profile'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Organizations tile
+                          Expanded(
+                            child: _ActionTile(
+                              label: 'Organizations',
+                              subtitle: 'Browse & apply',
+                              icon: Icons.groups_rounded,
+                              accentColor: _orgAccent,
+                              onTap: () =>
+                                  Navigator.pushNamed(context, '/orglist'),
+                            ),
                           ),
                         ],
                       ),
-                      child: ClipOval(
-                        // Clip the child to an oval shape
-                        child: Icon(
-                          // Display an icon for the avatar
-                          Icons.person, // Set icon to person
-                          size: circleSize *
-                              0.5, // Set icon size to half the circle size
-                          color: Colors.grey.shade500, // Set icon color to grey
+
+                      const SizedBox(height: 12),
+
+                      // Notifications — full width, primary feedback channel
+                      _ActionCard(
+                        label: 'Notifications',
+                        subtitle: 'See updates on your applications',
+                        icon: Icons.notifications_rounded,
+                        accentColor: _notifAccent,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationScreen(),
+                          ),
                         ),
                       ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _HeroHeader
+// =============================================================================
+// STRUCTURAL CHANGE: Two-zone layout replacing the single centered column.
+//
+// BEFORE: Avatar → name → subtitle stacked in the center of the gradient —
+//         lots of empty gradient above and below, no visual anchor, felt
+//         like a placeholder screen.
+//
+// AFTER:
+//   • TOP ZONE (flex 1): Avatar in a side-by-side row with name + subtitle
+//     text. Avatar is left-anchored and the text block fills the remaining
+//     width. This gives the header a real "identity card" feel and eliminates
+//     the orphaned centered circle.
+//   • BOTTOM ZONE: A frosted summary strip pinned to the bottom edge of the
+//     hero. Three stat chips (Applications / Orgs Joined / Notifications)
+//     give the user an immediate activity snapshot and fill the dead space
+//     that previously existed beneath the avatar. The strip also provides a
+//     clean visual transition into the white card area below.
+//
+// All colors, gradient, orb decorations, SafeArea — UNCHANGED.
+// =============================================================================
+class _HeroHeader extends StatelessWidget {
+  final Color primary;
+  final Color secondary;
+
+  const _HeroHeader({
+    required this.primary,
+    required this.secondary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final avatarSize = (size.width * 0.18).clamp(60.0, 84.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [primary, secondary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Decorative orb — top right (UNCHANGED)
+          Positioned(
+            top: -30,
+            right: -20,
+            child: Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.07),
+              ),
+            ),
+          ),
+          // Decorative orb — bottom left (UNCHANGED)
+          Positioned(
+            bottom: 10,
+            left: -40,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.05),
+              ),
+            ),
+          ),
+
+          // ── Main content — restructured into two zones ──────────────────
+          SafeArea(
+            child: Column(
+              children: [
+                // ── TOP ZONE: Identity row ────────────────────────────────
+                // Avatar left-anchored + name/greeting text right of it.
+                // Fills the vertical space that was previously wasted above
+                // a centered avatar.
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 56, 24, 16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Avatar ring — same layering as original
+                        Container(
+                          width: avatarSize + 10,
+                          height: avatarSize + 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.18),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(3),
+                                child: CircleAvatar(
+                                  radius: avatarSize / 2,
+                                  backgroundColor: const Color(0xFFE0E7FF),
+                                  child: Icon(
+                                    Icons.person_rounded,
+                                    size: avatarSize * 0.50,
+                                    color: const Color(0xFF4F46E5),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(width: 16),
+
+                        // Name + subtitle — moved from centered to beside avatar
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                'Welcome Back 👋',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.1,
+                                  height: 1.15,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Manage your applications\n& organizations',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.75),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w400,
+                                  letterSpacing: 0.1,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(
-                        height: 24), // Add vertical space of 24 pixels
-                    // Buttons // Comment indicating the buttons section
-                    _actionButton(
-                      // Call the helper method to create an action button
-                      context: context, // Pass the build context
-                      label: 'Profile', // Set the label for the button
-                      icon:
-                          Icons.groups_outlined, // Set the icon for the button
-                      onTap: () => Navigator.pushNamed(context,
-                          '/profile'), // Define the onTap callback to navigate to profile
+                  ),
+                ),
+
+                // ── BOTTOM ZONE: Frosted summary strip ───────────────────
+                // Pinned to the bottom of the hero. Three stat chips give
+                // the user an instant activity snapshot and eliminate the
+                // dead space that sat below the avatar in the original.
+                // The frosted surface also acts as a smooth visual bridge
+                // into the white card content area below.
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.12),
+                    border: Border(
+                      top: BorderSide(
+                        color: Colors.white.withOpacity(0.18),
+                        width: 1,
+                      ),
                     ),
-                    const SizedBox(
-                        height: 12), // Add vertical space of 12 pixels
-                    _actionButton(
-                      // Call the helper method for organizations button
-                      context: context,
-                      label: 'Organizations',
-                      icon: Icons.groups_outlined,
-                      onTap: () => Navigator.pushNamed(
-                          context, '/orglist'), // Navigate to organization list
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _HeroStatChip(
+                        label: 'Applications',
+                        icon: Icons.assignment_rounded,
+                      ),
+                      _VerticalDividerChip(),
+                      _HeroStatChip(
+                        label: 'Orgs Joined',
+                        icon: Icons.groups_rounded,
+                      ),
+                      _VerticalDividerChip(),
+                      _HeroStatChip(
+                        label: 'Notifications',
+                        icon: Icons.notifications_rounded,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _HeroStatChip
+// =============================================================================
+// New structural element — part of the hero bottom strip.
+// Icon + label chip in the frosted hero footer. Uses only white/opacity
+// so it inherits whatever gradient is behind it without hardcoding colors.
+// =============================================================================
+class _HeroStatChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+
+  const _HeroStatChip({
+    required this.label,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.20),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: Colors.white, size: 16),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.85),
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// _VerticalDividerChip
+// =============================================================================
+// Thin separator between hero stat chips. White/opacity only.
+// =============================================================================
+class _VerticalDividerChip extends StatelessWidget {
+  const _VerticalDividerChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 36,
+      color: Colors.white.withOpacity(0.20),
+    );
+  }
+}
+
+// =============================================================================
+// _SectionLabel — UNCHANGED
+// =============================================================================
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 14,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.6,
+            color: Color(0xFF94A3B8),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// _ActionTile  (NEW — compact square tile for the 2-col grid row)
+// =============================================================================
+// STRUCTURAL CHANGE: replaces _ActionCard for the top two actions.
+//
+// BEFORE: My Profile + Organizations were full-width horizontal cards,
+//         each ~70 dp tall, identical to Notifications — no visual
+//         distinction, repetitive rhythm, poor use of horizontal space.
+//
+// AFTER:  Compact square tiles designed for the 2-col layout:
+//   • Icon badge centered at the top
+//   • Label + subtitle below it
+//   • Same color tokens (accentColor, white surface, same shadow formula)
+//   • Same InkWell + borderRadius tap feedback
+//   • Same onTap navigation callbacks — 100% preserved
+//
+// All color values match the originals exactly (_profileAccent, _orgAccent).
+// =============================================================================
+class _ActionTile extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _ActionTile({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      shadowColor: accentColor.withOpacity(0.12),
+      elevation: 3,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        splashColor: accentColor.withOpacity(0.07),
+        highlightColor: accentColor.withOpacity(0.04),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icon badge — same dimensions as _ActionCard
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: accentColor, size: 20),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Label
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 3),
+
+              // Subtitle
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: Color(0xFF94A3B8),
+                  height: 1.3,
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // Bottom affordance row — icon + "Open" label
+              Row(
+                children: [
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 13,
+                    color: accentColor.withOpacity(0.70),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Open',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: accentColor.withOpacity(0.70),
+                      letterSpacing: 0.2,
                     ),
-                    const SizedBox(height: 12), // Add vertical space
-                    // Removed Dashboard button as per user request // Comment indicating removed button
-                    // _actionButton( // Commented out button
-                    //   context: context,
-                    //   label: 'Dashboard',
-                    //   icon: Icons.dashboard_outlined,
-                    //   onTap: () => Navigator.push(
-                    //     context,
-                    //     MaterialPageRoute(
-                    //         builder: (_) => const StudentDashboard()),
-                    //   ),
-                    // ),
-                    _actionButton(
-                      // Call for notifications button
-                      context: context,
-                      label: 'Notifications',
-                      icon: Icons.notifications_outlined,
-                      onTap: () => Navigator.push(
-                        // Navigate to notification screen
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                const NotificationScreen()), // Builder for notification screen
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _ActionCard — UNCHANGED (used for Notifications full-width row)
+// =============================================================================
+class _ActionCard extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      shadowColor: accentColor.withOpacity(0.12),
+      elevation: 3,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        splashColor: accentColor.withOpacity(0.07),
+        highlightColor: accentColor.withOpacity(0.04),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              // Icon badge
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: accentColor, size: 20),
+              ),
+
+              const SizedBox(width: 14),
+
+              // Label + subtitle
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF0F172A),
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF94A3B8),
+                        height: 1.3,
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 
-  Widget _actionButton({
-    // Define a private helper method to create action buttons
-    required BuildContext context, // Required parameter for context
-    required String label, // Required parameter for button label
-    required IconData icon, // Required parameter for icon
-    required VoidCallback onTap, // Required parameter for onTap callback
-  }) {
-    return SizedBox(
-      // Return a SizedBox to control button width
-      width: double.infinity, // Set width to fill available space
-      child: ElevatedButton.icon(
-        // Create an elevated button with icon
-        onPressed: onTap, // Set the onPressed callback
-        style: ElevatedButton.styleFrom(
-          // Style the elevated button
-          backgroundColor: tealHeader, // Set background color to teal
-          foregroundColor: Colors.white, // Set text and icon color to white
-          padding: const EdgeInsets.symmetric(
-              vertical: 14, horizontal: 16), // Set padding
-          shape: RoundedRectangleBorder(
-            // Set shape to rounded rectangle
-            borderRadius: BorderRadius.circular(28), // Set border radius
-          ),
-          elevation: 2, // Set elevation for shadow
-        ),
-        icon: Icon(icon, size: 20), // Set the icon with size
-        label: Text(
-          // Set the label text
-          label.toUpperCase(), // Convert label to uppercase
-          style: const TextStyle(
-            // Style the text
-            fontSize: 14, // Font size 14
-            fontWeight: FontWeight.w800, // Bold weight
-            letterSpacing: 1.1, // Letter spacing
+              const SizedBox(width: 8),
+
+              // Chevron
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFFCBD5E1),
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),

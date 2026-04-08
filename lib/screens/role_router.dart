@@ -1,34 +1,34 @@
-import 'package:flutter/material.dart'; // Import Flutter's material design library for building UI components in the role router
-import '../core/app_state.dart'; // Import the app state manager for accessing selected role and organization data
-import 'Officer_Role/officer_rule_screen.dart'; // Import the officer rule screen (though not used in this file, perhaps for future use)
-import 'Admin_Role/admin_dashboard_screen.dart'; // Import the admin dashboard screen for admin role routing
-import 'Officer_Role/officer_dashboard_screen.dart'; // Import the officer dashboard screen for officer role routing
+import 'package:flutter/material.dart'; 
+import '../core/app_state.dart'; 
+import 'Officer_Role/officer_rule_screen.dart'; 
+import 'Admin_Role/admin_dashboard_screen.dart'; 
+import 'Officer_Role/officer_dashboard_screen.dart'; 
 
-class RoleRouter extends StatelessWidget { // Define the RoleRouter class extending StatelessWidget to route users based on their selected role in the organization management system
-  const RoleRouter({super.key}); // Constructor for RoleRouter using super.key for widget key
+class RoleRouter extends StatelessWidget { 
+  const RoleRouter({super.key}); 
 
-  @override // Override the build method to define the routing logic
-  Widget build(BuildContext context) { // Build method that returns the appropriate dashboard based on the selected role
-    final state = AppState.instance; // Get the singleton instance of AppState
-    // If no role selected → go back to home // Comment indicating check for no role
-    if (state.selectedRole == null) { // Check if no role is selected
-      return const Center(child: Text("No role selected")); // Return a centered text widget indicating no role selected
+  @override 
+  Widget build(BuildContext context) { 
+    final state = AppState.instance; 
+    
+    if (state.selectedRole == null) { 
+      return const Center(child: Text("No role selected")); 
     }
-    switch (state.selectedRole!) { // Switch statement on the selected role (non-null asserted)
-      case UserRole.student: // Case for student role
-        return const StudentDashboard(); // Return the student dashboard widget
-      case UserRole.admin: // Case for admin role
-        return const AdminDashboard(); // Return the admin dashboard widget
-      case UserRole.officer: // Case for officer role
-        final orgId = state.currentOfficerOrgId; // Get the current officer's organization ID
-        if (orgId == null) { // Check if no organization is selected for the officer
-          return const Center(child: Text("No organization selected")); // Return centered text for no organization
+    switch (state.selectedRole!) { 
+      case UserRole.student: 
+        return const StudentDashboard(); 
+      case UserRole.admin: 
+        return const AdminDashboard(); 
+      case UserRole.officer: 
+        final orgId = state.currentOfficerOrgId; 
+        if (orgId == null) { 
+          return const Center(child: Text("No organization selected")); 
         }
-        final org = state.organizations.firstWhere((o) => o.id == orgId); // Find the organization by ID
-        // 🚀 Route officer into the correct dashboard // Comment indicating routing to specific dashboard
-        return BaseOfficerDashboard( // Return the base officer dashboard
-          orgId: org.id, // Pass the organization ID
-          orgName: org.name, // Pass the organization name
+        final org = state.organizations.firstWhere((o) => o.id == orgId); 
+        
+        return BaseOfficerDashboard( 
+          orgId: org.id, 
+          orgName: org.name, 
         );
     }
   }

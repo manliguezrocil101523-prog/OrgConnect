@@ -2,357 +2,434 @@ import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 import 'org_form_screen.dart';
 
+// =============================================================================
+// DESIGN SYSTEM TOKENS
+// Centralized to prevent repeating across classes. 
+// Ideally, these should live in your Theme.of(context).
+// =============================================================================
+abstract class _AppColors {
+  static const primary = Color(0xFF4F46E5);
+  static const secondary = Color(0xFF06B6D4);
+  static const background = Color(0xFFF8FAFC);
+  static const textDark = Color(0xFF0F172A);
+  static const textMuted = Color(0xFF94A3B8);
+}
+
 class OrgDetailScreen extends StatefulWidget {
   final String orgId;
-
   const OrgDetailScreen({super.key, required this.orgId});
 
   @override
   State<OrgDetailScreen> createState() => _OrgDetailScreenState();
 }
 
-class _OrgDetailScreenState extends State<OrgDetailScreen> {
-  String _selectedTab = 'profile'; // 'profile' or 'apply'
+class _OrgDetailScreenState extends State<OrgDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+    // REMOVED: _tabCtrl.addListener(() => setState(() {})); 
+    // TabBarView handles its own state. Do not trigger global rebuilds.
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final org =
-        AppState.instance.organizations.firstWhere((o) => o.id == widget.orgId);
-    const darkGreen = Color(0xFF79CFC4);
+    // FIXED: Safe retrieval. Prevents 'StateError' crashes if org is missing.
+    // In a real app, you would show a "404 Not Found" widget if org == null.
+    final orgMatches = AppState.instance.organizations
+        .where((o) => o.id == widget.orgId);
+    
+    if (orgMatches.isEmpty) {
+      return const Scaffold(body: Center(child: Text('Organization not found')));
+    }
+    
+    final org = orgMatches.first;
 
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFE8F5E9),
-              Color(0xFFB2DFDB),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Fixed Header Section
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Column(
-                  children: [
-                    // Centered Back button
-                    Center(
-                      child: ElevatedButton.icon(
-                        onPressed: () =>
-                            Navigator.pushReplacementNamed(context, '/home'),
-                        icon: const Icon(Icons.arrow_back),
-                        label: const Text('Back'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: darkGreen,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    // Logo Container
-                    Container(
-                      height: 120,
-                      width: 120,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(60),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 6,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: Image.asset(
-                          org.logoAsset,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Organization Name
-                    Text(
-                      org.name,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green.shade900,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-                    // Tab Buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () =>
-                                setState(() => _selectedTab = 'profile'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _selectedTab == 'profile'
-                                  ? darkGreen
-                                  : Colors.white,
-                              foregroundColor: _selectedTab == 'profile'
-                                  ? Colors.white
-                                  : darkGreen,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              elevation: _selectedTab == 'profile' ? 2 : 0,
-                              side: _selectedTab == 'profile'
-                                  ? null
-                                  : BorderSide(
-                                      color: darkGreen.withValues(alpha: 0.4)),
-                            ),
-                            child: const Text(
-                              'About',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () =>
-                                setState(() => _selectedTab = 'apply'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _selectedTab == 'apply'
-                                  ? darkGreen
-                                  : Colors.white,
-                              foregroundColor: _selectedTab == 'apply'
-                                  ? Colors.white
-                                  : darkGreen,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              elevation: _selectedTab == 'apply' ? 2 : 0,
-                              side: _selectedTab == 'apply'
-                                  ? null
-                                  : BorderSide(
-                                      color: darkGreen.withValues(alpha: 0.4)),
-                            ),
-                            child: const Text(
-                              'Apply',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+      backgroundColor: _AppColors.background,
+      body: NestedScrollView(
+        physics: const BouncingScrollPhysics(),
+        headerSliverBuilder: (_, __) => [
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: MediaQuery.of(context).size.height * 0.38,
+            backgroundColor: _AppColors.primary,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white, size: 20),
+              onPressed: () {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                } else {
+                  Navigator.pushReplacementNamed(context, '/home');
+                }
+              },
+            ),
+            title: Text(
+              org.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                letterSpacing: 0.2,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            centerTitle: true,
+            flexibleSpace: FlexibleSpaceBar(
+              background: _OrgHeroHeader(org: org),
+            ),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(52),
+              child: Container(
+                color: Colors.white,
+                child: TabBar(
+                  controller: _tabCtrl,
+                  labelColor: _AppColors.primary,
+                  unselectedLabelColor: _AppColors.textMuted,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 14,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontWeight: FontWeight.w500, fontSize: 14,
+                  ),
+                  indicatorColor: _AppColors.primary,
+                  indicatorWeight: 3,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  tabs: const [
+                    Tab(text: 'About'),
+                    Tab(text: 'Apply'),
                   ],
                 ),
               ),
-              // Content Area
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+            ),
+          ),
+        ],
+        body: TabBarView(
+          controller: _tabCtrl,
+          children: [
+            _ProfileTab(org: org),
+            _ApplyTab(org: org, orgId: widget.orgId),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _OrgHeroHeader
+// =============================================================================
+class _OrgHeroHeader extends StatelessWidget {
+  final Organization org;
+  const _OrgHeroHeader({required this.org});
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final logoSize = (size.width * 0.22).clamp(72.0, 100.0);
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_AppColors.primary, _AppColors.secondary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(top: -30, right: -20,
+            child: Container(width: 180, height: 180,
+              decoration: BoxDecoration(shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.07)))),
+          Positioned(bottom: 30, left: -40,
+            child: Container(width: 130, height: 130,
+              decoration: BoxDecoration(shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.05)))),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 52),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: logoSize + 12, height: logoSize + 12,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.18),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: Colors.white),
+                        child: Padding(
+                          padding: const EdgeInsets.all(3),
+                          child: ClipOval(
+                            child: Image.asset(
+                              org.logoAsset,
+                              width: logoSize, height: logoSize,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => CircleAvatar(
+                                radius: logoSize / 2,
+                                backgroundColor: const Color(0xFFE0E7FF),
+                                child: const Icon(Icons.groups_rounded,
+                                    color: _AppColors.primary, size: 36),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: IndexedStack(
-                      index: _selectedTab == 'profile' ? 0 : 1,
-                      children: [
-                        _buildProfileContent(org),
-                        _buildApplyContent(org),
-                      ],
                     ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      org.name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white, fontSize: 18,
+                        fontWeight: FontWeight.w800, letterSpacing: 0.1,
+                      ),
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (org.acronym.isNotEmpty) ...[
+                        _HeaderPill(org.acronym),
+                        const SizedBox(width: 8),
+                      ],
+                      if (org.category.isNotEmpty)
+                        _HeaderPill(org.category),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderPill extends StatelessWidget {
+  final String text;
+  const _HeaderPill(this.text);
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    decoration: BoxDecoration(
+      color: Colors.white.withOpacity(0.18),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.white.withOpacity(0.30), width: 1),
+    ),
+    child: Text(text, style: const TextStyle(
+      color: Colors.white, fontSize: 11.5,
+      fontWeight: FontWeight.w600, letterSpacing: 0.3,
+    )),
+  );
+}
+
+// =============================================================================
+// _ProfileTab
+// =============================================================================
+class _ProfileTab extends StatelessWidget {
+  final Organization org;
+  const _ProfileTab({required this.org});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 540),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (org.about.isNotEmpty)
+                _InfoCard(icon: Icons.info_rounded, label: 'About', value: org.about, multiLine: true),
+              if (org.missionVision.isNotEmpty)
+                _InfoCard(icon: Icons.flag_rounded, label: 'Mission & Vision', value: org.missionVision, multiLine: true),
+              if (org.adviser.isNotEmpty)
+                _InfoCard(icon: Icons.person_rounded, label: 'Adviser', value: org.adviser),
+              if (org.contactEmail.isNotEmpty || org.contactPhone.isNotEmpty || org.socialLink.isNotEmpty)
+                _ContactCard(org: org),
+              if (org.officers.isNotEmpty)
+                _ListCard(
+                  icon: Icons.people_rounded,
+                  label: 'Officers',
+                  items: org.officers,
+                  accentColor: _AppColors.primary,
+                ),
+              if (org.activitiesHighlights.isNotEmpty)
+                _ListCard(
+                  icon: Icons.event_note_rounded,
+                  label: 'Activities & Events',
+                  items: org.activitiesHighlights,
+                  accentColor: _AppColors.secondary,
+                ),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildProfileContent(Organization org) {
+// =============================================================================
+// _ApplyTab
+// =============================================================================
+class _ApplyTab extends StatelessWidget {
+  final Organization org;
+  final String orgId;
+  const _ApplyTab({required this.org, required this.orgId});
+
+  @override
+  Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Organization Details
-          if (org.acronym.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                org.acronym,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF79CFC4),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 540),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [_AppColors.primary, _AppColors.secondary],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _AppColors.primary.withOpacity(0.28),
+                      blurRadius: 18, offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
+                child: Row(children: [
+                  Container(
+                    width: 46, height: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.20),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.assignment_rounded,
+                        color: Colors.white, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Join the Organization',
+                          style: TextStyle(color: Colors.white,
+                              fontSize: 15, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 3),
+                        Text('Apply to ${org.name}',
+                          style: TextStyle(
+                              color: Colors.white.withOpacity(0.78),
+                              fontSize: 12.5),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ]),
               ),
-            ),
-          const SizedBox(height: 16),
-
-          // Category/Type
-          if (org.category.isNotEmpty)
-            _buildInfoRow(
-              icon: Icons.category,
-              label: 'Category',
-              value: org.category,
-            ),
-
-          // Description
-          if (org.about.isNotEmpty)
-            _buildInfoRow(
-              icon: Icons.description,
-              label: 'About',
-              value: org.about,
-              isMultiLine: true,
-            ),
-
-          // Mission & Vision
-          if (org.missionVision.isNotEmpty)
-            _buildInfoRow(
-              icon: Icons.flag,
-              label: 'Mission & Vision',
-              value: org.missionVision,
-              isMultiLine: true,
-            ),
-
-          // Adviser/Head
-          if (org.adviser.isNotEmpty)
-            _buildInfoRow(
-              icon: Icons.person,
-              label: 'Adviser',
-              value: org.adviser,
-            ),
-
-          // Contact Information
-          if (org.contactEmail.isNotEmpty || org.contactPhone.isNotEmpty)
-            _buildContactInfo(org),
-
-          // Officers
-          if (org.officers.isNotEmpty) _buildOfficersList(org.officers),
-
-          // Activities/Events
-          if (org.activitiesHighlights.isNotEmpty)
-            _buildActivitiesList(org.activitiesHighlights),
-        ],
+              const SizedBox(height: 20),
+              // UNTOUCHED: original form widget
+              OrgFormContent(title: org.name, logoAsset: org.logoAsset),
+            ],
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _buildApplyContent(Organization org) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Apply to ${org.name}',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Fill out the application form below to join ${org.name}.',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Application Form Widget
-          _getApplyScreen(widget.orgId),
-        ],
-      ),
-    );
-  }
+// =============================================================================
+// Shared info row widgets
+// =============================================================================
 
-  Widget _buildInfoRow({
-    required IconData icon,
-    required String label,
-    required String value,
-    bool isMultiLine = false,
-  }) {
+class _InfoCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool multiLine;
+
+  const _InfoCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.multiLine = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: _AppColors.primary.withOpacity(0.05),
+              blurRadius: 16, offset: const Offset(0, 5)),
+          BoxShadow(color: Colors.black.withOpacity(0.02),
+              blurRadius: 4, offset: const Offset(0, 2)),
+        ],
+      ),
       child: Row(
-        crossAxisAlignment:
-            isMultiLine ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        crossAxisAlignment: multiLine
+            ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38, height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: _AppColors.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
-              icon,
-              color: const Color(0xFF79CFC4),
-              size: 20,
-            ),
+            child: Icon(icon, color: _AppColors.primary, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                Text(label.toUpperCase(), style: const TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700,
+                  color: _AppColors.textMuted, letterSpacing: 0.8,
+                )),
                 const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                    height: isMultiLine ? 1.4 : 1.2,
-                  ),
-                ),
+                Text(value, style: TextStyle(
+                  fontSize: 13.5, fontWeight: FontWeight.w500,
+                  color: _AppColors.textDark,
+                  height: multiLine ? 1.5 : 1.2,
+                )),
               ],
             ),
           ),
@@ -360,68 +437,53 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
       ),
     );
   }
+}
 
-  Widget _buildContactInfo(Organization org) {
+class _ContactCard extends StatelessWidget {
+  final Organization org;
+  const _ContactCard({required this.org});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: _AppColors.primary.withOpacity(0.05),
+              blurRadius: 16, offset: const Offset(0, 5)),
+        ],
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38, height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: _AppColors.secondary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(
-              Icons.contact_mail,
-              color: Color(0xFF79CFC4),
-              size: 20,
-            ),
+            child: const Icon(Icons.contact_mail_rounded,
+                color: _AppColors.secondary, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Contact Information',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
+                const Text('CONTACT', style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700,
+                  color: _AppColors.textMuted, letterSpacing: 0.8,
+                )),
+                const SizedBox(height: 6),
                 if (org.contactEmail.isNotEmpty)
-                  Text(
-                    'Email: ${org.contactEmail}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  _contactRow(Icons.email_rounded, org.contactEmail),
                 if (org.contactPhone.isNotEmpty)
-                  Text(
-                    'Phone: ${org.contactPhone}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  _contactRow(Icons.phone_rounded, org.contactPhone),
                 if (org.socialLink.isNotEmpty)
-                  Text(
-                    'Social: ${org.socialLink}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  _contactRow(Icons.link_rounded, org.socialLink),
               ],
             ),
           ),
@@ -430,116 +492,89 @@ class _OrgDetailScreenState extends State<OrgDetailScreen> {
     );
   }
 
-  Widget _buildOfficersList(List<String> officers) {
+  Widget _contactRow(IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 5),
+    child: Row(children: [
+      Icon(icon, size: 13, color: _AppColors.textMuted),
+      const SizedBox(width: 6),
+      Expanded(child: Text(text, style: const TextStyle(
+        fontSize: 13, color: _AppColors.textDark, fontWeight: FontWeight.w500,
+      ), overflow: TextOverflow.ellipsis)),
+    ]),
+  );
+}
+
+class _ListCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final List<String> items;
+  final Color accentColor;
+
+  const _ListCard({
+    required this.icon,
+    required this.label,
+    required this.items,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: accentColor.withOpacity(0.05),
+              blurRadius: 16, offset: const Offset(0, 5)),
+        ],
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38, height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: accentColor.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(
-              Icons.people,
-              color: Color(0xFF79CFC4),
-              size: 20,
-            ),
+            child: Icon(icon, color: accentColor, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Officers',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                    letterSpacing: 0.5,
+                Text(label.toUpperCase(), style: const TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700,
+                  color: _AppColors.textMuted, letterSpacing: 0.8,
+                )),
+                const SizedBox(height: 8),
+                ...items.map((item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 6, height: 6,
+                        margin: const EdgeInsets.only(top: 5, right: 8),
+                        decoration: BoxDecoration(
+                          color: accentColor, shape: BoxShape.circle,
+                        ),
+                      ),
+                      Expanded(child: Text(item, style: const TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w500,
+                        color: _AppColors.textDark, height: 1.4,
+                      ))),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 4),
-                ...officers.map(
-                  (officer) => Text(
-                    '• $officer',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
+                )),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildActivitiesList(List<String> activities) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFF79CFC4).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.event_note,
-              color: Color(0xFF79CFC4),
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Activities & Events',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                ...activities.map(
-                  (activity) => Text(
-                    '• $activity',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _getApplyScreen(String orgId) {
-    final org =
-        AppState.instance.organizations.firstWhere((o) => o.id == orgId);
-    return OrgFormContent(
-      title: org.name,
-      logoAsset: org.logoAsset,
     );
   }
 }

@@ -1,214 +1,418 @@
-import 'package:flutter/material.dart'; // Import Flutter's material design library for building UI components in the admin authorization screen
-import 'admin_dashboard_screen.dart'; // Import the admin dashboard screen for navigation after authorization
+import 'package:flutter/material.dart';
+import 'admin_dashboard_screen.dart';
 
+// ── Palette (matches design system) ──────────────────────────────────────────
+const _kIndigo = Color(0xFF4F46E5);
+const _kCyan = Color(0xFF06B6D4);
+const _kIndigoSoft = Color(0xFFEEF2FF);
+const _kBg = Color(0xFFF5F7FF);
+const _kText = Color(0xFF1E1B4B);
+const _kSubText = Color(0xFF6366F1);
+const _kWhite = Colors.white;
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 class AdminAuthorizationScreen extends StatefulWidget {
-  // Define the AdminAuthorizationScreen class extending StatefulWidget for a screen that manages state, used for admin password authentication in the organization management system
-  const AdminAuthorizationScreen(
-      {super.key}); // Constructor for AdminAuthorizationScreen with optional key parameter for widget identification
+  const AdminAuthorizationScreen({super.key});
 
-  @override // Override the createState method from StatefulWidget to create the state object
+  @override
   State<AdminAuthorizationScreen> createState() =>
-      _AdminAuthorizationScreenState(); // Create the state object for the admin authorization screen
+      _AdminAuthorizationScreenState();
 }
 
-class _AdminAuthorizationScreenState extends State<AdminAuthorizationScreen> {
-  // Define the state class for AdminAuthorizationScreen, managing the state of the authorization process
-  static const Color mintBg = Color(
-      0xFFEAF6F0); // Define a static constant color for the background, using a mint green shade for the screen's background
-  static const Color tealHeader = Color(
-      0xFF79CFC4); // Define a static constant color for headers, using a teal shade for app bars and buttons
+class _AdminAuthorizationScreenState extends State<AdminAuthorizationScreen>
+    with SingleTickerProviderStateMixin {
+  final _passwordController = TextEditingController();
 
-  final TextEditingController _passwordController =
-      TextEditingController(); // Create a text editing controller for the password input field
-  bool _isAuthenticating =
-      false; // Boolean flag to track if authentication is in progress
-  String _errorMessage = ''; // String to hold any error message for display
+  bool _isLoading = false;
+  bool _obscure = true;
+  String _error = '';
 
-  @override // Override the build method from State to define the UI
-  Widget build(BuildContext context) {
-    // Build method that constructs the widget tree for the admin authorization screen
-    return Scaffold(
-      // Return a Scaffold widget as the root of the screen's layout, providing structure for app bar and body
-      backgroundColor:
-          mintBg, // Set the background color of the Scaffold to the mint background color
-      appBar: AppBar(
-        // Define the app bar for the screen with title and styling
-        backgroundColor:
-            tealHeader, // Set the background color of the app bar to the teal header color
-        elevation:
-            0, // Remove shadow elevation from the app bar for a flat design
-        title: const Text(
-          // Set the title text for the app bar
-          'Admin Authorization', // Title text indicating the purpose of the screen
-          style: TextStyle(
-              fontWeight: FontWeight.w700,
-              letterSpacing:
-                  1.0), // Style the title text with bold weight and letter spacing
-        ),
-        centerTitle: true, // Center the title in the app bar
-        leading: IconButton(
-          // Add a leading icon button for back navigation
-          icon: const Icon(Icons.arrow_back), // Set the icon to arrow back
-          onPressed: () => Navigator.of(context)
-              .pop(), // Define the callback to pop the current route
-        ),
-      ),
-      body: Center(
-        // Center the body content vertically and horizontally
-        child: Padding(
-          // Add padding around the body content
-          padding: const EdgeInsets.all(
-              20.0), // Set padding of 20 pixels on all sides
-          child: ConstrainedBox(
-            // Constrain the width of the content for better layout on larger screens
-            constraints: const BoxConstraints(
-                maxWidth: 400), // Set maximum width to 400 pixels
-            child: Column(
-              // Arrange children in a vertical column
-              mainAxisAlignment: MainAxisAlignment
-                  .center, // Center the column's children vertically
-              children: [
-                // List of child widgets in the column
-                const Icon(
-                  // Display an icon for admin panel
-                  Icons
-                      .admin_panel_settings_outlined, // Set icon to admin panel settings
-                  size: 80, // Set icon size to 80
-                  color: tealHeader, // Set icon color to teal header
-                ),
-                const SizedBox(height: 24), // Add vertical space of 24 pixels
-                const Text(
-                  // Display the title text
-                  'Enter Admin Password', // Title text for password entry
-                  style: TextStyle(
-                    // Style the title text
-                    fontSize: 20, // Font size of 20
-                    fontWeight: FontWeight.w700, // Bold font weight
-                    color: Colors.black87, // Text color
-                  ),
-                ),
-                const SizedBox(height: 8), // Add vertical space of 8 pixels
-                const Text(
-                  // Display the password hint
-                  'Password: 0000', // Hint text showing the password
-                  style: TextStyle(
-                    // Style the hint text
-                    fontSize: 14, // Font size of 14
-                    color: Colors.grey, // Text color grey
-                  ),
-                ),
-                const SizedBox(height: 32), // Add vertical space of 32 pixels
-                TextField(
-                  // Create a text field for password input
-                  controller:
-                      _passwordController, // Connect the controller to the text field
-                  decoration: InputDecoration(
-                    // Define the decoration for the text field
-                    labelText: 'Admin Password', // Label text for the field
-                    border: OutlineInputBorder(
-                      // Set border to outline input border
-                      borderRadius:
-                          BorderRadius.circular(12), // Border radius of 12
-                    ),
-                    filled: true, // Fill the background
-                    fillColor: Colors.white, // Fill color white
-                    errorText: _errorMessage.isNotEmpty
-                        ? _errorMessage
-                        : null, // Show error text if present
-                  ),
-                  obscureText: true, // Hide the text for password
-                  textAlign: TextAlign.center, // Center the text
-                  style: const TextStyle(
-                      fontSize: 18), // Style the text with font size 18
-                ),
-                const SizedBox(height: 24), // Add vertical space of 24 pixels
-                SizedBox(
-                  // Container for the button with full width
-                  width:
-                      double.infinity, // Set width to infinity for full width
-                  child: ElevatedButton(
-                    // Create an elevated button for authentication
-                    onPressed: _isAuthenticating
-                        ? null
-                        : _authenticate, // Disable if authenticating, else call authenticate
-                    style: ElevatedButton.styleFrom(
-                      // Style the elevated button
-                      backgroundColor: tealHeader, // Background color teal
-                      foregroundColor: Colors.white, // Text color white
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 16), // Vertical padding of 16
-                      shape: RoundedRectangleBorder(
-                        // Shape with rounded corners
-                        borderRadius:
-                            BorderRadius.circular(12), // Border radius of 12
-                      ),
-                      elevation: 2, // Elevation for shadow
-                    ),
-                    child:
-                        _isAuthenticating // Conditional child based on authenticating state
-                            ? const SizedBox(
-                                // Show loading indicator if authenticating
-                                width: 20, // Width of the indicator
-                                height: 20, // Height of the indicator
-                                child: CircularProgressIndicator(
-                                  // Circular progress indicator
-                                  color: Colors.white, // Indicator color white
-                                  strokeWidth: 2, // Stroke width of 2
-                                ),
-                              )
-                            : const Text(
-                                // Show text if not authenticating
-                                'ACCESS ADMIN DASHBOARD', // Button text
-                                style: TextStyle(
-                                  // Style the button text
-                                  fontSize: 16, // Font size 16
-                                  fontWeight: FontWeight.w800, // Bold weight
-                                  letterSpacing: 1.1, // Letter spacing
-                                ),
-                              ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+  late final AnimationController _shakeController;
+  late final Animation<double> _shakeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _shakeController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _shakeAnimation = Tween<double>(begin: 0, end: 10).animate(
+      CurvedAnimation(
+        parent: _shakeController,
+        curve: Curves.elasticIn,
       ),
     );
   }
 
-  void _authenticate() async {
-    // Define the authenticate method to handle password verification
+  @override
+  void dispose() {
+    _shakeController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  // ── Auth logic (unchanged) ────────────────────────────────────────────────
+  Future<void> _login() async {
     setState(() {
-      // Update the state to show authenticating
-      _isAuthenticating = true; // Set authenticating to true
-      _errorMessage = ''; // Clear any error message
+      _isLoading = true;
+      _error = '';
     });
-    await Future.delayed(const Duration(
-        milliseconds:
-            500)); // Delay for 500 milliseconds to simulate processing
+
+    await Future.delayed(const Duration(milliseconds: 600));
+
     if (_passwordController.text == '0000') {
-      // Check if the entered password is correct
-      if (mounted) {
-        // Check if the widget is still mounted
-        Navigator.pushReplacement(
-          // Navigate to admin dashboard, replacing current route
-          context, // BuildContext
-          MaterialPageRoute(
-            // MaterialPageRoute for navigation
-            builder: (context) =>
-                const AdminDashboard(), // Builder returning admin dashboard
-          ),
-        );
-      }
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminDashboard()),
+      );
     } else {
-      // If password is incorrect
+      _shakeController.forward(from: 0);
       setState(() {
-        // Update the state to show error
-        _isAuthenticating = false; // Set authenticating to false
-        _errorMessage =
-            'Invalid password. Please try again.'; // Set error message
-        _passwordController.clear(); // Clear the password field
+        _isLoading = false;
+        _error = 'Incorrect password. Please try again.';
+        _passwordController.clear();
       });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Authentication Failed'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
     }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _kBg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _BackButton(),
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 16,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: AnimatedBuilder(
+                      animation: _shakeAnimation,
+                      builder: (_, child) => Transform.translate(
+                        offset: Offset(_shakeAnimation.value, 0),
+                        child: child,
+                      ),
+                      child: Column(
+                        children: [
+                          _IconBadge(),
+                          const SizedBox(height: 24),
+                          _HeaderText(),
+                          const SizedBox(height: 36),
+                          _FormCard(
+                            passwordController: _passwordController,
+                            obscure: _obscure,
+                            error: _error,
+                            isLoading: _isLoading,
+                            onToggleObscure: () =>
+                                setState(() => _obscure = !_obscure),
+                            onLogin: _login,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Back button ───────────────────────────────────────────────────────────────
+class _BackButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 18,
+            ),
+            color: _kIndigo,
+            style: IconButton.styleFrom(
+              backgroundColor: _kIndigoSoft,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Icon badge ────────────────────────────────────────────────────────────────
+class _IconBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [_kIndigo, _kCyan],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: _kIndigo.withOpacity(0.30),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.admin_panel_settings_rounded,
+        color: _kWhite,
+        size: 38,
+      ),
+    );
+  }
+}
+
+// ── Header text ───────────────────────────────────────────────────────────────
+class _HeaderText extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Text(
+          'Admin Access',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: _kText,
+            letterSpacing: -0.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Enter your credentials to continue',
+          style: TextStyle(
+            fontSize: 14,
+            color: _kSubText.withOpacity(0.80),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Form card ─────────────────────────────────────────────────────────────────
+class _FormCard extends StatelessWidget {
+  const _FormCard({
+    required this.passwordController,
+    required this.obscure,
+    required this.error,
+    required this.isLoading,
+    required this.onToggleObscure,
+    required this.onLogin,
+  });
+
+  final TextEditingController passwordController;
+  final bool obscure;
+  final String error;
+  final bool isLoading;
+  final VoidCallback onToggleObscure;
+  final VoidCallback onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+      decoration: BoxDecoration(
+        color: _kWhite,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: _kIndigo.withOpacity(0.08),
+            blurRadius: 32,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Divider label
+          Row(
+            children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'PASSWORD',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _kSubText.withOpacity(0.60),
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              const Expanded(child: Divider()),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Password field
+          TextField(
+            controller: passwordController,
+            obscureText: obscure,
+            style: const TextStyle(
+              fontSize: 15,
+              color: _kText,
+              letterSpacing: 2,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Enter password',
+              hintStyle: TextStyle(
+                color: _kSubText.withOpacity(0.50),
+                letterSpacing: 0,
+                fontSize: 14,
+              ),
+              filled: true,
+              fillColor: _kIndigoSoft,
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                size: 20,
+                color: _kSubText,
+              ),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 20,
+                  color: _kSubText,
+                ),
+                onPressed: onToggleObscure,
+              ),
+              errorText: error.isNotEmpty ? error : null,
+              errorStyle: const TextStyle(fontSize: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: _kIndigo, width: 1.6),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(
+                  color: Colors.redAccent,
+                  width: 1.4,
+                ),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(
+                  color: Colors.redAccent,
+                  width: 1.6,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Login button
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [_kIndigo, _kCyan],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kIndigo.withOpacity(0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: ElevatedButton(
+                onPressed: isLoading ? null : onLogin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  foregroundColor: _kWhite,
+                  disabledBackgroundColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: isLoading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: _kWhite,
+                        ),
+                      )
+                    : const Text(
+                        'Authenticate',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
