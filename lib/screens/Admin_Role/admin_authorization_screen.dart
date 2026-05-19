@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'admin_dashboard_screen.dart';
 
 // ── Palette (matches design system) ──────────────────────────────────────────
@@ -21,11 +23,13 @@ class AdminAuthorizationScreen extends StatefulWidget {
 
 class _AdminAuthorizationScreenState extends State<AdminAuthorizationScreen>
     with SingleTickerProviderStateMixin {
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
   bool _obscure = true;
-  String _error = '';
+  String _emailError = '';
+  String _passwordError = '';
 
   late final AnimationController _shakeController;
   late final Animation<double> _shakeAnimation;
@@ -48,44 +52,124 @@ class _AdminAuthorizationScreenState extends State<AdminAuthorizationScreen>
   @override
   void dispose() {
     _shakeController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  // ── Auth logic (unchanged) ────────────────────────────────────────────────
-  Future<void> _login() async {
+  // ── Validation ────────────────────────────────────────────────────────────
+  bool _validate() {
+    String emailError = '';
+    String passwordError = '';
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty) {
+      emailError = 'Email is required.';
+    } else if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      emailError = 'Please enter a valid email address.';
+    }
+
+    if (password.isEmpty) {
+      passwordError = 'Password is required.';
+    }
+
     setState(() {
-      _isLoading = true;
-      _error = '';
+      _emailError = emailError;
+      _passwordError = passwordError;
     });
 
-    await Future.delayed(const Duration(milliseconds: 600));
+    return emailError.isEmpty && passwordError.isEmpty;
+  }
 
-    if (_passwordController.text == '0000') {
+  // ── Auth logic — ready for Supabase ──────────────────────────────────────
+  Future<void> _login() async {
+    if (!_validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _emailError = '';
+      _passwordError = '';
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Login using Supabase Auth
+      final response = await supabase.auth.signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      final user = response.user;
+
+      if (user == null) {
+        throw Exception('Login failed');
+      }
+
+      // Get profile from database
+      final profile = await supabase
+          .from('profiles')
+          .select('role, email')
+          .eq('id', user.id)
+          .single();
+
+      // Check if user is admin
+      if (profile['role'] != 'admin') {
+        await supabase.auth.signOut();
+
+        _onAuthFailure(
+          message: 'Access denied. Admin account only.',
+        );
+        return;
+      }
+
       if (!mounted) return;
+
+      // SUCCESS → Go to admin dashboard
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const AdminDashboard()),
-      );
-    } else {
-      _shakeController.forward(from: 0);
-      setState(() {
-        _isLoading = false;
-        _error = 'Incorrect password. Please try again.';
-        _passwordController.clear();
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Authentication Failed'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+        MaterialPageRoute(
+          builder: (_) => const AdminDashboard(),
         ),
       );
+    } on AuthException catch (e) {
+      _onAuthFailure(
+        message: e.message,
+      );
+    } catch (e) {
+      _onAuthFailure(
+        message: 'Something went wrong.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  // ── Auth failure — centralised for easy Supabase error mapping later ──────
+  void _onAuthFailure(
+      {String message = 'Authentication failed. Please try again.'}) {
+    _shakeController.forward(from: 0);
+    setState(() {
+      _passwordError = message;
+      _passwordController.clear();
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Authentication Failed'),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -119,9 +203,11 @@ class _AdminAuthorizationScreenState extends State<AdminAuthorizationScreen>
                           _HeaderText(),
                           const SizedBox(height: 36),
                           _FormCard(
+                            emailController: _emailController,
                             passwordController: _passwordController,
                             obscure: _obscure,
-                            error: _error,
+                            emailError: _emailError,
+                            passwordError: _passwordError,
                             isLoading: _isLoading,
                             onToggleObscure: () =>
                                 setState(() => _obscure = !_obscure),
@@ -231,20 +317,68 @@ class _HeaderText extends StatelessWidget {
 // ── Form card ─────────────────────────────────────────────────────────────────
 class _FormCard extends StatelessWidget {
   const _FormCard({
+    required this.emailController,
     required this.passwordController,
     required this.obscure,
-    required this.error,
+    required this.emailError,
+    required this.passwordError,
     required this.isLoading,
     required this.onToggleObscure,
     required this.onLogin,
   });
 
+  final TextEditingController emailController;
   final TextEditingController passwordController;
   final bool obscure;
-  final String error;
+  final String emailError;
+  final String passwordError;
   final bool isLoading;
   final VoidCallback onToggleObscure;
   final VoidCallback onLogin;
+
+  // Shared input decoration factory to keep fields consistent.
+  InputDecoration _fieldDecoration({
+    required String hint,
+    required IconData prefixIcon,
+    required String? error,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(
+        color: _kSubText.withOpacity(0.50),
+        letterSpacing: 0,
+        fontSize: 14,
+      ),
+      filled: true,
+      fillColor: _kIndigoSoft,
+      prefixIcon: Icon(prefixIcon, size: 20, color: _kSubText),
+      suffixIcon: suffix,
+      errorText: (error != null && error.isNotEmpty) ? error : null,
+      errorStyle: const TextStyle(fontSize: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _kIndigo, width: 1.6),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1.4),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1.6),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,14 +403,14 @@ class _FormCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Divider label
+          // ── Divider label ───────────────────────────────────────────────
           Row(
             children: [
               const Expanded(child: Divider()),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
-                  'PASSWORD',
+                  'CREDENTIALS',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -290,30 +424,38 @@ class _FormCard extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Password field
+          // ── Email field ─────────────────────────────────────────────────
+          TextField(
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autocorrect: false,
+            style: const TextStyle(fontSize: 15, color: _kText),
+            decoration: _fieldDecoration(
+              hint: 'Enter email address',
+              prefixIcon: Icons.email_outlined,
+              error: emailError,
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Password field ──────────────────────────────────────────────
           TextField(
             controller: passwordController,
             obscureText: obscure,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => onLogin(),
             style: const TextStyle(
               fontSize: 15,
               color: _kText,
               letterSpacing: 2,
             ),
-            decoration: InputDecoration(
-              hintText: 'Enter password',
-              hintStyle: TextStyle(
-                color: _kSubText.withOpacity(0.50),
-                letterSpacing: 0,
-                fontSize: 14,
-              ),
-              filled: true,
-              fillColor: _kIndigoSoft,
-              prefixIcon: const Icon(
-                Icons.lock_outline_rounded,
-                size: 20,
-                color: _kSubText,
-              ),
-              suffixIcon: IconButton(
+            decoration: _fieldDecoration(
+              hint: 'Enter password',
+              prefixIcon: Icons.lock_outline_rounded,
+              error: passwordError,
+              suffix: IconButton(
                 icon: Icon(
                   obscure
                       ? Icons.visibility_outlined
@@ -323,44 +465,12 @@ class _FormCard extends StatelessWidget {
                 ),
                 onPressed: onToggleObscure,
               ),
-              errorText: error.isNotEmpty ? error : null,
-              errorStyle: const TextStyle(fontSize: 12),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: _kIndigo, width: 1.6),
-              ),
-              errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(
-                  color: Colors.redAccent,
-                  width: 1.4,
-                ),
-              ),
-              focusedErrorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(
-                  color: Colors.redAccent,
-                  width: 1.6,
-                ),
-              ),
             ),
           ),
 
           const SizedBox(height: 24),
 
-          // Login button
+          // ── Authenticate button ─────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 54,

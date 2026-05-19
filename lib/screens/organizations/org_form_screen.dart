@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/app_state.dart';
 
@@ -33,8 +34,8 @@ class OrgFormContent extends StatefulWidget {
 
 class _OrgFormScreenState extends State<OrgFormScreen> {
   // Design colors
-  static const Color mintBg = Color(0xFFEAF6F0); // very light mint
-  static const Color tealHeader = Color(0xFF79CFC4); // header band
+  static const Color mintBg = Color(0xFFEAF6F0);
+  static const Color tealHeader = Color(0xFF79CFC4);
 
   // Controllers
   final TextEditingController studentIdCtrl = TextEditingController();
@@ -50,8 +51,6 @@ class _OrgFormScreenState extends State<OrgFormScreen> {
   final TextEditingController emergencyCtrl = TextEditingController();
 
   bool agreed = false;
-
-  // Attachments (images/videos)
   List<PlatformFile> attachments = [];
 
   @override
@@ -100,11 +99,14 @@ class _OrgFormScreenState extends State<OrgFormScreen> {
 
 class _OrgFormContentState extends State<OrgFormContent> {
   // Design colors
-  static const Color tealHeader = Color(0xFF79CFC4); // header band
-  static const Color pillFill = Color(0xFF8FD4CC); // text field fill
+  static const Color tealHeader = Color(0xFF79CFC4);
+  // Updated: neutral, clean field fill instead of teal/green
+  static const Color fieldFill = Color(0xFFF5F6F8);
+  static const Color fieldBorder = Color(0xFFDDE1E7);
+  static const Color labelColor = Color(0xFF5A6370);
   static const Color buttonGradStart = Color(0xFF3DD13A);
   static const Color buttonGradEnd = Color(0xFF1FB31A);
-  static const Color accentViolet = Color(0xFF4A148C); // for APPLY label
+  static const Color accentViolet = Color(0xFF4A148C);
 
   // Controllers
   final TextEditingController studentIdCtrl = TextEditingController();
@@ -120,9 +122,15 @@ class _OrgFormContentState extends State<OrgFormContent> {
   final TextEditingController emergencyCtrl = TextEditingController();
 
   bool agreed = false;
-
-  // Attachments (images/videos)
   List<PlatformFile> attachments = [];
+
+  // Course quick-select options
+  static const List<String> _courseOptions = [
+    'BEED',
+    'BSIT',
+    'BSCRIM',
+    'BSHM',
+  ];
 
   @override
   void dispose() {
@@ -211,8 +219,8 @@ class _OrgFormContentState extends State<OrgFormContent> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final horizontalPadding = screenWidth * 0.04; // 4% of screen width
-    final verticalPadding = screenWidth * 0.05; // 5% of screen width
+    final horizontalPadding = screenWidth * 0.04;
+    final verticalPadding = screenWidth * 0.05;
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
@@ -243,55 +251,82 @@ class _OrgFormContentState extends State<OrgFormContent> {
                 ),
                 child: Column(
                   children: [
+                    // Student ID — numbers only, numeric keyboard
                     _pillField(
-                        controller: studentIdCtrl,
-                        label: 'STUDENT ID NUMBER',
-                        hint: 'e.g., 202324-1234'),
+                      controller: studentIdCtrl,
+                      label: 'STUDENT ID NUMBER',
+                      hint: 'e.g., 202324-1234',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
+                      ],
+                    ),
+
                     _pillField(
-                        controller: nameCtrl,
-                        label: 'FULL NAME',
-                        hint: 'First Last',
-                        keyboardType: TextInputType.name),
+                      controller: nameCtrl,
+                      label: 'FULL NAME',
+                      hint: 'First Last',
+                      keyboardType: TextInputType.name,
+                    ),
+
+                    // Course field with quick-select chips
+                    _courseField(),
+
                     _pillField(
-                        controller: courseCtrl,
-                        label: 'COURSE / PROGRAM',
-                        hint: 'e.g., BSIT, BSHM'),
+                      controller: yearSectionCtrl,
+                      label: 'YEAR & SECTION',
+                      hint: '3rd Year • Section A',
+                    ),
+
+                    // Contact — numeric keyboard, digits only
                     _pillField(
-                        controller: yearSectionCtrl,
-                        label: 'YEAR & SECTION',
-                        hint: '3rd Year • Section A'),
+                      controller: contactCtrl,
+                      label: 'CONTACT NUMBER',
+                      hint: '09123456789',
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                    ),
+
                     _pillField(
-                        controller: contactCtrl,
-                        label: 'CONTACT NUMBER',
-                        hint: '09123456789',
-                        keyboardType: TextInputType.phone),
-                    _pillField(
-                        controller: emailCtrl,
-                        label: 'EMAIL',
-                        hint: 'youremail@gmail.com',
-                        keyboardType: TextInputType.emailAddress),
+                      controller: emailCtrl,
+                      label: 'EMAIL',
+                      hint: 'youremail@gmail.com',
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+
                     _pillField(
                       controller: facebookCtrl,
                       label: 'FACEBOOK ACCOUNT',
                       hint: 'facebook name',
-                      keyboardType: TextInputType.url),
+                      keyboardType: TextInputType.url,
+                    ),
+
                     _pillField(
-                        controller: reasonCtrl,
-                        label: 'REASON FOR JOINING (SHORT)',
-                        hint: 'Why do you want to join?',
-                        keyboardType: TextInputType.multiline),
+                      controller: reasonCtrl,
+                      label: 'REASON FOR JOINING (SHORT)',
+                      hint: 'Why do you want to join?',
+                      keyboardType: TextInputType.multiline,
+                    ),
+
                     _pillField(
-                        controller: skillsCtrl,
-                        label: 'SKILLS / TALENTS',
-                        hint: 'acting, directing, scriptwriting…'),
+                      controller: skillsCtrl,
+                      label: 'SKILLS / TALENTS',
+                      hint: 'acting, directing, scriptwriting…',
+                    ),
+
                     _pillField(
-                        controller: experienceCtrl,
-                        label: 'PREVIOUS EXPERIENCE',
-                        hint: 'Past plays, roles, orgs (optional)'),
+                      controller: experienceCtrl,
+                      label: 'PREVIOUS EXPERIENCE',
+                      hint: 'Past plays, roles, orgs (optional)',
+                    ),
+
                     _pillField(
-                        controller: emergencyCtrl,
-                        label: 'EMERGENCY CONTACT',
-                        hint: 'Name — Phone'),
+                      controller: emergencyCtrl,
+                      label: 'EMERGENCY CONTACT',
+                      hint: 'Name — Phone',
+                    ),
 
                     const SizedBox(height: 4),
 
@@ -371,7 +406,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
 
                     const SizedBox(height: 12),
 
-                    // Profile picture upload control (placeholder)
+                    // Profile picture upload control
                     Row(
                       children: [
                         const Text(
@@ -452,7 +487,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
 
                     const SizedBox(height: 16),
 
-                    // Agreement with link-style policy
+                    // Agreement
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -531,7 +566,6 @@ class _OrgFormContentState extends State<OrgFormContent> {
 
                     const SizedBox(height: 16),
 
-                    // APPLY button
                     _applyButton(context),
                   ],
                 ),
@@ -540,6 +574,122 @@ class _OrgFormContentState extends State<OrgFormContent> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Course field: text input + quick-select course buttons below
+  Widget _courseField() {
+    final radius = BorderRadius.circular(40);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 8.0, bottom: 6),
+          child: Text(
+            'COURSE / PROGRAM',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
+              color: labelColor,
+            ),
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: TextField(
+            controller: courseCtrl,
+            keyboardType: TextInputType.text,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: fieldFill,
+              hintText: 'e.g., BSIT, BSHM',
+              hintStyle:
+                  const TextStyle(color: Color(0xFFADB5BD), fontSize: 13.5),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              border: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide: const BorderSide(color: fieldBorder, width: 1.2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide:
+                    const BorderSide(color: Color(0xFF79CFC4), width: 1.8),
+              ),
+            ),
+          ),
+        ),
+        // Quick-select buttons
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8, top: 2),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _courseOptions.map((course) {
+              final isSelected = courseCtrl.text == course;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => courseCtrl.text = course);
+                  courseCtrl.selection = TextSelection.fromPosition(
+                    TextPosition(offset: courseCtrl.text.length),
+                  );
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF79CFC4) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFF79CFC4)
+                          : const Color(0xFFDDE1E7),
+                      width: 1.5,
+                    ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFF79CFC4)
+                                  .withValues(alpha: 0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            )
+                          ]
+                        : [],
+                  ),
+                  child: Text(
+                    course,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color:
+                          isSelected ? Colors.white : const Color(0xFF5A6370),
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
     );
   }
 
@@ -556,10 +706,10 @@ class _OrgFormContentState extends State<OrgFormContent> {
     return GestureDetector(
       onTap: enabled
           ? () async {
-              // Persist application in in-memory AppState (and Supabase)
               await AppState.instance.submitApplication(
                 orgName: widget.title,
-                studentId: studentIdCtrl.text.trim(),
+                studentId: AppState.instance.currentStudent?.id ??
+                    studentIdCtrl.text.trim(),
                 name: nameCtrl.text.trim(),
                 contact: contactCtrl.text.trim(),
                 email: emailCtrl.text.trim(),
@@ -568,7 +718,6 @@ class _OrgFormContentState extends State<OrgFormContent> {
                 attachments: attachments.map((f) => f.name).toList(),
               );
 
-              // Show success snackbar
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -578,8 +727,6 @@ class _OrgFormContentState extends State<OrgFormContent> {
                   ),
                 );
               }
-
-              // Keep the navigation as-is to avoid altering your current flow
             }
           : null,
       child: AnimatedOpacity(
@@ -620,6 +767,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
     required String label,
     required String hint,
     TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
     int maxLines = 1,
   }) {
     final radius = BorderRadius.circular(40);
@@ -631,11 +779,11 @@ class _OrgFormContentState extends State<OrgFormContent> {
           padding: const EdgeInsets.only(left: 8.0, bottom: 6),
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.0,
-              color: Colors.black87,
+              color: labelColor,
             ),
           ),
         ),
@@ -645,29 +793,40 @@ class _OrgFormContentState extends State<OrgFormContent> {
             borderRadius: radius,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: TextField(
             controller: controller,
             keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
             maxLines: maxLines,
             minLines: maxLines > 1 ? maxLines : 1,
             textAlignVertical:
                 maxLines > 1 ? TextAlignVertical.top : TextAlignVertical.center,
             decoration: InputDecoration(
               filled: true,
-              fillColor: pillFill,
+              fillColor: fieldFill,
               hintText: hint,
-              hintStyle: const TextStyle(color: Colors.black87, fontSize: 13.5),
+              hintStyle:
+                  const TextStyle(color: Color(0xFFADB5BD), fontSize: 13.5),
               contentPadding: EdgeInsets.symmetric(
                   horizontal: 20, vertical: maxLines > 1 ? 18 : 16),
               border: OutlineInputBorder(
                 borderRadius: radius,
                 borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide: const BorderSide(color: fieldBorder, width: 1.2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide:
+                    const BorderSide(color: Color(0xFF79CFC4), width: 1.8),
               ),
             ),
           ),

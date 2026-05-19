@@ -48,8 +48,7 @@ class _NotificationScreenState extends State<NotificationScreen>
   @override
   Widget build(BuildContext context) {
     final notifications = AppState.instance.notifications
-        .where(
-            (n) => n.studentId == AppState.instance.currentStudent?.studentId)
+        .where((n) => n.studentId == AppState.instance.currentStudent?.id)
         .toList();
 
     final interviewNotifications = notifications

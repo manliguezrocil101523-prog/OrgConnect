@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:my_app/screens/Student_Role/student_dashboard_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
+import 'dart:convert';
+import 'package:my_app/screens/role_selection_screen.dart';
 
 // ── Palette ──────────────────────────────────────────────────────────────────
-const _kTeal = Color(0xFF4F46E5); // indigo-600
-const _kTealLight = Color(0xFF06B6D4); // cyan-500
-const _kTealSoft = Color(0xFFEEF2FF); // indigo-50
-const _kBg = Color(0xFFF5F7FF); // near-white indigo tint
-const _kText = Color(0xFF1E1B4B); // indigo-950
-const _kSubText = Color(0xFF6366F1); // indigo-400
+const _kTeal = Color(0xFF4F46E5);
+const _kTealLight = Color(0xFF06B6D4);
+const _kTealSoft = Color(0xFFEEF2FF);
+const _kBg = Color(0xFFF5F7FF);
+const _kText = Color(0xFF1E1B4B);
+const _kSubText = Color(0xFF6366F1);
 const _kWhite = Colors.white;
 
 // ── Sign-In Page ─────────────────────────────────────────────────────────────
@@ -78,6 +80,10 @@ class _SignInPageState extends State<SignInPage>
     if (valid != _isFormValid) setState(() => _isFormValid = valid);
   }
 
+  void _goToRoleSelection() {
+    Navigator.pop(context);
+  }
+
   Future<void> _signIn() async {
     if (!_isFormValid) return;
     setState(() => _isLoading = true);
@@ -99,18 +105,26 @@ class _SignInPageState extends State<SignInPage>
       final profileData = await Supabase.instance.client
           .from('profiles')
           .select()
-          .eq('email', email)
+          .eq('id', res.user!.id)
           .single();
 
+      final rawJoined = profileData['joined_org_ids'];
+      final joinedOrgIds = switch (rawJoined) {
+        null => <String>[],
+        String s => List<String>.from(jsonDecode(s) as List),
+        List l => List<String>.from(l),
+        _ => <String>[],
+      };
+
       final profile = StudentProfile(
-        id: profileData['email'],
+        id: profileData['id'],
         name: profileData['name'] ?? '',
         email: profileData['email'] ?? '',
         studentId: profileData['student_id'] ?? '',
         contact: profileData['contact'] ?? '',
         facebook: profileData['facebook'] ?? '',
         avatarUrl: profileData['avatar_url'] ?? '',
-        joinedOrgIds: List<String>.from(profileData['joined_org_ids'] ?? []),
+        joinedOrgIds: joinedOrgIds,
       );
 
       AppState.instance.setStudentProfile(profile);
@@ -190,65 +204,91 @@ class _SignInPageState extends State<SignInPage>
   // ── Build ───────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _kBg,
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
-                  vertical: 32,
-                ),
-                child: FadeTransition(
-                  opacity: _fadeAnim,
-                  child: SlideTransition(
-                    position: _slideAnim,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 12),
-                        _LogoBadge(),
-                        const SizedBox(height: 32),
-                        _HeaderText(),
-                        const SizedBox(height: 36),
-                        _Card(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _goToRoleSelection();
+      },
+      child: Scaffold(
+        backgroundColor: _kBg,
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Stack(
+                children: [
+                  // ── Back button ────────────────────────────
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8, left: 4),
+                      child: IconButton(
+                        onPressed: _goToRoleSelection, // ← uses central method
+                        icon: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: _kText,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // ── Main content ───────────────────────────
+                  Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 32,
+                      ),
+                      child: FadeTransition(
+                        opacity: _fadeAnim,
+                        child: SlideTransition(
+                          position: _slideAnim,
                           child: Column(
                             children: [
-                              _InputField(
-                                controller: _emailController,
-                                hint: 'Email address',
-                                icon: Icons.mail_outline_rounded,
-                                keyboardType: TextInputType.emailAddress,
-                              ),
-                              const SizedBox(height: 16),
-                              _PasswordField(
-                                controller: _passwordController,
-                                obscure: _obscurePassword,
-                                onToggle: () => setState(
-                                  () => _obscurePassword = !_obscurePassword,
+                              const SizedBox(height: 12),
+                              _LogoBadge(),
+                              const SizedBox(height: 32),
+                              _HeaderText(),
+                              const SizedBox(height: 36),
+                              _Card(
+                                child: Column(
+                                  children: [
+                                    _InputField(
+                                      controller: _emailController,
+                                      hint: 'Email address',
+                                      icon: Icons.mail_outline_rounded,
+                                      keyboardType: TextInputType.emailAddress,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _PasswordField(
+                                      controller: _passwordController,
+                                      obscure: _obscurePassword,
+                                      onToggle: () => setState(
+                                        () => _obscurePassword =
+                                            !_obscurePassword,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 28),
+                                    _SignInButton(
+                                      enabled: _isFormValid && !_isLoading,
+                                      loading: _isLoading,
+                                      onPressed: _signIn,
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 28),
-                              _SignInButton(
-                                enabled: _isFormValid && !_isLoading,
-                                loading: _isLoading,
-                                onPressed: _signIn,
-                              ),
+                              const SizedBox(height: 24),
+                              _SignUpRow(),
+                              const SizedBox(height: 16),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 24),
-                        _SignUpRow(),
-                        const SizedBox(height: 16),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
 
-class AdminReportsScreen extends StatelessWidget {
+class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({super.key});
 
+  @override
+  State<AdminReportsScreen> createState() => _AdminReportsScreenState();
+}
+
+class _AdminReportsScreenState extends State<AdminReportsScreen> {
   // 🎨 Shared Design System
   static const Color background = Color(0xFFF5F7FA);
   static const Color primary = Color(0xFF1E293B);
@@ -12,6 +18,88 @@ class AdminReportsScreen extends StatelessWidget {
   static const Color success = Color(0xFF22C55E);
   static const Color warning = Color(0xFFF59E0B);
   static const Color danger = Color(0xFFEF4444);
+
+  bool _loading = true;
+
+  // These will be populated from Supabase
+  int _totalUsers = 0;
+  int _totalOrgs = 0;
+  int _totalMembers = 0;
+  int _totalEvents = 0;
+  int _totalApps = 0;
+  int _pending = 0;
+  int _forApproval = 0;
+  int _accepted = 0;
+  int _declined = 0;
+  int _interviewees = 0;
+  int _students = 0;
+  int _officers = 0;
+  int _admins = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReports();
+  }
+
+  Future<void> _loadReports() async {
+    setState(() => _loading = true);
+    try {
+      // Re-fetch everything fresh from Supabase
+      await Future.wait([
+        AppState.instance.fetchEvents(),
+        AppState.instance.fetchMembers(),
+        AppState.instance.fetchApplications(),
+      ]);
+
+      // Fetch users from Supabase profiles table (not in-memory hardcoded list)
+      final profilesResponse = await supabase.Supabase.instance.client
+          .from('profiles')
+          .select('role');
+
+      int students = 0, officers = 0, admins = 0;
+      for (var p in profilesResponse) {
+        final role = p['role'] ?? '';
+        if (role == 'student')
+          students++;
+        else if (role == 'officer')
+          officers++;
+        else if (role == 'admin') admins++;
+      }
+
+      final apps = AppState.instance.applications;
+      final events = AppState.instance.events
+          .where((e) => !e.title.toLowerCase().contains('interview'))
+          .toList();
+
+      setState(() {
+        _totalUsers = profilesResponse.length;
+        _totalOrgs = AppState.instance.organizations.length;
+        _totalMembers = AppState.instance.members.length;
+        _totalEvents = events.length;
+        _totalApps = apps.length;
+        _pending =
+            apps.where((a) => a.status == ApplicationStatus.pending).length;
+        _forApproval = apps
+            .where((a) => a.status == ApplicationStatus.for_approval)
+            .length;
+        _accepted =
+            apps.where((a) => a.status == ApplicationStatus.accepted).length;
+        _declined =
+            apps.where((a) => a.status == ApplicationStatus.declined).length;
+        _interviewees = apps
+            .where((a) => a.status == ApplicationStatus.interview_scheduled)
+            .length;
+        _students = students;
+        _officers = officers;
+        _admins = admins;
+        _loading = false;
+      });
+    } catch (e) {
+      print('Error loading reports: $e');
+      setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,103 +113,76 @@ class AdminReportsScreen extends StatelessWidget {
           'Reports & Analytics',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadReports,
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
-      body: AnimatedBuilder(
-        animation: AppState.instance,
-        builder: (context, _) {
-          final users = AppState.instance.users;
-          final apps = AppState.instance.applications;
-          final members = AppState.instance.members;
-          final events = AppState.instance.events
-              .where((e) => !e.title.toLowerCase().contains('interview'))
-              .toList();
-          final orgs = AppState.instance.organizations;
-
-          int countRole(UserRole r) =>
-              users.where((u) => u.role == r).length;
-
-          int pending = apps
-              .where((a) => a.status == ApplicationStatus.pending)
-              .length;
-          int forApproval = apps
-              .where((a) => a.status == ApplicationStatus.for_approval)
-              .length;
-          int accepted = apps
-              .where((a) => a.status == ApplicationStatus.accepted)
-              .length;
-          int declined = apps
-              .where((a) => a.status == ApplicationStatus.declined)
-              .length;
-          int interviewees = apps
-              .where((a) =>
-                  a.status == ApplicationStatus.interview_scheduled)
-              .length;
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // Top Summary Grid
-              GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadReports,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  _summaryCard('Organizations', orgs.length,
-                      Icons.apartment_outlined),
-                  _summaryCard(
-                      'Events', events.length, Icons.event_available_outlined),
-                  _summaryCard('Members', members.length,
-                      Icons.group_outlined),
-                  _summaryCard('Users', users.length,
-                      Icons.person_outline),
+                  // Top Summary Grid
+                  GridView.count(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      _summaryCard('Organizations', _totalOrgs,
+                          Icons.apartment_outlined),
+                      _summaryCard('Events', _totalEvents,
+                          Icons.event_available_outlined),
+                      _summaryCard(
+                          'Members', _totalMembers, Icons.group_outlined),
+                      _summaryCard('Users', _totalUsers, Icons.person_outline),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Applications Breakdown
+                  _sectionTitle('Applications Overview'),
+                  const SizedBox(height: 10),
+                  _appStatusCard(
+                    total: _totalApps,
+                    pending: _pending,
+                    forApproval: _forApproval,
+                    accepted: _accepted,
+                    declined: _declined,
+                    interviewees: _interviewees,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // User Roles Breakdown
+                  _sectionTitle('User Roles'),
+                  const SizedBox(height: 10),
+                  _rolesCard(
+                    students: _students,
+                    officers: _officers,
+                    admins: _admins,
+                  ),
                 ],
               ),
-
-              const SizedBox(height: 16),
-
-              // Applications Breakdown
-              _sectionTitle('Applications Overview'),
-              const SizedBox(height: 10),
-              _appStatusCard(
-                total: apps.length,
-                pending: pending,
-                forApproval: forApproval,
-                accepted: accepted,
-                declined: declined,
-                interviewees: interviewees,
-              ),
-
-              const SizedBox(height: 16),
-
-              // User Roles Breakdown
-              _sectionTitle('User Roles'),
-              const SizedBox(height: 10),
-              _rolesCard(
-                students: countRole(UserRole.student),
-                officers: countRole(UserRole.officer),
-                admins: countRole(UserRole.admin),
-              ),
-            ],
-          );
-        },
-      ),
+            ),
     );
   }
 
-  // 🔹 Section Title
   Widget _sectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-      ),
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
     );
   }
 
-  // 🔹 Summary Cards (Grid)
   Widget _summaryCard(String title, int value, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -150,21 +211,14 @@ class AdminReportsScreen extends StatelessWidget {
           const Spacer(),
           Text(
             '$value',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
-          Text(
-            title,
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
+          Text(title, style: TextStyle(color: Colors.grey.shade600)),
         ],
       ),
     );
   }
 
-  // 🔹 Applications Status Card
   Widget _appStatusCard({
     required int total,
     required int pending,
@@ -191,10 +245,7 @@ class AdminReportsScreen extends StatelessWidget {
         children: [
           Text(
             'Total Applications: $total',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -227,7 +278,6 @@ class AdminReportsScreen extends StatelessWidget {
     );
   }
 
-  // 🔹 Roles Breakdown
   Widget _rolesCard({
     required int students,
     required int officers,
@@ -263,10 +313,7 @@ class AdminReportsScreen extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label),
-        Text(
-          '$value',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        Text('$value', style: const TextStyle(fontWeight: FontWeight.bold)),
       ],
     );
   }

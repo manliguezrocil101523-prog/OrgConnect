@@ -4,6 +4,7 @@ import 'officer_applications_screen.dart';
 import 'officer_members_screen.dart';
 import 'officer_events_screen.dart';
 import 'officer_authorization_screen.dart';
+import '../auth/sign_in_page.dart';
 
 class BaseOfficerDashboard extends StatelessWidget {
   final String orgId;
@@ -50,7 +51,7 @@ class BaseOfficerDashboard extends StatelessWidget {
               onPressed: () => Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const OfficerAuthorizationScreen(),
+                  builder: (_) => const SignInPage(),
                 ),
               ),
             ),
@@ -725,7 +726,8 @@ class _SectionLabel extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.8,
-            color: Color(0xFF64748B), // slightly darker than before for contrast
+            color:
+                Color(0xFF64748B), // slightly darker than before for contrast
           ),
         ),
       ],

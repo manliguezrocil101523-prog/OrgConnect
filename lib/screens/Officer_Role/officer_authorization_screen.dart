@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
 import 'officer_rule_screen.dart';
 
@@ -12,20 +13,19 @@ class OfficerAuthorizationScreen extends StatefulWidget {
 
 class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
     with SingleTickerProviderStateMixin {
-  // ─── Color tokens — unified with ProfileScreen & Dashboard ────────────────
   static const Color _primary = Color(0xFF4F46E5);
   static const Color _secondary = Color(0xFF06B6D4);
   static const Color _background = Color(0xFFF1F5F9);
   static const Color _error = Color(0xFFE11D48);
 
-  // ─── State ─────────────────────────────────────────────────────────────────
   Organization? _selectedOrganization;
   List<Organization> _filteredOrgs = [];
   bool _isAuthenticating = false;
   bool _obscurePassword = true;
-  String _errorMessage = '';
+  String _emailError = '';
+  String _passwordError = '';
 
-  // ─── Controllers ───────────────────────────────────────────────────────────
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -33,8 +33,6 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
   late final AnimationController _formAnim;
   late final Animation<double> _formFade;
   late final Animation<Offset> _formSlide;
-
-  // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -57,13 +55,12 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
   @override
   void dispose() {
     _formAnim.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
-
-  // ─── Handlers ──────────────────────────────────────────────────────────────
 
   void _onSearch() {
     final query = _searchController.text.trim().toLowerCase();
@@ -80,7 +77,9 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
     final wasSelected = _selectedOrganization?.id == org.id;
     setState(() {
       _selectedOrganization = wasSelected ? null : org;
-      _errorMessage = '';
+      _emailError = '';
+      _passwordError = '';
+      _emailController.clear();
       _passwordController.clear();
     });
     if (!wasSelected) {
@@ -102,18 +101,107 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
     }
   }
 
+  bool _validate() {
+    String emailError = '';
+    String passwordError = '';
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty) {
+      emailError = 'Email is required.';
+    } else if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      emailError = 'Please enter a valid email address.';
+    }
+
+    if (password.isEmpty) {
+      passwordError = 'Password is required.';
+    }
+
+    setState(() {
+      _emailError = emailError;
+      _passwordError = passwordError;
+    });
+
+    return emailError.isEmpty && passwordError.isEmpty;
+  }
+
+  // ─── REAL Supabase auth with authorization check ──────────────────────────
   Future<void> _authenticate() async {
     if (_selectedOrganization == null) return;
     FocusScope.of(context).unfocus();
+    if (!_validate()) return;
 
     setState(() {
       _isAuthenticating = true;
-      _errorMessage = '';
+      _emailError = '';
+      _passwordError = '';
     });
 
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      // Step 1: Sign in with Supabase Auth
+      final response =
+          await supabase.Supabase.instance.client.auth.signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
 
-    if (_passwordController.text == _selectedOrganization!.id) {
+      if (response.user == null) {
+        _onAuthFailure(message: 'Login failed. Please try again.');
+        return;
+      }
+
+      final userId = response.user!.id;
+
+      // Step 2: Check if this user is an officer AND assigned to the selected org
+      final profileResponse = await supabase.Supabase.instance.client
+          .from('profiles')
+          .select('role, assigned_org_id, active')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (profileResponse == null) {
+        _onAuthFailure(message: 'Account not found. Please contact admin.');
+        return;
+      }
+
+      // Check if account is active
+      final isActive = profileResponse['active'] ?? false;
+      if (!isActive) {
+        _onAuthFailure(
+          message: 'Your account has been deactivated. Please contact admin.',
+        );
+        return;
+      }
+
+      // Check if role is officer
+      final role = profileResponse['role']?.toString() ?? '';
+      if (role != 'officer') {
+        _onAuthFailure(
+          message: 'Access denied. You are not registered as an officer.',
+        );
+        return;
+      }
+
+      // Check if assigned org matches the selected org
+      final assignedOrgId = profileResponse['assigned_org_id']?.toString();
+      if (assignedOrgId == null || assignedOrgId.isEmpty) {
+        _onAuthFailure(
+          message:
+              'You have not been assigned to any organization. Please contact admin.',
+        );
+        return;
+      }
+
+      if (assignedOrgId != _selectedOrganization!.id) {
+        _onAuthFailure(
+          message:
+              'Access denied. You are not authorized for "${_selectedOrganization!.name}".',
+        );
+        return;
+      }
+
+      // ── All checks passed → go to officer dashboard ──────────────────────
       AppState.instance.setCurrentOfficerOrgId(_selectedOrganization!.id);
       if (mounted) {
         Navigator.pushReplacement(
@@ -126,16 +214,26 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
           ),
         );
       }
-    } else {
-      setState(() {
-        _isAuthenticating = false;
-        _errorMessage = 'Incorrect password. Hint: use the organization ID.';
-        _passwordController.clear();
-      });
+    } on supabase.AuthException catch (e) {
+      // Supabase gives clear messages like "Invalid login credentials"
+      _onAuthFailure(message: e.message);
+    } catch (e) {
+      _onAuthFailure(
+          message: 'Something went wrong. Please check your connection.');
+    } finally {
+      if (mounted) setState(() => _isAuthenticating = false);
     }
   }
 
-  // ─── Build ─────────────────────────────────────────────────────────────────
+  void _onAuthFailure({
+    String message = 'Authentication failed. Please try again.',
+  }) {
+    setState(() {
+      _isAuthenticating = false;
+      _passwordError = message;
+      _passwordController.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -148,18 +246,14 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
         controller: _scrollController,
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ── SLIVER APP BAR ──────────────────────────────────────────────
           SliverAppBar(
             pinned: true,
             expandedHeight: MediaQuery.of(context).size.height * 0.20,
             backgroundColor: _primary,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
             title: const Text(
@@ -173,37 +267,24 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
             ),
             centerTitle: true,
             flexibleSpace: FlexibleSpaceBar(
-              background: _HeroHeader(
-                primary: _primary,
-                secondary: _secondary,
-              ),
+              background: _HeroHeader(primary: _primary, secondary: _secondary),
             ),
           ),
-
-          // ── BODY ────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: isTablet ? 540 : double.infinity,
-                ),
+                constraints:
+                    BoxConstraints(maxWidth: isTablet ? 540 : double.infinity),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
-                    isTablet ? 0 : 20,
-                    28,
-                    isTablet ? 0 : 20,
-                    48,
-                  ),
+                      isTablet ? 0 : 20, 28, isTablet ? 0 : 20, 48),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Search bar ───────────────────────────────────────
                       const _SectionLabel(text: 'Find Organization'),
                       const SizedBox(height: 12),
                       _SearchBar(controller: _searchController),
                       const SizedBox(height: 20),
-
-                      // ── Organization list ────────────────────────────────
                       const _SectionLabel(text: 'Select Organization'),
                       const SizedBox(height: 12),
                       _OrgListCard(
@@ -212,8 +293,6 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
                         onSelect: _selectOrg,
                         searchQuery: _searchController.text.trim(),
                       ),
-
-                      // ── Password form (animated) ─────────────────────────
                       if (_selectedOrganization != null) ...[
                         const SizedBox(height: 24),
                         KeyedSubtree(
@@ -222,10 +301,12 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
                             opacity: _formFade,
                             child: SlideTransition(
                               position: _formSlide,
-                              child: _PasswordForm(
+                              child: _CredentialsForm(
                                 selectedOrg: _selectedOrganization!,
-                                controller: _passwordController,
-                                errorMessage: _errorMessage,
+                                emailController: _emailController,
+                                passwordController: _passwordController,
+                                emailError: _emailError,
+                                passwordError: _passwordError,
                                 isAuthenticating: _isAuthenticating,
                                 obscurePassword: _obscurePassword,
                                 onToggleObscure: () => setState(
@@ -249,12 +330,12 @@ class _OfficerAuthorizationScreenState extends State<OfficerAuthorizationScreen>
 }
 
 // =============================================================================
-// _HeroHeader
+// Supporting widgets (unchanged from original — design fully preserved)
 // =============================================================================
+
 class _HeroHeader extends StatelessWidget {
   final Color primary;
   final Color secondary;
-
   const _HeroHeader({required this.primary, required this.secondary});
 
   @override
@@ -276,9 +357,8 @@ class _HeroHeader extends StatelessWidget {
               width: 180,
               height: 180,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.06),
-              ),
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.06)),
             ),
           ),
           Positioned(
@@ -288,9 +368,8 @@ class _HeroHeader extends StatelessWidget {
               width: 130,
               height: 130,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.04),
-              ),
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.04)),
             ),
           ),
           SafeArea(
@@ -305,37 +384,26 @@ class _HeroHeader extends StatelessWidget {
                       color: Colors.white.withOpacity(0.15),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.30),
-                        width: 1.5,
-                      ),
+                          color: Colors.white.withOpacity(0.30), width: 1.5),
                     ),
-                    child: const Icon(
-                      Icons.shield_rounded,
-                      color: Colors.white,
-                      size: 26,
-                    ),
+                    child: const Icon(Icons.shield_rounded,
+                        color: Colors.white, size: 26),
                   ),
                   const SizedBox(width: 16),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
-                        'Officer Access',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                      const Text('Officer Access',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800)),
                       const SizedBox(height: 2),
-                      Text(
-                        'Select your organization to continue',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.72),
-                          fontSize: 12.5,
-                        ),
-                      ),
+                      Text('Select your organization to continue',
+                          style: TextStyle(
+                              color: Colors.white.withOpacity(0.72),
+                              fontSize: 12.5)),
                     ],
                   ),
                 ],
@@ -348,9 +416,6 @@ class _HeroHeader extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _SearchBar
-// =============================================================================
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
   const _SearchBar({required this.controller});
@@ -363,57 +428,44 @@ class _SearchBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF4F46E5).withOpacity(0.07),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
+              color: const Color(0xFF4F46E5).withOpacity(0.07),
+              blurRadius: 16,
+              offset: const Offset(0, 4))
         ],
       ),
       child: TextField(
         controller: controller,
         style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF0F172A),
-        ),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF0F172A)),
         decoration: InputDecoration(
           hintText: 'Search organization name...',
-          hintStyle: const TextStyle(
-            color: Color(0xFFCBD5E1),
-            fontSize: 13.5,
-          ),
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: Color(0xFF4F46E5),
-            size: 20,
-          ),
+          hintStyle: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 13.5),
+          prefixIcon: const Icon(Icons.search_rounded,
+              color: Color(0xFF4F46E5), size: 20),
           suffixIcon: ValueListenableBuilder<TextEditingValue>(
             valueListenable: controller,
             builder: (_, value, __) => value.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Color(0xFF94A3B8),
-                      size: 18,
-                    ),
-                    onPressed: controller.clear,
-                  )
+                    icon: const Icon(Icons.close_rounded,
+                        color: Color(0xFF94A3B8), size: 18),
+                    onPressed: controller.clear)
                 : const SizedBox.shrink(),
           ),
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
-          ),
+              borderRadius: BorderRadius.circular(14),
+              borderSide:
+                  const BorderSide(color: Color(0xFFE2E8F0), width: 1.2)),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.8),
-          ),
+              borderRadius: BorderRadius.circular(14),
+              borderSide:
+                  const BorderSide(color: Color(0xFF4F46E5), width: 1.8)),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         ),
@@ -422,9 +474,6 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _OrgListCard — virtualized list, no logo logo is replaced by check on select
-// =============================================================================
 class _OrgListCard extends StatelessWidget {
   final List<Organization> organizations;
   final Organization? selectedOrg;
@@ -448,10 +497,9 @@ class _OrgListCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF4F46E5).withOpacity(0.07),
-              blurRadius: 20,
-              offset: const Offset(0, 6),
-            ),
+                color: const Color(0xFF4F46E5).withOpacity(0.07),
+                blurRadius: 20,
+                offset: const Offset(0, 6))
           ],
         ),
         child: Column(
@@ -461,45 +509,32 @@ class _OrgListCard extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: const Color(0xFF4F46E5).withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.search_off_rounded,
-                color: Color(0xFF4F46E5),
-                size: 26,
-              ),
+                  color: const Color(0xFF4F46E5).withOpacity(0.08),
+                  shape: BoxShape.circle),
+              child: const Icon(Icons.search_off_rounded,
+                  color: Color(0xFF4F46E5), size: 26),
             ),
             const SizedBox(height: 14),
-            Text(
-              'No results for "$searchQuery"',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF0F172A),
-              ),
-              textAlign: TextAlign.center,
-            ),
+            Text('No results for "$searchQuery"',
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A)),
+                textAlign: TextAlign.center),
             const SizedBox(height: 4),
-            const Text(
-              'Try a different keyword',
-              style: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-            ),
+            const Text('Try a different keyword',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8))),
           ],
         ),
       );
     }
 
-    // Cap list height so the password field stays just below this card instead
-    // of after every row (avoids long scroll to reach password).
     const double approxRowHeight = 86;
     final double maxCap =
         (MediaQuery.sizeOf(context).height * 0.42).clamp(240.0, 460.0);
-    final double contentHeight =
-        organizations.length * approxRowHeight + 8;
-    final double listHeight = contentHeight > maxCap
-        ? maxCap
-        : contentHeight.clamp(120.0, maxCap);
+    final double contentHeight = organizations.length * approxRowHeight + 8;
+    final double listHeight =
+        contentHeight > maxCap ? maxCap : contentHeight.clamp(120.0, maxCap);
 
     return Container(
       decoration: BoxDecoration(
@@ -507,15 +542,13 @@ class _OrgListCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF4F46E5).withOpacity(0.07),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
+              color: const Color(0xFF4F46E5).withOpacity(0.07),
+              blurRadius: 20,
+              offset: const Offset(0, 6)),
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 4,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: ClipRRect(
@@ -526,12 +559,11 @@ class _OrgListCard extends StatelessWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             itemCount: organizations.length,
             separatorBuilder: (_, __) => Divider(
-              height: 1,
-              thickness: 1,
-              indent: 76,
-              endIndent: 18,
-              color: Colors.grey.shade100,
-            ),
+                height: 1,
+                thickness: 1,
+                indent: 76,
+                endIndent: 18,
+                color: Colors.grey.shade100),
             itemBuilder: (context, index) {
               final org = organizations[index];
               return _OrgRow(
@@ -548,9 +580,6 @@ class _OrgListCard extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _OrgRow — single organization row, const-safe
-// =============================================================================
 class _OrgRow extends StatelessWidget {
   final Organization org;
   final bool isSelected;
@@ -569,158 +598,126 @@ class _OrgRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            splashColor: _primary.withOpacity(0.06),
-            highlightColor: _primary.withOpacity(0.04),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-              color:
-                  isSelected ? _primary.withOpacity(0.05) : Colors.transparent,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              child: Row(
-                children: [
-                  // Logo / check container
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: isSelected
-                          ? const LinearGradient(
-                              colors: [_primary, _secondary],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            )
-                          : null,
-                      color: isSelected ? null : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: _primary.withOpacity(0.28),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: isSelected
-                        ? const Icon(
-                            Icons.check_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          )
-                        : ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.asset(
-                              org.logoAsset,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: _primary.withOpacity(0.06),
+        highlightColor: _primary.withOpacity(0.04),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          color: isSelected ? _primary.withOpacity(0.05) : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: isSelected
+                      ? const LinearGradient(
+                          colors: [_primary, _secondary],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight)
+                      : null,
+                  color: isSelected ? null : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                              color: _primary.withOpacity(0.28),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3))
+                        ]
+                      : null,
+                ),
+                child: isSelected
+                    ? const Icon(Icons.check_rounded,
+                        color: Colors.white, size: 20)
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(org.logoAsset,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
                                 Icons.business_rounded,
                                 color: Color(0xFF94A3B8),
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                  ),
-
-                  const SizedBox(width: 14),
-
-                  // Org details
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          org.name,
-                          style: TextStyle(
+                                size: 20)),
+                      ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(org.name,
+                        style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w700,
-                            color:
-                                isSelected ? _primary : const Color(0xFF0F172A),
-                          ),
+                            color: isSelected
+                                ? _primary
+                                : const Color(0xFF0F172A))),
+                    const SizedBox(height: 3),
+                    Text('Adviser: ${org.adviser}',
+                        style: const TextStyle(
+                            fontSize: 12, color: Color(0xFF64748B)),
+                        overflow: TextOverflow.ellipsis),
+                    Text('ID: ${org.id}',
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFF94A3B8))),
+                  ],
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: isSelected
+                    ? Container(
+                        key: const ValueKey('selected'),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _primary.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Adviser: ${org.adviser}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          'ID: ${org.id}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Arrow / selected indicator
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: isSelected
-                        ? Container(
-                            key: const ValueKey('selected'),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: _primary.withOpacity(0.10),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text(
-                              'Selected',
-                              style: TextStyle(
+                        child: const Text('Selected',
+                            style: TextStyle(
                                 fontSize: 10,
                                 color: _primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                        : Icon(
-                            key: const ValueKey('arrow'),
-                            Icons.chevron_right_rounded,
-                            color: const Color(0xFFCBD5E1),
-                            size: 20,
-                          ),
-                  ),
-                ],
+                                fontWeight: FontWeight.w700)),
+                      )
+                    : Icon(Icons.chevron_right_rounded,
+                        key: const ValueKey('arrow'),
+                        color: const Color(0xFFCBD5E1),
+                        size: 20),
               ),
-            ),
+            ],
           ),
         ),
-        if (!isLast)
-          Divider(
-            height: 1,
-            thickness: 1,
-            indent: 76,
-            endIndent: 18,
-            color: Colors.grey.shade100,
-          ),
-      ],
+      ),
     );
   }
 }
 
-// =============================================================================
-// _PasswordForm — extracted widget for clean rebuilds
-// =============================================================================
-class _PasswordForm extends StatelessWidget {
+class _CredentialsForm extends StatelessWidget {
+  const _CredentialsForm({
+    required this.selectedOrg,
+    required this.emailController,
+    required this.passwordController,
+    required this.emailError,
+    required this.passwordError,
+    required this.isAuthenticating,
+    required this.obscurePassword,
+    required this.onToggleObscure,
+    required this.onAuthenticate,
+  });
+
   final Organization selectedOrg;
-  final TextEditingController controller;
-  final String errorMessage;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final String emailError;
+  final String passwordError;
   final bool isAuthenticating;
   final bool obscurePassword;
   final VoidCallback onToggleObscure;
@@ -730,41 +727,76 @@ class _PasswordForm extends StatelessWidget {
   static const Color _secondary = Color(0xFF06B6D4);
   static const Color _error = Color(0xFFE11D48);
 
-  const _PasswordForm({
-    required this.selectedOrg,
-    required this.controller,
-    required this.errorMessage,
-    required this.isAuthenticating,
-    required this.obscurePassword,
-    required this.onToggleObscure,
-    required this.onAuthenticate,
-  });
+  InputDecoration _fieldDecoration({
+    required String hint,
+    required IconData prefixIconData,
+    required String? errorText,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(
+          color: Color(0xFFCBD5E1),
+          fontSize: 13.5,
+          letterSpacing: 0,
+          fontWeight: FontWeight.w400),
+      prefixIcon: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+              color: _primary.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(8)),
+          child: Icon(prefixIconData, color: _primary, size: 16),
+        ),
+      ),
+      suffixIcon: suffix,
+      errorText: (errorText != null && errorText.isNotEmpty) ? errorText : null,
+      errorStyle: const TextStyle(fontSize: 12, color: _error),
+      errorMaxLines: 3,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _primary, width: 1.8)),
+      errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _error, width: 1.5)),
+      focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _error, width: 1.8)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionLabel(text: 'Enter Password'),
+        const _SectionLabel(text: 'Enter Credentials'),
         const SizedBox(height: 12),
 
-        // Selected org summary chip
+        // Selected org chip
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
                 _primary.withOpacity(0.08),
-                _secondary.withOpacity(0.06),
+                _secondary.withOpacity(0.06)
               ],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
             ),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _primary.withOpacity(0.15),
-              width: 1,
-            ),
+            border: Border.all(color: _primary.withOpacity(0.15), width: 1),
           ),
           child: Row(
             children: [
@@ -772,14 +804,10 @@ class _PasswordForm extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: const Icon(
-                  Icons.shield_rounded,
-                  color: _primary,
-                  size: 18,
-                ),
+                    color: _primary.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(9)),
+                child:
+                    const Icon(Icons.shield_rounded, color: _primary, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -787,22 +815,15 @@ class _PasswordForm extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      selectedOrg.name,
-                      style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      'Accessing officer dashboard',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: _primary.withOpacity(0.70),
-                      ),
-                    ),
+                    Text(selectedOrg.name,
+                        style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A)),
+                        overflow: TextOverflow.ellipsis),
+                    Text('Accessing officer dashboard',
+                        style: TextStyle(
+                            fontSize: 11.5, color: _primary.withOpacity(0.70))),
                   ],
                 ),
               ),
@@ -812,6 +833,37 @@ class _PasswordForm extends StatelessWidget {
 
         const SizedBox(height: 14),
 
+        // Email field
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                  color: _primary.withOpacity(0.07),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4))
+            ],
+          ),
+          child: TextField(
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autocorrect: false,
+            style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF0F172A)),
+            decoration: _fieldDecoration(
+              hint: 'Enter your email address',
+              prefixIconData: Icons.email_outlined,
+              errorText: emailError,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
         // Password field
         Container(
           decoration: BoxDecoration(
@@ -819,47 +871,26 @@ class _PasswordForm extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: _primary.withOpacity(0.07),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
+                  color: _primary.withOpacity(0.07),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4))
             ],
           ),
           child: TextField(
-            controller: controller,
+            controller: passwordController,
             obscureText: obscurePassword,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF0F172A),
-              letterSpacing: 1.5,
-            ),
+            textInputAction: TextInputAction.done,
             onSubmitted: (_) => onAuthenticate(),
-            decoration: InputDecoration(
-              hintText: 'Enter organization password',
-              hintStyle: const TextStyle(
-                color: Color(0xFFCBD5E1),
-                fontSize: 13.5,
-                letterSpacing: 0,
-                fontWeight: FontWeight.w400,
-              ),
-              prefixIcon: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: _primary.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.lock_rounded,
-                    color: _primary,
-                    size: 16,
-                  ),
-                ),
-              ),
-              suffixIcon: IconButton(
+            style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0F172A),
+                letterSpacing: 1.5),
+            decoration: _fieldDecoration(
+              hint: 'Enter your password',
+              prefixIconData: Icons.lock_rounded,
+              errorText: passwordError,
+              suffix: IconButton(
                 icon: Icon(
                   obscurePassword
                       ? Icons.visibility_off_rounded
@@ -869,67 +900,9 @@ class _PasswordForm extends StatelessWidget {
                 ),
                 onPressed: onToggleObscure,
               ),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _primary, width: 1.8),
-              ),
-              errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _error, width: 1.5),
-              ),
-              focusedErrorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: _error, width: 1.8),
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
           ),
         ),
-
-        // Error message
-        if (errorMessage.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: _error.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _error.withOpacity(0.25), width: 1),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  color: _error,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    errorMessage,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: _error,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
 
         const SizedBox(height: 20),
 
@@ -948,18 +921,16 @@ class _PasswordForm extends StatelessWidget {
                     : const LinearGradient(
                         colors: [_primary, _secondary],
                         begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
+                        end: Alignment.centerRight),
                 color: isAuthenticating ? const Color(0xFFE2E8F0) : null,
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: isAuthenticating
                     ? null
                     : [
                         BoxShadow(
-                          color: _primary.withOpacity(0.32),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
+                            color: _primary.withOpacity(0.32),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6))
                       ],
               ),
               child: Center(
@@ -968,28 +939,19 @@ class _PasswordForm extends StatelessWidget {
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(
-                          color: _primary,
-                          strokeWidth: 2.5,
-                        ),
-                      )
+                            color: _primary, strokeWidth: 2.5))
                     : const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.shield_rounded,
-                            color: Colors.white,
-                            size: 18,
-                          ),
+                          Icon(Icons.shield_rounded,
+                              color: Colors.white, size: 18),
                           SizedBox(width: 8),
-                          Text(
-                            'Access Dashboard',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
+                          Text('Access Dashboard',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.3)),
                         ],
                       ),
               ),
@@ -1001,9 +963,6 @@ class _PasswordForm extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _SectionLabel — unified across all screens
-// =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;
   const _SectionLabel({required this.text});

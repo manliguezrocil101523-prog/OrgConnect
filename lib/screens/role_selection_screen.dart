@@ -128,8 +128,7 @@ class _TopBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            onPressed: () =>
-                Navigator.pushReplacementNamed(ctx, '/calendar'),
+            onPressed: () => Navigator.pushReplacementNamed(ctx, '/calendar'),
           ),
         ],
       ),

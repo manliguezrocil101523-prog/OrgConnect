@@ -33,11 +33,6 @@ class _DT {
   static const gradStart = Color(0xFF7C74FF);
   static const gradEnd = Color(0xFF9F6EFF);
 
-  // ── Accent — Sky (Events) ─────────────────────────────────────────────
-  static const sky = Color(0xFF38BDF8);
-  static const skyBg = Color(0xFFEFF9FF);
-  static const skyFg = Color(0xFF0369A1);
-
   // ── Accent — Emerald (Success / Accepted) ────────────────────────────
   static const emerald = Color(0xFF10B981);
   static const emeraldBg = Color(0xFFECFDF5);
@@ -251,14 +246,6 @@ class _StudentDashboardState extends State<StudentDashboard>
                     ),
                   ),
 
-                  // ── STATS ROW ──────────────────────────────────────
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: hp.copyWith(bottom: 28),
-                      child: _buildStatsRow(applications, regularEvents),
-                    ),
-                  ),
-
                   // ── CALENDAR ───────────────────────────────────────
                   SliverToBoxAdapter(
                     child: Padding(
@@ -437,9 +424,6 @@ class _StudentDashboardState extends State<StudentDashboard>
           child: Stack(
             children: [
               // ── Decorative orb top-right ──────────────────────────
-              // Performance: uses Opacity + simple Container; no
-              // CustomPainter overhead. The pulse multiplier
-              // oscillates between 1.0 and 1.08.
               Positioned(
                 top: -30,
                 right: -20,
@@ -603,56 +587,6 @@ class _StudentDashboardState extends State<StudentDashboard>
           ],
         ),
       ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // STATS ROW
-  // Three tiles with per-card accent colors so each metric has identity.
-  // "Today" card is intentionally the most vibrant.
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildStatsRow(List<Application> applications, List<Event> events) {
-    final todayKey =
-        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-    final todayCount = _events[todayKey]?.length ?? 0;
-
-    return Row(
-      children: [
-        Expanded(
-          child: _StatTile(
-            label: 'Applied',
-            value: '${applications.length}',
-            icon: Icons.assignment_rounded,
-            // Violet accent — matches primary
-            accentColor: _DT.primary,
-            bgColor: _DT.primaryLight,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatTile(
-            label: 'Events',
-            value: '${events.length}',
-            icon: Icons.event_rounded,
-            // Sky accent — distinct from primary
-            accentColor: _DT.sky,
-            bgColor: _DT.skyBg,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatTile(
-            label: 'Today',
-            value: '$todayCount',
-            icon: Icons.today_rounded,
-            // Emerald accent — "all good" / active
-            accentColor: _DT.emerald,
-            bgColor: _DT.emeraldBg,
-            // "Today" is the most important stat — make it pop.
-            highlight: todayCount > 0,
-          ),
-        ),
-      ],
     );
   }
 
@@ -1230,94 +1164,6 @@ class _StudentDashboardState extends State<StudentDashboard>
       case ApplicationStatus.declined:
         return 'Declined';
     }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// STAT TILE
-// Per-card color identity: accentColor drives icon + border highlight.
-// "highlight" flag (Today card with events) adds a gradient border.
-// ═══════════════════════════════════════════════════════════════════════════
-class _StatTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color accentColor;
-  final Color bgColor;
-  final bool highlight;
-
-  const _StatTile({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.accentColor,
-    required this.bgColor,
-    this.highlight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        // Highlighted tile (Today with events) gets a primary border.
-        border: Border.all(
-          color: highlight
-              ? accentColor.withOpacity(0.40)
-              : const Color(0xFFE8E9F3),
-          width: highlight ? 1.5 : 1.0,
-        ),
-        boxShadow: highlight
-            ? [
-                BoxShadow(
-                  color: accentColor.withOpacity(0.15),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : _DT.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icon badge
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: accentColor, size: 17),
-          ),
-          const SizedBox(height: 11),
-          // Value — large and bold for instant reading
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: _DT.ink,
-              letterSpacing: -0.8,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 11,
-              color: _DT.inkSecond,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

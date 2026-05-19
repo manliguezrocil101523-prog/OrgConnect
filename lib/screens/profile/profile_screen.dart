@@ -4,28 +4,102 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_state.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+// ─── Shared constants ────────────────────────────────────────────────────────
+const _kPrimary = Color(0xFF4F46E5);
+const _kSecondary = Color(0xFF06B6D4);
+const _kSuccess = Color(0xFF22C55E);
+const _kBg = Color(0xFFF1F5F9);
+const _kSlate0F = Color(0xFF0F172A);
+const _kSlate94 = Color(0xFF94A3B8);
+const _kSlateE2 = Color(0xFFE2E8F0);
+const _kSlateF8 = Color(0xFFF8FAFC);
+const _kRed = Color(0xFFE11D48);
+
+LinearGradient get _kGrad => const LinearGradient(
+      colors: [_kPrimary, _kSecondary],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
+BoxDecoration _cardDecoration() => BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+            color: _kPrimary.withOpacity(0.07),
+            blurRadius: 24,
+            offset: const Offset(0, 8)),
+        BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 2)),
+      ],
+    );
+
+InputDecoration _fieldDecoration({
+  required IconData icon,
+  required Color iconColor,
+  String? hint,
+  VoidCallback? onToggleObscure,
+  bool obscure = false,
+}) =>
+    InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(
+          color: Color(0xFFCBD5E1),
+          fontSize: 13.5,
+          fontWeight: FontWeight.w400),
+      filled: true,
+      fillColor: _kSlateF8,
+      prefixIcon: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, color: iconColor, size: 16),
+        ),
+      ),
+      suffixIcon: onToggleObscure != null
+          ? IconButton(
+              onPressed: onToggleObscure,
+              icon: Icon(
+                  obscure
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: _kSlate94,
+                  size: 20),
+            )
+          : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: _kSlateE2, width: 1.2)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: _kPrimary, width: 1.8)),
+    );
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
-
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-  // ─── Color tokens ──────────────────────────────────────────────────────────
-  static const Color _primary = Color(0xFF4F46E5);
-  static const Color _secondary = Color(0xFF06B6D4);
-  static const Color _success = Color(0xFF22C55E);
-  static const Color _background = Color(0xFFF1F5F9);
-
-  // ─── Controllers ───────────────────────────────────────────────────────────
-  final TextEditingController studentIdCtrl = TextEditingController();
-  final TextEditingController nameCtrl = TextEditingController();
-  final TextEditingController emailCtrl = TextEditingController();
-  final TextEditingController contactCtrl = TextEditingController();
-  final TextEditingController facebookCtrl = TextEditingController();
+  final studentIdCtrl = TextEditingController();
+  final nameCtrl = TextEditingController();
+  final emailCtrl = TextEditingController();
+  final contactCtrl = TextEditingController();
+  final facebookCtrl = TextEditingController();
 
   Uint8List? _avatarBytes;
   bool _isEditing = false;
@@ -36,15 +110,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   late final AnimationController _headerAnim;
   late final Animation<double> _headerFade;
 
-  // ─── Lifecycle ─────────────────────────────────────────────────────────────
-
   @override
   void initState() {
     super.initState();
     _headerAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
+        vsync: this, duration: const Duration(milliseconds: 700));
     _headerFade = CurvedAnimation(parent: _headerAnim, curve: Curves.easeOut);
     _loadProfile();
   }
@@ -52,47 +122,52 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void dispose() {
     _headerAnim.dispose();
-    studentIdCtrl.dispose();
-    nameCtrl.dispose();
-    emailCtrl.dispose();
-    contactCtrl.dispose();
-    facebookCtrl.dispose();
+    for (final c in [
+      studentIdCtrl,
+      nameCtrl,
+      emailCtrl,
+      contactCtrl,
+      facebookCtrl
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _loadProfile() async {
     await AppState.instance.loadStudentProfile();
-    final currentProfile = AppState.instance.currentStudent;
-    if (currentProfile != null) {
+    final cur = AppState.instance.currentStudent;
+    if (cur != null) {
       _profile = {
-        'student_id': currentProfile.studentId,
-        'name': currentProfile.name,
-        'email': currentProfile.email,
-        'contact': currentProfile.contact,
-        'facebook': currentProfile.facebook,
-        'avatar_url': currentProfile.avatarUrl,
+        'student_id': cur.studentId,
+        'name': cur.name,
+        'email': cur.email,
+        'contact': cur.contact,
+        'facebook': cur.facebook,
+        'avatar_url': cur.avatarUrl,
       };
       _populateControllers();
     } else {
       final prefs = await SharedPreferences.getInstance();
-      final profileJson = prefs.getString('student_profile');
-      if (profileJson != null) {
+      final json = prefs.getString('student_profile');
+      if (json != null) {
         try {
-          final data = jsonDecode(profileJson) as Map<String, dynamic>;
+          final d = jsonDecode(json) as Map<String, dynamic>;
           _profile = {
-            'student_id': data['studentId'] ?? '',
-            'name': data['name'] ?? '',
-            'email': data['email'] ?? '',
-            'contact': data['contact'] ?? '',
-            'facebook': data['facebook'] ?? '',
-            'avatar_url': data['avatarUrl'] ?? '',
+            'student_id': d['studentId'] ?? '',
+            'name': d['name'] ?? '',
+            'email': d['email'] ?? '',
+            'contact': d['contact'] ?? '',
+            'facebook': d['facebook'] ?? '',
+            'avatar_url': d['avatarUrl'] ?? '',
           };
           _populateControllers();
-        } catch (e) {
-          // keep _profile null on parse failure
-        }
+        } catch (_) {}
       }
     }
+
+    // FIX Bug 3: guard mounted before touching widget tree after async gap
+    if (!mounted) return;
     setState(() {
       _isEditing = false;
       _isLoading = false;
@@ -100,32 +175,27 @@ class _ProfileScreenState extends State<ProfileScreen>
     _headerAnim.forward();
   }
 
-  @override
   void _populateControllers() {
-    if (_profile != null) {
-      studentIdCtrl.text = _profile!['student_id'] ?? '';
-      nameCtrl.text = _profile!['name'] ?? '';
-      emailCtrl.text = _profile!['email'] ?? '';
-      contactCtrl.text = _profile!['contact'] ?? '';
-      facebookCtrl.text = _profile!['facebook'] ?? '';
-    }
+    if (_profile == null) return;
+    studentIdCtrl.text = _profile!['student_id'] ?? '';
+    nameCtrl.text = _profile!['name'] ?? '';
+    emailCtrl.text = _profile!['email'] ?? '';
+    contactCtrl.text = _profile!['contact'] ?? '';
+    facebookCtrl.text = _profile!['facebook'] ?? '';
   }
 
-  /// Returns 0.0–1.0 based on how many fields are filled
   double get _completeness {
     if (_profile == null) return 0;
     final keys = ['student_id', 'name', 'email', 'contact', 'facebook'];
-    final filled = keys.where((k) {
-      final v = _profile![k] as String? ?? '';
-      return v.isNotEmpty;
-    }).length;
-    return filled / keys.length;
+    return keys
+            .where((k) => (_profile![k] as String? ?? '').isNotEmpty)
+            .length /
+        keys.length;
   }
 
   Future<void> _pickAvatar() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'heic', 'webp'],
         withData: true,
@@ -135,9 +205,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to pick image: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
     }
   }
 
@@ -146,13 +215,14 @@ class _ProfileScreenState extends State<ProfileScreen>
         nameCtrl.text.trim().isEmpty ||
         emailCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in required fields')),
-      );
+          const SnackBar(content: Text('Please fill in required fields')));
       return;
     }
+
     setState(() => _isLoading = true);
+
     try {
-      final updatedProfile = StudentProfile(
+      final updated = StudentProfile(
         id: AppState.instance.currentStudent?.id ?? '',
         name: nameCtrl.text.trim(),
         email: emailCtrl.text.trim(),
@@ -164,97 +234,104 @@ class _ProfileScreenState extends State<ProfileScreen>
             : AppState.instance.currentStudent?.avatarUrl ?? '',
         joinedOrgIds: AppState.instance.currentStudent?.joinedOrgIds ?? [],
       );
-      await AppState.instance.setStudentProfile(updatedProfile);
-      if (mounted) {
-        setState(() {
-          _isEditing = false;
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Profile saved successfully!'),
-              ],
-            ),
-            backgroundColor: _success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+      await AppState.instance.setStudentProfile(updated);
+
+      if (!mounted) return;
+      setState(() {
+        _isEditing = false;
+        _isLoading = false; // FIX Bug 1: moved into the try block, not missing
+        _profile = {
+          'student_id': studentIdCtrl.text.trim(),
+          'name': nameCtrl.text.trim(),
+          'email': emailCtrl.text.trim(),
+          'contact': contactCtrl.text.trim(),
+          'facebook': facebookCtrl.text.trim(),
+          'avatar_url': updated.avatarUrl,
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Row(children: [
+          Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          SizedBox(width: 8),
+          Text('Profile saved successfully!'),
+        ]),
+        backgroundColor: _kSuccess,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving profile: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      if (!mounted) return;
+      // FIX Bug 1: always reset loading in both success and error paths
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error saving profile: $e'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
     }
   }
 
-  void _openZoom() => setState(() => _showZoom = true);
-  void _closeZoom() => setState(() => _showZoom = false);
-
-  // ─── Build ─────────────────────────────────────────────────────────────────
+  void _navigateToChangePassword() => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => const _ChangePasswordSheet(),
+      );
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        backgroundColor: _background,
+        backgroundColor: _kBg,
         body: Center(
-          child: CircularProgressIndicator(color: _primary, strokeWidth: 2.5),
-        ),
+            child:
+                CircularProgressIndicator(color: _kPrimary, strokeWidth: 2.5)),
       );
     }
 
+    // FIX Bug 4: data: URIs cannot be loaded by NetworkImage — detect and use
+    // MemoryImage instead to avoid crash/blank avatar after save.
     ImageProvider? avatarImage;
     if (_avatarBytes != null) {
       avatarImage = MemoryImage(_avatarBytes!);
-    } else if (_profile?['avatar_url'] != null &&
-        (_profile!['avatar_url'] as String).isNotEmpty) {
-      avatarImage = NetworkImage(_profile!['avatar_url'] as String);
+    } else {
+      final url = _profile?['avatar_url'] as String? ?? '';
+      if (url.startsWith('data:')) {
+        // Stored as base64 data URI — decode back to bytes
+        try {
+          final base64Str = url.substring(url.indexOf(',') + 1);
+          avatarImage = MemoryImage(base64Decode(base64Str));
+        } catch (_) {
+          avatarImage = null;
+        }
+      } else if (url.isNotEmpty) {
+        avatarImage = NetworkImage(url);
+      }
     }
 
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: _kBg,
       body: Stack(
         children: [
           CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // ── SLIVER APP BAR ─────────────────────────────────────────────
               SliverAppBar(
                 pinned: true,
-                expandedHeight: MediaQuery.of(context).size.height * 0.33,
-                backgroundColor: _primary,
+                expandedHeight: MediaQuery.of(context).size.height * 0.38,
+                backgroundColor: _kPrimary,
                 elevation: 0,
                 leading: IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
-                title: const Text(
-                  'Student Profile',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 17,
-                    letterSpacing: 0.3,
-                  ),
-                ),
+                title: const Text('Student Profile',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                        letterSpacing: 0.3)),
                 centerTitle: true,
                 actions: [
                   _AppBarActionButton(
@@ -269,12 +346,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                   background: FadeTransition(
                     opacity: _headerFade,
                     child: _ProfileHeroHeader(
-                      primary: _primary,
-                      secondary: _secondary,
                       avatarBytes: _avatarBytes,
                       avatarUrl: _profile?['avatar_url'],
                       isEditing: _isEditing,
-                      onAvatarTap: _isEditing ? _pickAvatar : _openZoom,
+                      onAvatarTap: _isEditing
+                          ? _pickAvatar
+                          : () => setState(() => _showZoom = true),
                       displayName: _profile?['name'] ?? '',
                       studentId: _profile?['student_id'] ?? '',
                       completeness: _completeness,
@@ -282,8 +359,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ),
               ),
-
-              // ── BODY ───────────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
@@ -298,9 +373,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           opacity: anim,
                           child: SlideTransition(
                             position: Tween<Offset>(
-                              begin: const Offset(0, 0.04),
-                              end: Offset.zero,
-                            ).animate(anim),
+                                    begin: const Offset(0, 0.04),
+                                    end: Offset.zero)
+                                .animate(anim),
                             child: child,
                           ),
                         ),
@@ -317,6 +392,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             : _ViewCard(
                                 key: const ValueKey('view'),
                                 profile: _profile,
+                                onChangePassword: _navigateToChangePassword,
                               ),
                       ),
                     ),
@@ -325,13 +401,11 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
           ),
-
-          // ── ZOOM OVERLAY ───────────────────────────────────────────────────
           _AvatarZoomOverlay(
             isVisible: _showZoom,
             avatarImage: avatarImage,
             displayName: _profile?['name'] ?? '',
-            onClose: _closeZoom,
+            onClose: () => setState(() => _showZoom = false),
           ),
         ],
       ),
@@ -340,11 +414,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 }
 
 // =============================================================================
-// _ProfileHeroHeader — Polished centered layout with completeness ring
+// _ProfileHeroHeader
 // =============================================================================
 class _ProfileHeroHeader extends StatelessWidget {
-  final Color primary;
-  final Color secondary;
   final Uint8List? avatarBytes;
   final String? avatarUrl;
   final bool isEditing;
@@ -354,8 +426,6 @@ class _ProfileHeroHeader extends StatelessWidget {
   final double completeness;
 
   const _ProfileHeroHeader({
-    required this.primary,
-    required this.secondary,
     required this.avatarBytes,
     required this.avatarUrl,
     required this.isEditing,
@@ -370,285 +440,263 @@ class _ProfileHeroHeader extends StatelessWidget {
     final size = MediaQuery.of(context).size;
     final avatarSize = (size.width * 0.22).clamp(68.0, 96.0);
 
+    // FIX Bug 4 (hero header): same data URI guard for the header avatar
+    Widget? avatarChild;
+    ImageProvider? bgImage;
+    if (avatarBytes != null) {
+      bgImage = MemoryImage(avatarBytes!);
+    } else {
+      final url = avatarUrl ?? '';
+      if (url.startsWith('data:')) {
+        try {
+          final base64Str = url.substring(url.indexOf(',') + 1);
+          bgImage = MemoryImage(base64Decode(base64Str));
+        } catch (_) {}
+      } else if (url.isNotEmpty) {
+        // Use a plain Image.network wrapped in ClipOval as child so errors
+        // are handled gracefully.
+        avatarChild = ClipOval(
+          child: Image.network(
+            url,
+            fit: BoxFit.cover,
+            width: avatarSize,
+            height: avatarSize,
+            errorBuilder: (_, __, ___) => Icon(
+              Icons.person_rounded,
+              size: avatarSize * 0.48,
+              color: _kPrimary,
+            ),
+          ),
+        );
+      }
+    }
+
+    // If no image at all, show the person icon
+    avatarChild ??= (bgImage == null
+        ? Icon(Icons.person_rounded, size: avatarSize * 0.48, color: _kPrimary)
+        : null);
+
     return Container(
-      decoration: BoxDecoration(
-        // AFTER — full indigo → cyan, matches the screenshot exactly
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            primary, // #4F46E5 Indigo
-            secondary, // #06B6D4 Cyan
-          ],
+          colors: [_kPrimary, _kSecondary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
       ),
       child: Stack(
         children: [
-          // ── Decorative background orbs ─────────────────────────────────────
-          Positioned(
-            top: -40,
-            right: -30,
-            child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.06),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -20,
-            left: -50,
-            child: Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.04),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 60,
-            left: 30,
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
-              ),
-            ),
-          ),
-
-          // ── Main centered content ──────────────────────────────────────────
+          _Orb(top: -40, right: -30, size: 200, opacity: 0.06),
+          _Orb(bottom: -20, left: -50, size: 160, opacity: 0.04),
+          _Orb(top: 60, left: 30, size: 60, opacity: 0.05),
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 48),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Avatar with glowing ring
-                  GestureDetector(
-                    onTap: onAvatarTap,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      alignment: Alignment.center,
+            child: LayoutBuilder(
+              builder: (ctx, constraints) {
+                // Dynamically scale top padding & gaps so content never
+                // overflows on any screen height.
+                final topPad = (constraints.maxHeight * 0.18).clamp(8.0, 44.0);
+                final gap = (constraints.maxHeight * 0.04).clamp(4.0, 14.0);
+                return SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Outer glow ring
-                        Container(
-                          width: avatarSize + 20,
-                          height: avatarSize + 20,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: SweepGradient(
-                              colors: [
-                                secondary.withOpacity(0.7),
-                                primary.withOpacity(0.3),
-                                secondary.withOpacity(0.7),
-                              ],
-                            ),
-                          ),
-                        ),
-                        // White ring
-                        Container(
-                          width: avatarSize + 8,
-                          height: avatarSize + 8,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                          ),
-                        ),
-                        // Avatar
-                        CircleAvatar(
-                          radius: avatarSize / 2,
-                          backgroundColor: const Color(0xFFE0E7FF),
-                          backgroundImage: avatarBytes != null
-                              ? MemoryImage(avatarBytes!) as ImageProvider
-                              : null,
-                          child: avatarBytes == null
-                              ? (avatarUrl != null && avatarUrl!.isNotEmpty
-                                  ? ClipOval(
-                                      child: Image.network(
-                                        avatarUrl!,
-                                        fit: BoxFit.cover,
-                                        width: avatarSize,
-                                        height: avatarSize,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          Icons.person_rounded,
-                                          size: avatarSize * 0.48,
-                                          color: const Color(0xFF4F46E5),
-                                        ),
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.person_rounded,
-                                      size: avatarSize * 0.48,
-                                      color: const Color(0xFF4F46E5),
-                                    ))
-                              : null,
-                        ),
-
-                        // Camera badge (edit mode)
-                        if (isEditing)
-                          Positioned(
-                            bottom: 2,
-                            right: 2,
-                            child: Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [primary, secondary],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
+                        SizedBox(height: topPad),
+                        GestureDetector(
+                          onTap: onAvatarTap,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: avatarSize + 20,
+                                height: avatarSize + 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: SweepGradient(colors: [
+                                    _kSecondary.withOpacity(0.7),
+                                    _kPrimary.withOpacity(0.3),
+                                    _kSecondary.withOpacity(0.7),
+                                  ]),
                                 ),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.18),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
                               ),
-                              child: const Icon(
-                                Icons.camera_alt_rounded,
-                                size: 14,
-                                color: Colors.white,
+                              Container(
+                                width: avatarSize + 8,
+                                height: avatarSize + 8,
+                                decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white),
+                              ),
+                              CircleAvatar(
+                                radius: avatarSize / 2,
+                                backgroundColor: const Color(0xFFE0E7FF),
+                                backgroundImage: bgImage,
+                                child: bgImage == null ? avatarChild : null,
+                              ),
+                              if (isEditing)
+                                Positioned(
+                                  bottom: 2,
+                                  right: 2,
+                                  child: Container(
+                                    width: 30,
+                                    height: 30,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                          colors: [_kPrimary, _kSecondary],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.18),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2))
+                                      ],
+                                    ),
+                                    child: const Icon(Icons.camera_alt_rounded,
+                                        size: 14, color: Colors.white),
+                                  ),
+                                )
+                              else if (avatarBytes != null ||
+                                  (avatarUrl ?? '').isNotEmpty)
+                                Positioned(
+                                  bottom: 2,
+                                  right: 2,
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.12),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2))
+                                      ],
+                                    ),
+                                    child: const Icon(Icons.zoom_in_rounded,
+                                        size: 14, color: _kSecondary),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: gap),
+                        if (displayName.isNotEmpty) ...[
+                          Text(displayName,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.1)),
+                          if (studentId.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 3),
+                                decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(20)),
+                                child: Text(studentId,
+                                    style: TextStyle(
+                                        color: Colors.white.withOpacity(0.90),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: 0.3)),
                               ),
                             ),
+                        ] else
+                          Text(
+                            isEditing
+                                ? 'Tap photo to upload'
+                                : 'No profile set',
+                            style: TextStyle(
+                                color: Colors.white.withOpacity(0.65),
+                                fontSize: 13,
+                                fontStyle: FontStyle.italic),
                           ),
-
-                        // Zoom badge (view mode, avatar exists)
-                        if (!isEditing &&
-                            (avatarBytes != null ||
-                                (avatarUrl != null && avatarUrl!.isNotEmpty)))
-                          Positioned(
-                            bottom: 2,
-                            right: 2,
-                            child: Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.12),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
+                        SizedBox(height: gap),
+                        if (!isEditing)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 48),
+                            child: Column(children: [
+                              Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('Profile Completeness',
+                                        style: TextStyle(
+                                            color:
+                                                Colors.white.withOpacity(0.70),
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w500)),
+                                    Text('${(completeness * 100).toInt()}%',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700)),
+                                  ]),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: completeness,
+                                  minHeight: 5,
+                                  backgroundColor:
+                                      Colors.white.withOpacity(0.20),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                          _kSecondary),
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.zoom_in_rounded,
-                                size: 14,
-                                color: Color(0xFF06B6D4),
-                              ),
-                            ),
+                            ]),
                           ),
+                        SizedBox(height: gap / 2),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 14),
-
-                  // Name / placeholder
-                  if (displayName.isNotEmpty) ...[
-                    Text(
-                      displayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.1,
-                      ),
-                    ),
-                    if (studentId.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            studentId,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.90),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ] else
-                    Text(
-                      isEditing ? 'Tap photo to upload' : 'No profile set',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.65),
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-
-                  const SizedBox(height: 14),
-
-                  // ── Profile completeness bar ───────────────────────────────
-                  if (!isEditing)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 48),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Profile Completeness',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.70),
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                '${(completeness * 100).toInt()}%',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: completeness,
-                              minHeight: 5,
-                              backgroundColor: Colors.white.withOpacity(0.20),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Color(0xFF06B6D4),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
       ),
     );
   }
+}
+
+// Simple decorative circle helper
+class _Orb extends StatelessWidget {
+  final double? top, bottom, left, right, size, opacity;
+  const _Orb(
+      {this.top,
+      this.bottom,
+      this.left,
+      this.right,
+      required this.size,
+      required this.opacity});
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+        top: top,
+        bottom: bottom,
+        left: left,
+        right: right,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withOpacity(opacity!)),
+        ),
+      );
 }
 
 // =============================================================================
@@ -669,8 +717,8 @@ class _AvatarZoomOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final imgSize = (size.width * 0.70).clamp(0.0, 300.0);
+    final imgSize =
+        (MediaQuery.of(context).size.width * 0.70).clamp(0.0, 300.0);
 
     return IgnorePointer(
       ignoring: !isVisible,
@@ -688,59 +736,48 @@ class _AvatarZoomOverlay extends StatelessWidget {
               child: Stack(
                 children: [
                   Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: imgSize + 8,
-                          height: imgSize + 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.20),
-                              width: 4,
-                            ),
-                          ),
-                          child: ClipOval(
-                            child: avatarImage != null
-                                ? Image(
-                                    image: avatarImage!,
-                                    fit: BoxFit.cover,
-                                    width: imgSize,
-                                    height: imgSize,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      color: const Color(0xFF1E293B),
-                                      child: const Icon(Icons.person_rounded,
-                                          color: Colors.white38, size: 80),
-                                    ),
-                                  )
-                                : Container(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Container(
+                        width: imgSize + 8,
+                        height: imgSize + 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.20), width: 4),
+                        ),
+                        child: ClipOval(
+                          child: avatarImage != null
+                              ? Image(
+                                  image: avatarImage!,
+                                  fit: BoxFit.cover,
+                                  width: imgSize,
+                                  height: imgSize,
+                                  errorBuilder: (_, __, ___) => Container(
                                     color: const Color(0xFF1E293B),
                                     child: const Icon(Icons.person_rounded,
                                         color: Colors.white38, size: 80),
                                   ),
-                          ),
+                                )
+                              : Container(
+                                  color: const Color(0xFF1E293B),
+                                  child: const Icon(Icons.person_rounded,
+                                      color: Colors.white38, size: 80),
+                                ),
                         ),
-                        const SizedBox(height: 20),
-                        if (displayName.isNotEmpty)
-                          Text(
-                            displayName,
+                      ),
+                      const SizedBox(height: 20),
+                      if (displayName.isNotEmpty)
+                        Text(displayName,
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Tap × to close',
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      Text('Tap × to close',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.40),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
+                              color: Colors.white.withOpacity(0.40),
+                              fontSize: 12)),
+                    ]),
                   ),
                   Positioned(
                     top: 12,
@@ -755,9 +792,7 @@ class _AvatarZoomOverlay extends StatelessWidget {
                           color: Colors.white.withOpacity(0.12),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.20),
-                            width: 1,
-                          ),
+                              color: Colors.white.withOpacity(0.20), width: 1),
                         ),
                         child: const Icon(Icons.close_rounded,
                             color: Colors.white, size: 20),
@@ -775,12 +810,11 @@ class _AvatarZoomOverlay extends StatelessWidget {
 }
 
 // =============================================================================
-// _AppBarActionButton — pill with icon + label
+// _AppBarActionButton
 // =============================================================================
 class _AppBarActionButton extends StatelessWidget {
   final bool isEditing;
   final VoidCallback onTap;
-
   const _AppBarActionButton({required this.isEditing, required this.onTap});
 
   @override
@@ -790,7 +824,7 @@ class _AppBarActionButton extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: isEditing ? Colors.white : Colors.white.withOpacity(0.18),
           borderRadius: BorderRadius.circular(20),
@@ -800,44 +834,41 @@ class _AppBarActionButton extends StatelessWidget {
           boxShadow: isEditing
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3))
                 ]
               : null,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isEditing ? Icons.check_rounded : Icons.edit_rounded,
-              color: isEditing ? const Color(0xFF4F46E5) : Colors.white,
-              size: 15,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              isEditing ? 'Save' : 'Edit',
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(isEditing ? Icons.check_rounded : Icons.edit_rounded,
+              color: isEditing ? _kPrimary : Colors.white, size: 15),
+          const SizedBox(width: 5),
+          Text(isEditing ? 'Save' : 'Edit',
               style: TextStyle(
-                color: isEditing ? const Color(0xFF4F46E5) : Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+                  color: isEditing ? _kPrimary : Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+        ]),
       ),
     );
   }
 }
 
 // =============================================================================
-// _ViewCard — profile details display, polished rows
+// _ViewCard
 // =============================================================================
+class _FieldDef {
+  final IconData icon;
+  final String label, key;
+  final Color color;
+  const _FieldDef(this.icon, this.label, this.key, this.color);
+}
+
 class _ViewCard extends StatelessWidget {
   final Map<String, dynamic>? profile;
-
-  const _ViewCard({super.key, required this.profile});
+  final VoidCallback? onChangePassword;
+  const _ViewCard({super.key, required this.profile, this.onChangePassword});
 
   static const _fields = [
     _FieldDef(
@@ -851,82 +882,100 @@ class _ViewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SectionLabel(text: 'Profile Details'),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF4F46E5).withOpacity(0.07),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _SectionLabel(text: 'Profile Details'),
+      const SizedBox(height: 12),
+      Container(
+        decoration: _cardDecoration(),
+        child: Column(children: [
+          for (int i = 0; i < _fields.length; i++) ...[
+            _ProfileInfoRow(
+                fieldDef: _fields[i],
+                value: profile?[_fields[i].key] ?? '',
+                isFirst: i == 0,
+                isLast: i == _fields.length - 1),
+            if (i < _fields.length - 1)
+              Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 70,
+                  endIndent: 20,
+                  color: Colors.grey.shade100),
+          ],
+        ]),
+      ),
+      const SizedBox(height: 28),
+      const _SectionLabel(text: 'Account Security'),
+      const SizedBox(height: 12),
+      Container(
+        decoration: _cardDecoration(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Material(
+            color: Colors.transparent,
+            child: ListTile(
+              onTap: onChangePassword,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+              leading:
+                  _IconBox(icon: Icons.lock_outline_rounded, color: _kPrimary),
+              title: const Text('Change Password',
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: _kSlate0F)),
+              subtitle: const Text('Update your account password',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      color: _kSlate94,
+                      fontWeight: FontWeight.w400)),
+              trailing: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                    color: _kBg, borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.chevron_right_rounded,
+                    color: _kSlate94, size: 18),
               ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            ),
           ),
-          child: Column(children: _buildRows(profile)),
         ),
-      ],
-    );
-  }
-
-  static List<Widget> _buildRows(Map<String, dynamic>? profile) {
-    final rows = <Widget>[];
-    for (int i = 0; i < _fields.length; i++) {
-      rows.add(_ProfileInfoRow(
-        fieldDef: _fields[i],
-        value: profile?[_fields[i].key] ?? '',
-        isFirst: i == 0,
-        isLast: i == _fields.length - 1,
-      ));
-      if (i < _fields.length - 1) {
-        rows.add(Divider(
-          height: 1,
-          thickness: 1,
-          indent: 70,
-          endIndent: 20,
-          color: Colors.grey.shade100,
-        ));
-      }
-    }
-    return rows;
+      ),
+    ]);
   }
 }
 
-class _FieldDef {
+// Reusable tinted icon box
+class _IconBox extends StatelessWidget {
   final IconData icon;
-  final String label;
-  final String key;
   final Color color;
-  const _FieldDef(this.icon, this.label, this.key, this.color);
+  final double size;
+  const _IconBox({required this.icon, required this.color, this.size = 40});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+            color: color.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(11)),
+        child: Icon(icon, color: color, size: 19),
+      );
 }
 
 class _ProfileInfoRow extends StatelessWidget {
   final _FieldDef fieldDef;
   final String value;
-  final bool isFirst;
-  final bool isLast;
-
-  const _ProfileInfoRow({
-    required this.fieldDef,
-    required this.value,
-    this.isFirst = false,
-    this.isLast = false,
-  });
+  final bool isFirst, isLast;
+  const _ProfileInfoRow(
+      {required this.fieldDef,
+      required this.value,
+      this.isFirst = false,
+      this.isLast = false});
 
   @override
   Widget build(BuildContext context) {
     final isEmpty = value.isEmpty || value == 'Not set';
-
     return ClipRRect(
       borderRadius: BorderRadius.vertical(
         top: isFirst ? const Radius.circular(20) : Radius.zero,
@@ -934,169 +983,130 @@ class _ProfileInfoRow extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Icon container — rounded square with tinted bg
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
                 color: fieldDef.color.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(fieldDef.icon, color: fieldDef.color, size: 19),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
+                borderRadius: BorderRadius.circular(11)),
+            child: Icon(fieldDef.icon, color: fieldDef.color, size: 19),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    fieldDef.label.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF94A3B8),
-                      letterSpacing: 0.8,
-                    ),
-                  ),
+                  Text(fieldDef.label.toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: _kSlate94,
+                          letterSpacing: 0.8)),
                   const SizedBox(height: 3),
                   Text(
                     isEmpty ? 'Not added yet' : value,
                     style: TextStyle(
                       fontSize: 14.5,
                       fontWeight: isEmpty ? FontWeight.w400 : FontWeight.w600,
-                      color: isEmpty
-                          ? const Color(0xFFCBD5E1)
-                          : const Color(0xFF0F172A),
+                      color: isEmpty ? const Color(0xFFCBD5E1) : _kSlate0F,
                       fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
                     ),
                   ),
-                ],
-              ),
-            ),
-
-            // Filled indicator dot
-            if (!isEmpty)
-              Container(
+                ]),
+          ),
+          if (!isEmpty)
+            Container(
                 width: 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: fieldDef.color.withOpacity(0.6),
-                  shape: BoxShape.circle,
-                ),
-              ),
-          ],
-        ),
+                    color: fieldDef.color.withOpacity(0.6),
+                    shape: BoxShape.circle)),
+        ]),
       ),
     );
   }
 }
 
 // =============================================================================
-// _EditForm — polished edit layout
+// _EditForm
 // =============================================================================
 class _EditForm extends StatelessWidget {
-  final TextEditingController studentIdCtrl;
-  final TextEditingController nameCtrl;
-  final TextEditingController emailCtrl;
-  final TextEditingController contactCtrl;
-  final TextEditingController facebookCtrl;
+  final TextEditingController studentIdCtrl,
+      nameCtrl,
+      emailCtrl,
+      contactCtrl,
+      facebookCtrl;
   final VoidCallback onSave;
-
-  const _EditForm({
-    super.key,
-    required this.studentIdCtrl,
-    required this.nameCtrl,
-    required this.emailCtrl,
-    required this.contactCtrl,
-    required this.facebookCtrl,
-    required this.onSave,
-  });
+  const _EditForm(
+      {super.key,
+      required this.studentIdCtrl,
+      required this.nameCtrl,
+      required this.emailCtrl,
+      required this.contactCtrl,
+      required this.facebookCtrl,
+      required this.onSave});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SectionLabel(text: 'Edit Information'),
-        const SizedBox(height: 16),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF4F46E5).withOpacity(0.07),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
-          child: Column(
-            children: [
-              _FormField(
-                label: 'Student ID',
-                controller: studentIdCtrl,
-                hint: 'e.g., 202324-1234',
-                icon: Icons.badge_rounded,
-                iconColor: const Color(0xFF4F46E5),
-                isRequired: true,
-              ),
-              _FormField(
-                label: 'Full Name',
-                controller: nameCtrl,
-                hint: 'First Last',
-                icon: Icons.person_rounded,
-                iconColor: const Color(0xFF0891B2),
-                isRequired: true,
-              ),
-              _FormField(
-                label: 'Email',
-                controller: emailCtrl,
-                hint: 'name@school.edu.ph',
-                icon: Icons.email_rounded,
-                iconColor: const Color(0xFF0D9488),
-                isRequired: true,
-                keyboardType: TextInputType.emailAddress,
-              ),
-              _FormField(
-                label: 'Contact',
-                controller: contactCtrl,
-                hint: '09123456789',
-                icon: Icons.phone_rounded,
-                iconColor: const Color(0xFF16A34A),
-                keyboardType: TextInputType.phone,
-              ),
-              _FormField(
-                label: 'Facebook',
-                controller: facebookCtrl,
-                hint: 'Your Facebook name',
-                icon: Icons.facebook_rounded,
-                iconColor: const Color(0xFF2563EB),
-                isLast: true,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        _GradientSaveButton(onTap: onSave),
-        const SizedBox(height: 10),
-        const Center(
-          child: Text(
-            '* Required fields',
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _SectionLabel(text: 'Edit Information'),
+      const SizedBox(height: 16),
+      Container(
+        decoration: _cardDecoration(),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+        child: Column(children: [
+          _FormField(
+              label: 'Student ID',
+              controller: studentIdCtrl,
+              hint: 'e.g., 202324-1234',
+              icon: Icons.badge_rounded,
+              iconColor: _kPrimary,
+              isRequired: true),
+          _FormField(
+              label: 'Full Name',
+              controller: nameCtrl,
+              hint: 'First Last',
+              icon: Icons.person_rounded,
+              iconColor: const Color(0xFF0891B2),
+              isRequired: true),
+          _FormField(
+              label: 'Email',
+              controller: emailCtrl,
+              hint: 'name@school.edu.ph',
+              icon: Icons.email_rounded,
+              iconColor: const Color(0xFF0D9488),
+              isRequired: true,
+              keyboardType: TextInputType.emailAddress),
+          _FormField(
+              label: 'Contact',
+              controller: contactCtrl,
+              hint: '09123456789',
+              icon: Icons.phone_rounded,
+              iconColor: const Color(0xFF16A34A),
+              keyboardType: TextInputType.phone),
+          _FormField(
+              label: 'Facebook',
+              controller: facebookCtrl,
+              hint: 'Your Facebook name',
+              icon: Icons.facebook_rounded,
+              iconColor: const Color(0xFF2563EB),
+              isLast: true),
+        ]),
+      ),
+      const SizedBox(height: 24),
+      _GradientButton(
+          label: 'Save Profile',
+          icon: Icons.check_circle_rounded,
+          onTap: onSave),
+      const SizedBox(height: 10),
+      const Center(
+        child: Text('* Required fields',
             style: TextStyle(
-              fontSize: 11,
-              color: Color(0xFF94A3B8),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
-      ],
-    );
+                fontSize: 11, color: _kSlate94, fontStyle: FontStyle.italic)),
+      ),
+    ]);
   }
 }
 
@@ -1106,8 +1116,7 @@ class _FormField extends StatefulWidget {
   final String hint;
   final IconData icon;
   final Color iconColor;
-  final bool isRequired;
-  final bool isLast;
+  final bool isRequired, isLast;
   final TextInputType? keyboardType;
 
   const _FormField({
@@ -1127,24 +1136,24 @@ class _FormField extends StatefulWidget {
 }
 
 class _FormFieldState extends State<_FormField> {
-  late FocusNode _focusNode;
+  late final FocusNode _focus = FocusNode();
   bool _isFocused = false;
 
   @override
   void initState() {
     super.initState();
-    _focusNode = FocusNode();
+    _focus.addListener(_onFocusChange);
+  }
 
-    _focusNode.addListener(() {
-      setState(() {
-        _isFocused = _focusNode.hasFocus;
-      });
-    });
+  void _onFocusChange() {
+    // FIX Bug 5: guard mounted before calling setState from focus listener
+    if (mounted) setState(() => _isFocused = _focus.hasFocus);
   }
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
     super.dispose();
   }
 
@@ -1152,99 +1161,58 @@ class _FormFieldState extends State<_FormField> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(bottom: widget.isLast ? 0 : 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // LABEL
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 7),
-            child: RichText(
-              text: TextSpan(
-                text: widget.label,
-                style: const TextStyle(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 7),
+          child: RichText(
+            text: TextSpan(
+              text: widget.label,
+              style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF374151),
-                  letterSpacing: 0.2,
-                ),
-                children: widget.isRequired
-                    ? const [
-                        TextSpan(
+                  letterSpacing: 0.2),
+              children: widget.isRequired
+                  ? const [
+                      TextSpan(
                           text: ' *',
                           style: TextStyle(
-                            color: Color(0xFFE11D48),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ]
-                    : [],
-              ),
+                              color: _kRed, fontWeight: FontWeight.w700))
+                    ]
+                  : [],
             ),
           ),
-
-          // TEXT FIELD
-          TextField(
-            controller: widget.controller,
-            focusNode: _focusNode,
-            keyboardType: widget.keyboardType,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF0F172A),
-            ),
-            decoration: InputDecoration(
-              hintText: _isFocused ? '' : widget.hint, // ✨ fade trigger
-              hintStyle: const TextStyle(
-                color: Color(0xFFCBD5E1),
-                fontSize: 13.5,
-                fontWeight: FontWeight.w400,
-              ),
-              filled: true,
-              fillColor: const Color(0xFFF8FAFC),
-
-              prefixIcon: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: widget.iconColor.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(widget.icon, color: widget.iconColor, size: 16),
-                ),
-              ),
-
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(13),
-                borderSide: BorderSide.none,
-              ),
-
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(13),
-                borderSide:
-                    const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
-              ),
-
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(13),
-                borderSide:
-                    const BorderSide(color: Color(0xFF4F46E5), width: 1.8),
-              ),
-            ),
+        ),
+        TextField(
+          controller: widget.controller,
+          focusNode: _focus,
+          keyboardType: widget.keyboardType,
+          style: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.w500, color: _kSlate0F),
+          // FIX Bug 5: always pass the hint — clearing it on focus hides the
+          // placeholder but it never comes back on unfocus; just keep it always.
+          decoration: _fieldDecoration(
+            icon: widget.icon,
+            iconColor: widget.iconColor,
+            hint: widget.hint,
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 }
 
-class _GradientSaveButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _GradientSaveButton({required this.onTap});
+// Shared gradient button used in edit form and password sheet
+class _GradientButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool isLoading;
+  const _GradientButton(
+      {required this.label,
+      required this.icon,
+      this.onTap,
+      this.isLoading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1252,42 +1220,37 @@ class _GradientSaveButton extends StatelessWidget {
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        onTap: onTap,
+        onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
           height: 54,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
+            gradient: _kGrad,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF4F46E5).withOpacity(0.32),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
+                  color: _kPrimary.withOpacity(0.32),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6))
             ],
           ),
-          child: const Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 19),
-                SizedBox(width: 8),
-                Text(
-                  'Save Profile',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ],
-            ),
+          child: Center(
+            child: isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.5, color: Colors.white))
+                : Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(icon, color: Colors.white, size: 19),
+                    const SizedBox(width: 8),
+                    Text(label,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3)),
+                  ]),
           ),
         ),
       ),
@@ -1296,7 +1259,7 @@ class _GradientSaveButton extends StatelessWidget {
 }
 
 // =============================================================================
-// _SectionLabel — unified with Dashboard
+// _SectionLabel
 // =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -1304,31 +1267,238 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 3,
-          height: 14,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: BorderRadius.circular(2),
+    return Row(children: [
+      Container(
+        width: 3,
+        height: 14,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [_kPrimary, _kSecondary],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
+          borderRadius: BorderRadius.circular(2),
         ),
-        const SizedBox(width: 10),
-        Text(
-          text.toUpperCase(),
+      ),
+      const SizedBox(width: 10),
+      Text(text.toUpperCase(),
           style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.6,
-            color: Color(0xFF94A3B8),
-          ),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.6,
+              color: _kSlate94)),
+    ]);
+  }
+}
+
+// =============================================================================
+// _ChangePasswordSheet
+// =============================================================================
+class _ChangePasswordSheet extends StatefulWidget {
+  const _ChangePasswordSheet();
+  @override
+  State<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
+}
+
+class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
+  final _currentCtrl = TextEditingController();
+  final _newCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+
+  bool _obscureCurrent = true, _obscureNew = true, _obscureConfirm = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _currentCtrl.dispose();
+    _newCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final cur = _currentCtrl.text.trim();
+    final newPass = _newCtrl.text.trim();
+    final confirm = _confirmCtrl.text.trim();
+    setState(() => _errorMessage = null);
+
+    if (cur.isEmpty || newPass.isEmpty || confirm.isEmpty) {
+      setState(() => _errorMessage = 'Please fill in all fields.');
+      return;
+    }
+    if (newPass.length < 6) {
+      setState(
+          () => _errorMessage = 'New password must be at least 6 characters.');
+      return;
+    }
+    if (newPass != confirm) {
+      setState(() => _errorMessage = 'New passwords do not match.');
+      return;
+    }
+    if (cur == newPass) {
+      setState(() =>
+          _errorMessage = 'New password must differ from current password.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // FIX Bug 2: capture the parent ScaffoldMessenger BEFORE popping so the
+    // snackbar still shows after the sheet is dismissed.
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final email = Supabase.instance.client.auth.currentUser?.email ?? '';
+      await Supabase.instance.client.auth
+          .signInWithPassword(email: email, password: cur);
+      await Supabase.instance.client.auth
+          .updateUser(UserAttributes(password: newPass));
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      // FIX Bug 2: use the pre-captured messenger, not context (which is gone)
+      messenger.showSnackBar(SnackBar(
+        content: const Row(children: [
+          Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          SizedBox(width: 8),
+          Text('Password updated successfully!'),
+        ]),
+        backgroundColor: _kSuccess,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage =
+            e.message.toLowerCase().contains('invalid')
+                ? 'Current password is incorrect.'
+                : e.message);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _errorMessage = 'Unexpected error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _pwField(
+      {required String label,
+      required TextEditingController controller,
+      required bool obscure,
+      required VoidCallback onToggle}) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 7),
+        child: Text(label,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF374151),
+                letterSpacing: 0.2)),
+      ),
+      TextField(
+        controller: controller,
+        obscureText: obscure,
+        style: const TextStyle(
+            fontSize: 14, fontWeight: FontWeight.w500, color: _kSlate0F),
+        decoration: _fieldDecoration(
+          icon: Icons.lock_outline_rounded,
+          iconColor: _kPrimary,
+          onToggleObscure: onToggle,
+          obscure: obscure,
         ),
-      ],
+      ),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      padding: EdgeInsets.fromLTRB(24, 20, 24, 24 + bottomInset),
+      child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: _kSlateE2,
+                        borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 20),
+            Row(children: [
+              _IconBox(icon: Icons.lock_outline_rounded, color: _kPrimary),
+              const SizedBox(width: 12),
+              const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Change Password',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: _kSlate0F)),
+                    Text('Must be at least 6 characters',
+                        style: TextStyle(fontSize: 12, color: _kSlate94)),
+                  ]),
+            ]),
+            const SizedBox(height: 24),
+            _pwField(
+                label: 'Current Password',
+                controller: _currentCtrl,
+                obscure: _obscureCurrent,
+                onToggle: () =>
+                    setState(() => _obscureCurrent = !_obscureCurrent)),
+            const SizedBox(height: 16),
+            _pwField(
+                label: 'New Password',
+                controller: _newCtrl,
+                obscure: _obscureNew,
+                onToggle: () => setState(() => _obscureNew = !_obscureNew)),
+            const SizedBox(height: 16),
+            _pwField(
+                label: 'Confirm New Password',
+                controller: _confirmCtrl,
+                obscure: _obscureConfirm,
+                onToggle: () =>
+                    setState(() => _obscureConfirm = !_obscureConfirm)),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE4E6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _kRed.withOpacity(0.25)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.error_outline_rounded,
+                      color: _kRed, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: Text(_errorMessage!,
+                          style: const TextStyle(
+                              color: _kRed,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 28),
+            _GradientButton(
+              label: 'Update Password',
+              icon: Icons.lock_reset_rounded,
+              onTap: _submit,
+              isLoading: _isLoading,
+            ),
+          ]),
     );
   }
 }
