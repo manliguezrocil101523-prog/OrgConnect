@@ -10,11 +10,10 @@ class NotificationScreen extends StatefulWidget {
 
 class _NotificationScreenState extends State<NotificationScreen>
     with SingleTickerProviderStateMixin {
-  // ─── Color tokens — unified with ProfileScreen & Dashboard ────────────────
   static const Color _primary = Color(0xFF4F46E5);
   static const Color _secondary = Color(0xFF06B6D4);
   static const Color _background = Color(0xFFF1F5F9);
-  static const Color _interview = Color(0xFFF59E0B); // Amber
+  static const Color _interview = Color(0xFFF59E0B);
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
@@ -43,7 +42,9 @@ class _NotificationScreenState extends State<NotificationScreen>
 
   void _markAsRead(String id) => AppState.instance.markNotificationRead(id);
 
-  // ─── Build ─────────────────────────────────────────────────────────────────
+  Future<void> _handleRefresh() async {
+    await AppState.instance.fetchNotifications();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,128 +63,129 @@ class _NotificationScreenState extends State<NotificationScreen>
 
     return Scaffold(
       backgroundColor: _background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── SLIVER APP BAR ────────────────────────────────────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: MediaQuery.of(context).size.height * 0.18,
-            backgroundColor: _primary,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: Colors.white,
-                size: 20,
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: _primary,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              expandedHeight: MediaQuery.of(context).size.height * 0.18,
+              backgroundColor: _primary,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                onPressed: () => Navigator.pop(context),
               ),
-              onPressed: () => Navigator.pop(context),
-            ),
-            title: const Text(
-              'Notifications',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 17,
-                letterSpacing: 0.3,
+              title: const Text(
+                'Notifications',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17,
+                  letterSpacing: 0.3,
+                ),
               ),
-            ),
-            centerTitle: true,
-            actions: [
-              if (unreadCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.20),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
-                          width: 1,
+              centerTitle: true,
+              actions: [
+                if (unreadCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.20),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.35),
+                            width: 1,
+                          ),
                         ),
-                      ),
-                      child: Text(
-                        '$unreadCount unread',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
+                        child: Text(
+                          '$unreadCount unread',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                   ),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: _NotificationHeroHeader(
+                  primary: _primary,
+                  secondary: _secondary,
+                  totalCount: notifications.length,
+                  unreadCount: unreadCount,
                 ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: _NotificationHeroHeader(
-                primary: _primary,
-                secondary: _secondary,
-                totalCount: notifications.length,
-                unreadCount: unreadCount,
               ),
             ),
-          ),
-
-          // ── BODY ──────────────────────────────────────────────────────────
-          notifications.isEmpty
-              ? SliverFillRemaining(
-                  child: _EmptyState(),
-                )
-              : SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 540),
-                          child: FadeTransition(
-                            opacity: _fadeAnim,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (interviewNotifications.isNotEmpty) ...[
-                                  const _SectionLabel(
-                                      text: 'Interview Notifications'),
-                                  const SizedBox(height: 12),
-                                  ...interviewNotifications
-                                      .asMap()
-                                      .entries
-                                      .map((e) => _InterviewCard(
-                                            notification: e.value,
-                                            index: e.key,
-                                            onTap: () =>
-                                                _markAsRead(e.value.id),
-                                          )),
-                                  const SizedBox(height: 24),
+            notifications.isEmpty
+                ? SliverFillRemaining(
+                    child: _EmptyState(),
+                  )
+                : SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 540),
+                            child: FadeTransition(
+                              opacity: _fadeAnim,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (interviewNotifications.isNotEmpty) ...[
+                                    const _SectionLabel(
+                                        text: 'Interview Notifications'),
+                                    const SizedBox(height: 12),
+                                    ...interviewNotifications
+                                        .asMap()
+                                        .entries
+                                        .map((e) => _InterviewCard(
+                                              notification: e.value,
+                                              index: e.key,
+                                              onTap: () =>
+                                                  _markAsRead(e.value.id),
+                                            )),
+                                    const SizedBox(height: 24),
+                                  ],
+                                  if (otherNotifications.isNotEmpty) ...[
+                                    const _SectionLabel(
+                                        text: 'Other Notifications'),
+                                    const SizedBox(height: 12),
+                                    ...otherNotifications
+                                        .asMap()
+                                        .entries
+                                        .map((e) => _GeneralCard(
+                                              notification: e.value,
+                                              index: e.key,
+                                              onTap: () =>
+                                                  _markAsRead(e.value.id),
+                                            )),
+                                  ],
                                 ],
-                                if (otherNotifications.isNotEmpty) ...[
-                                  const _SectionLabel(
-                                      text: 'Other Notifications'),
-                                  const SizedBox(height: 12),
-                                  ...otherNotifications
-                                      .asMap()
-                                      .entries
-                                      .map((e) => _GeneralCard(
-                                            notification: e.value,
-                                            index: e.key,
-                                            onTap: () =>
-                                                _markAsRead(e.value.id),
-                                          )),
-                                ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ]),
+                      ]),
+                    ),
                   ),
-                ),
-        ],
-      ),
-    );
+          ],
+        ), // closes CustomScrollView
+      ), // closes RefreshIndicator
+    ); // closes Scaffold
   }
 }
 
@@ -215,7 +217,6 @@ class _NotificationHeroHeader extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Decorative orbs
           Positioned(
             top: -30,
             right: -20,
@@ -240,13 +241,11 @@ class _NotificationHeroHeader extends StatelessWidget {
               ),
             ),
           ),
-          // Bell icon + stats row
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.only(top: 52, left: 24, right: 24),
               child: Row(
                 children: [
-                  // Glowing bell
                   Container(
                     width: 52,
                     height: 52,
@@ -355,7 +354,6 @@ class _InterviewCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icon container
                 Container(
                   width: 44,
                   height: 44,
@@ -370,7 +368,6 @@ class _InterviewCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 14),
-                // Text content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -515,7 +512,6 @@ class _GeneralCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icon container
                 Container(
                   width: 44,
                   height: 44,
@@ -532,7 +528,6 @@ class _GeneralCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 14),
-                // Text content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -672,7 +667,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 // =============================================================================
-// _SectionLabel — identical to ProfileScreen & Dashboard
+// _SectionLabel
 // =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;

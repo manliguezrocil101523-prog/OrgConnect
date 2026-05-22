@@ -4,7 +4,7 @@ import 'officer_applications_screen.dart';
 import 'officer_members_screen.dart';
 import 'officer_events_screen.dart';
 import 'officer_authorization_screen.dart';
-import '../auth/sign_in_page.dart';
+import '../auth/unified_login_page.dart';
 
 class BaseOfficerDashboard extends StatelessWidget {
   final String orgId;
@@ -51,7 +51,7 @@ class BaseOfficerDashboard extends StatelessWidget {
               onPressed: () => Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const SignInPage(),
+                  builder: (_) => const UnifiedLoginPage(),
                 ),
               ),
             ),
@@ -306,7 +306,7 @@ class _OfficerHeroHeader extends StatelessWidget {
                           children: [
                             // FIX 1: Corrected title-case spelling
                             Text(
-                              'BCC Peers Facilitators Circles',
+                              org.name,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(

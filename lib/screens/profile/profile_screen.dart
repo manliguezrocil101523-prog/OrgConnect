@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../auth/unified_login_page.dart';
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 const _kPrimary = Color(0xFF4F46E5);
@@ -277,6 +278,127 @@ class _ProfileScreenState extends State<ProfileScreen>
         backgroundColor: Colors.transparent,
         builder: (_) => const _ChangePasswordSheet(),
       );
+  void _showLogoutDialog() => showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 40,
+                    offset: const Offset(0, 16)),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon badge
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: _kRed.withOpacity(0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      const Icon(Icons.logout_rounded, color: _kRed, size: 30),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Log out of OrgConnect?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: _kSlate0F,
+                      letterSpacing: 0.1),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Are you sure you want to log out of your account? You will need to enter your credentials to log back in.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      color: _kSlate94,
+                      height: 1.5,
+                      fontWeight: FontWeight.w400),
+                ),
+                const SizedBox(height: 28),
+                Row(children: [
+                  // Cancel button
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _kBg,
+                          borderRadius: BorderRadius.circular(13),
+                          border: Border.all(color: _kSlateE2, width: 1.2),
+                        ),
+                        child: const Center(
+                          child: Text('Cancel',
+                              style: TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: _kSlate0F)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Log Out button
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await Supabase.instance.client.auth.signOut();
+                        if (!mounted) return;
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const UnifiedLoginPage()), // 👈 replace with your login widget
+                          (route) => false,
+                        );
+                      },
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _kRed,
+                          borderRadius: BorderRadius.circular(13),
+                          boxShadow: [
+                            BoxShadow(
+                                color: _kRed.withOpacity(0.30),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4)),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Text('Log Out',
+                              style: TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -393,6 +515,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 key: const ValueKey('view'),
                                 profile: _profile,
                                 onChangePassword: _navigateToChangePassword,
+                                onLogout: _showLogoutDialog,
+                                loggedInEmail: Supabase.instance.client.auth
+                                        .currentUser?.email ??
+                                    (_profile?['email'] as String? ?? ''),
                               ),
                       ),
                     ),
@@ -868,7 +994,15 @@ class _FieldDef {
 class _ViewCard extends StatelessWidget {
   final Map<String, dynamic>? profile;
   final VoidCallback? onChangePassword;
-  const _ViewCard({super.key, required this.profile, this.onChangePassword});
+  final VoidCallback? onLogout;
+  final String loggedInEmail;
+  const _ViewCard({
+    super.key,
+    required this.profile,
+    this.onChangePassword,
+    this.onLogout,
+    this.loggedInEmail = '',
+  });
 
   static const _fields = [
     _FieldDef(
@@ -936,6 +1070,45 @@ class _ViewCard extends StatelessWidget {
                     color: _kBg, borderRadius: BorderRadius.circular(8)),
                 child: const Icon(Icons.chevron_right_rounded,
                     color: _kSlate94, size: 18),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Container(
+        decoration: _cardDecoration(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Material(
+            color: Colors.transparent,
+            child: ListTile(
+              onTap: onLogout,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+              leading: _IconBox(icon: Icons.logout_rounded, color: _kRed),
+              title: const Text('Log Out',
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: _kRed)),
+              subtitle: Text(
+                loggedInEmail.isNotEmpty
+                    ? 'Logged in as: $loggedInEmail'
+                    : 'Tap to sign out',
+                style: const TextStyle(
+                    fontSize: 11.5,
+                    color: _kSlate94,
+                    fontWeight: FontWeight.w400),
+              ),
+              trailing: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                    color: _kRed.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.chevron_right_rounded,
+                    color: _kRed, size: 18),
               ),
             ),
           ),

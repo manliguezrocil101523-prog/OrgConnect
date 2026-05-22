@@ -30,27 +30,14 @@ class _RoleMeta {
   final List<Color> gradientColors;
 }
 
+// ── Role meta (kept for display only — login is now unified) ──────────────────
 const _roles = [
   _RoleMeta(
     role: UserRole.student,
-    label: 'Student',
-    subtitle: 'Browse orgs & events',
-    icon: Icons.school_rounded,
-    gradientColors: [Color(0xFF4F46E5), Color(0xFF818CF8)],
-  ),
-  _RoleMeta(
-    role: UserRole.officer,
-    label: 'Organization Officer',
-    subtitle: 'Manage your organization',
-    icon: Icons.badge_rounded,
-    gradientColors: [Color(0xFF0EA5E9), Color(0xFF06B6D4)],
-  ),
-  _RoleMeta(
-    role: UserRole.admin,
-    label: 'Admin',
-    subtitle: 'Full system access',
-    icon: Icons.admin_panel_settings_rounded,
-    gradientColors: [Color(0xFF6366F1), Color(0xFF06B6D4)],
+    label: 'Student / Officer / Admin',
+    subtitle: 'Sign in — your role is detected automatically',
+    icon: Icons.login_rounded,
+    gradientColors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
   ),
 ];
 
@@ -196,28 +183,7 @@ class _RoleCard extends StatelessWidget {
   final _RoleMeta meta;
 
   void _handleTap(BuildContext context) {
-    AppState.instance.setRole(meta.role);
-    switch (meta.role) {
-      case UserRole.student:
-        Navigator.pushReplacementNamed(context, '/signin');
-        break;
-      case UserRole.officer:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const OfficerAuthorizationScreen(),
-          ),
-        );
-        break;
-      case UserRole.admin:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const AdminAuthorizationScreen(),
-          ),
-        );
-        break;
-    }
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override

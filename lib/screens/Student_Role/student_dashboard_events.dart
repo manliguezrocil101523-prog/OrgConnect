@@ -4,68 +4,43 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 🎨 DESIGN SYSTEM
-// ─────────────────────────────────────────────────────────────────────────
-// Direction: "Soft Premium" — warm violet-indigo primary, cream-tinted
-// surfaces, expressive typography, and purposeful depth. Every color
-// decision guides the eye: violet = action, sky = events, emerald = success.
-// ═══════════════════════════════════════════════════════════════════════════
-
 class _DT {
-  // ── Backgrounds ────────────────────────────────────────────────────────
-  // Slightly warm off-white so the screen never feels cold or clinical.
   static const bg = Color(0xFFF6F7FB);
   static const surface = Color(0xFFFFFFFF);
   static const surfaceAlt = Color(0xFFF0F2F8);
 
-  // ── Primary — Violet-Indigo ────────────────────────────────────────────
-  // A slightly violet-shifted indigo reads as modern, trustworthy, and
-  // vibrant enough for a student audience without being childish.
   static const primary = Color(0xFF6C63FF);
   static const primaryLight = Color(0xFFEEEDFF);
   static const primaryMid = Color(0xFF9C96FF);
   static const primaryDark = Color(0xFF4B44D6);
 
-  // ── Gradient stops ─────────────────────────────────────────────────────
-  // Used on the hero card and FAB. The slight purple→violet shift adds
-  // dimension without needing a third-party gradient package.
   static const gradStart = Color(0xFF7C74FF);
   static const gradEnd = Color(0xFF9F6EFF);
 
-  // ── Accent — Emerald (Success / Accepted) ────────────────────────────
   static const emerald = Color(0xFF10B981);
   static const emeraldBg = Color(0xFFECFDF5);
   static const emeraldFg = Color(0xFF065F46);
   static const emeraldRing = Color(0xFFA7F3D0);
 
-  // ── Accent — Amber (Pending) ──────────────────────────────────────────
   static const amberBg = Color(0xFFFFFBEB);
   static const amberFg = Color(0xFF92400E);
   static const amberRing = Color(0xFFFDE68A);
 
-  // ── Accent — Rose (Declined) ──────────────────────────────────────────
   static const roseBg = Color(0xFFFFF1F2);
   static const roseFg = Color(0xFF9F1239);
   static const roseRing = Color(0xFFFFCDD3);
 
-  // ── Status alias — Indigo (Interview) ────────────────────────────────
   static const indigoBg = Color(0xFFEEF2FF);
   static const indigoFg = Color(0xFF3730A3);
   static const indigoRing = Color(0xFFC7D2FE);
 
-  // ── Text ──────────────────────────────────────────────────────────────
   static const ink = Color(0xFF0F0D2E); // near-black with a purple hint
   static const inkSecond = Color(0xFF6B6B8E);
   static const inkMuted = Color(0xFFB8B9CC);
 
-  // ── Borders ───────────────────────────────────────────────────────────
   static const border = Color(0xFFE8E9F3);
   static const borderStrong = Color(0xFFD0D2E8);
 
-  // ── Shadows ──────────────────────────────────────────────────────────
-  // Performance note: shadows are defined once and reused via getters
-  // to avoid allocating new lists on every build pass.
   static List<BoxShadow> get cardShadow => [
         BoxShadow(
           color: const Color(0xFF6C63FF).withOpacity(0.06),
@@ -352,7 +327,7 @@ class _StudentDashboardState extends State<StudentDashboard>
                   onTap: () {
                     AppState.instance.setRole(null);
                     Navigator.of(context)
-                        .pushNamedAndRemoveUntil('/role', (r) => false);
+                        .pushNamedAndRemoveUntil('/login', (r) => false);
                   },
                   child: Container(
                     width: 36,
@@ -608,6 +583,7 @@ class _StudentDashboardState extends State<StudentDashboard>
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
           child: TableCalendar<Event>(
+            availableGestures: AvailableGestures.horizontalSwipe,
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,

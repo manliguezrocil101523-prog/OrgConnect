@@ -3,164 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
 
-// ── Design Tokens ─────────────────────────────────────────────
-abstract final class _C {
-  static const accent = Color(0xFF12B896);
-  static const accentDark = Color(0xFF0D9278);
-  static const pageBg = Color(0xFFF8F9FA);
-  static const card = Color(0xFFFFFFFF);
-  static const inputRest = Color(0xFFF2F4F6);
-  static const inputStroke = Color(0xFFE2E6EA);
-  static const textPrimary = Color(0xFF111827);
-  static const textSub = Color(0xFF6B7280);
-  static const textHint = Color(0xFFADB5BD);
-  static const error = Color(0xFFDC2626);
-  static const success = Color(0xFF059669);
+const _kBlue = Color(0xFF2563EB);
+const _kBg = Color(0xFFF8FAFF);
+const _kText = Color(0xFF1E293B);
+const _kSubText = Color(0xFF94A3B8);
+const _kBorder = Color(0xFFCBD5E1);
+const _kWhite = Colors.white;
+const _kError = Color(0xFFDC2626);
+const _kSuccess = Color(0xFF059669);
 
-  static const r12 = 12.0;
-  static const r14 = 14.0;
-  static const r18 = 18.0;
-  static const r24 = 24.0;
-
-  static const s8 = 8.0;
-  static const s12 = 12.0;
-  static const s14 = 14.0;
-  static const s16 = 16.0;
-  static const s20 = 20.0;
-  static const s24 = 24.0;
-  static const s28 = 28.0;
-  static const s32 = 32.0;
-
-  static final cardShadow = [
-    BoxShadow(
-        color: Colors.black.withOpacity(0.06),
-        blurRadius: 32,
-        spreadRadius: -4,
-        offset: const Offset(0, 12)),
-    BoxShadow(
-        color: Colors.black.withOpacity(0.04),
-        blurRadius: 8,
-        offset: const Offset(0, 2)),
-  ];
-  static final btnShadow = [
-    BoxShadow(
-        color: accent.withOpacity(0.30),
-        blurRadius: 20,
-        offset: const Offset(0, 8)),
-    BoxShadow(
-        color: Colors.black.withOpacity(0.10),
-        blurRadius: 4,
-        offset: const Offset(0, 2)),
-  ];
-}
-
-// ── Input Decoration ──────────────────────────────────────────
-InputDecoration _deco(String hint, {IconData? icon, bool focused = false}) =>
-    InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: _C.textHint, fontSize: 14),
-      fillColor: focused ? Colors.white : _C.inputRest,
-      filled: true,
-      prefixIcon: icon != null
-          ? Icon(icon, size: 18, color: focused ? _C.accent : _C.textHint)
-          : null,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: _C.s16, vertical: 15),
-      border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_C.r12),
-          borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_C.r12),
-          borderSide: const BorderSide(color: _C.inputStroke)),
-      focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_C.r12),
-          borderSide: const BorderSide(color: _C.accent, width: 1.6)),
-      errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_C.r12),
-          borderSide: const BorderSide(color: _C.error)),
-      focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_C.r12),
-          borderSide: const BorderSide(color: _C.error, width: 1.6)),
-      errorStyle: const TextStyle(fontSize: 11.5, height: 1.4, color: _C.error),
-    );
-
-// ── Reusable Focused Field ────────────────────────────────────
-class _Field extends StatefulWidget {
-  const _Field({
-    required this.controller,
-    required this.hint,
-    required this.validator,
-    this.icon,
-    this.obscure = false,
-    this.keyboardType = TextInputType.text,
-    this.action = TextInputAction.next,
-    this.formatters,
-    this.onToggle,
-  });
-
-  final TextEditingController controller;
-  final String hint;
-  final String? Function(String?)? validator;
-  final IconData? icon;
-  final bool obscure;
-  final TextInputType keyboardType;
-  final TextInputAction action;
-  final List<TextInputFormatter>? formatters;
-  final VoidCallback? onToggle;
-
-  @override
-  State<_Field> createState() => _FieldState();
-}
-
-class _FieldState extends State<_Field> {
-  final _focus = FocusNode();
-  bool _focused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focus.addListener(() => setState(() => _focused = _focus.hasFocus));
-  }
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => TextFormField(
-        controller: widget.controller,
-        focusNode: _focus,
-        obscureText: widget.obscure,
-        keyboardType: widget.keyboardType,
-        textInputAction: widget.action,
-        inputFormatters: widget.formatters,
-        validator: widget.validator,
-        style: const TextStyle(
-            fontSize: 14.5, fontWeight: FontWeight.w500, color: _C.textPrimary),
-        decoration:
-            _deco(widget.hint, icon: widget.icon, focused: _focused).copyWith(
-          suffixIcon: widget.onToggle != null
-              ? IconButton(
-                  icon: Icon(
-                    widget.obscure
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
-                    size: 18,
-                    color: _focused ? _C.accent : _C.textHint,
-                  ),
-                  onPressed: widget.onToggle,
-                  splashRadius: 18,
-                )
-              : null,
-        ),
-      );
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  SIGN-UP PAGE
-// ═══════════════════════════════════════════════════════════════
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
   @override
@@ -195,7 +46,6 @@ class _SignUpPageState extends State<SignUpPage>
     super.dispose();
   }
 
-  // ── Email/Password Sign-Up ────────────────────────────────────
   Future<void> _signUp() async {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
@@ -211,8 +61,6 @@ class _SignUpPageState extends State<SignUpPage>
 
       if (user != null &&
           (user.confirmedAt != null || user.emailConfirmedAt != null)) {
-        // Only reached when email confirmations are disabled in Supabase.
-        // Safe to write the profile immediately.
         await Supabase.instance.client.from('profiles').upsert({
           'id': user.id,
           'name': name,
@@ -232,18 +80,15 @@ class _SignUpPageState extends State<SignUpPage>
 
         if (!mounted) return;
         _snack('Account created successfully! Welcome!', ok: true);
-        Navigator.pushReplacementNamed(context, '/signin');
+        Navigator.pushReplacementNamed(context, '/login');
       } else {
-        // Email confirmation is enabled — do NOT write to profiles here.
-        // The profile should be created via a Supabase trigger on auth.users
-        // once the user confirms their email and signs in.
         if (!mounted) return;
         _snack(
           'A confirmation link has been sent to ${_email.text.trim()}. '
           'Please check your inbox and confirm before signing in.',
           ok: true,
         );
-        Navigator.pushReplacementNamed(context, '/signin');
+        Navigator.pushReplacementNamed(context, '/login');
       }
     } on AuthException catch (e) {
       _snack('Sign up failed: ${e.message}');
@@ -254,7 +99,6 @@ class _SignUpPageState extends State<SignUpPage>
     }
   }
 
-  // ── Snack helper ──────────────────────────────────────────────
   void _snack(String msg, {bool ok = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -262,241 +106,301 @@ class _SignUpPageState extends State<SignUpPage>
       ..showSnackBar(SnackBar(
         content: Row(children: [
           Icon(
-              ok
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.error_outline_rounded,
-              color: Colors.white,
-              size: 18),
-          const SizedBox(width: _C.s8),
+            ok
+                ? Icons.check_circle_outline_rounded
+                : Icons.error_outline_rounded,
+            color: _kWhite,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
           Expanded(
-              child: Text(msg,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w500, fontSize: 13.5))),
+            child: Text(msg,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w500, fontSize: 13.5)),
+          ),
         ]),
-        backgroundColor: ok ? _C.success : _C.error,
+        backgroundColor: ok ? _kSuccess : _kError,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(_C.s16),
+        margin: const EdgeInsets.all(16),
       ));
   }
 
-  // ── Build ─────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
-      child: Scaffold(
-        backgroundColor: _C.pageBg,
-        body: FadeTransition(
-          opacity: _fade,
-          child: SlideTransition(
-            position: _slide,
-            child: SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: _C.s24, vertical: _C.s32),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: _C.s28),
-                        _buildCard(),
-                        const SizedBox(height: _C.s24),
-                        _buildFooter(),
-                      ],
+    return Scaffold(
+      backgroundColor: _kBg,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // ── Main content ─────────────────────────────────────
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+                child: FadeTransition(
+                  opacity: _fade,
+                  child: SlideTransition(
+                    position: _slide,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 380),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ── Title block ────────────────────────
+                            const SizedBox(height: 32),
+                            const Text(
+                              'Sign Up',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                color: _kBlue,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Create your account to get started',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                color: _kSubText,
+                              ),
+                            ),
+
+                            // ── Fields ─────────────────────────────
+                            const SizedBox(height: 44),
+                            _LineFormField(
+                              controller: _fName,
+                              hint: 'First Name',
+                              action: TextInputAction.next,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'First name is required'
+                                  : null,
+                            ),
+                            const SizedBox(height: 28),
+                            _LineFormField(
+                              controller: _lName,
+                              hint: 'Last Name',
+                              action: TextInputAction.next,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Last name is required'
+                                  : null,
+                            ),
+                            const SizedBox(height: 28),
+                            _LineFormField(
+                              controller: _studId,
+                              hint: 'Student ID',
+                              keyboardType: TextInputType.number,
+                              action: TextInputAction.next,
+                              formatters: [
+                                FilteringTextInputFormatter.digitsOnly
+                              ],
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Student ID is required'
+                                  : null,
+                            ),
+                            const SizedBox(height: 28),
+                            _LineFormField(
+                              controller: _email,
+                              hint: 'Email Address',
+                              keyboardType: TextInputType.emailAddress,
+                              action: TextInputAction.next,
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty)
+                                  return 'Email is required';
+                                final clean = v.trim().toLowerCase();
+                                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                    .hasMatch(clean)) {
+                                  return 'Enter a valid email address';
+                                }
+                                if (!clean.endsWith('@gmail.com')) {
+                                  return 'Only Gmail addresses are accepted';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 28),
+                            _LineFormField(
+                              controller: _password,
+                              hint: 'Password',
+                              obscure: _obscure,
+                              action: TextInputAction.done,
+                              onToggle: () =>
+                                  setState(() => _obscure = !_obscure),
+                              validator: (v) {
+                                if (v == null || v.isEmpty)
+                                  return 'Password is required';
+                                if (v.length < 6) return 'Minimum 6 characters';
+                                return null;
+                              },
+                            ),
+
+                            // ── Sign Up button ──────────────────────
+                            const SizedBox(height: 44),
+                            SizedBox(
+                              height: 52,
+                              child: ElevatedButton(
+                                onPressed: _loading ? null : _signUp,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _kBlue,
+                                  disabledBackgroundColor:
+                                      _kBlue.withOpacity(0.45),
+                                  foregroundColor: _kWhite,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30)),
+                                ),
+                                child: _loading
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2.2, color: _kWhite),
+                                      )
+                                    : const Text(
+                                        'Sign Up',
+                                        style: TextStyle(
+                                          fontSize: 15.5,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                              ),
+                            ),
+
+                            // ── Already have account ────────────────
+                            const SizedBox(height: 24),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text(
+                                  'Already have an account?  ',
+                                  style: TextStyle(
+                                      fontSize: 13.5, color: _kSubText),
+                                ),
+                                GestureDetector(
+                                  onTap: () => Navigator.pushReplacementNamed(
+                                      context, '/login'),
+                                  child: const Text(
+                                    'Sign In',
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: _kBlue,
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: _kBlue,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 32),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
+}
 
-  // ── Header ────────────────────────────────────────────────────
-  Widget _buildHeader() => Column(children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(_C.r18),
-            border: Border.all(color: const Color(0xFFE8EAED)),
-            boxShadow: const [
-              BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 16,
-                  offset: Offset(0, 4)),
-              BoxShadow(
-                  color: Color(0x08000000),
-                  blurRadius: 4,
-                  offset: Offset(0, 1)),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(_C.r18 - 1),
-            child: Image.asset('assets/orgconnectLogo.jpg', fit: BoxFit.cover),
-          ),
-        ),
-        const SizedBox(height: _C.s20),
-        const Text('Create your account',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-                color: _C.textPrimary,
-                letterSpacing: -0.6,
-                height: 1.15)),
-        const SizedBox(height: _C.s8),
-        const Text('Join your campus community',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14.5, color: _C.textSub, height: 1.5)),
-      ]);
+// ── Underline-style validated field ──────────────────────────────────────────
+class _LineFormField extends StatefulWidget {
+  const _LineFormField({
+    required this.controller,
+    required this.hint,
+    this.validator,
+    this.obscure = false,
+    this.keyboardType = TextInputType.text,
+    this.action = TextInputAction.next,
+    this.formatters,
+    this.onToggle,
+  });
 
-  // ── Form Card ─────────────────────────────────────────────────
-  Widget _buildCard() => Container(
-        decoration: BoxDecoration(
-            color: _C.card,
-            borderRadius: BorderRadius.circular(_C.r24),
-            boxShadow: _C.cardShadow),
-        padding: const EdgeInsets.all(_C.s24),
-        child: Form(
-          key: _formKey,
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            // Name row
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                  child: _Field(
-                controller: _fName,
-                hint: 'First name',
-                icon: Icons.person_outline_rounded,
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              )),
-              const SizedBox(width: _C.s12),
-              Expanded(
-                  child: _Field(
-                controller: _lName,
-                hint: 'Last name',
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              )),
-            ]),
-            const SizedBox(height: _C.s14),
+  final TextEditingController controller;
+  final String hint;
+  final String? Function(String?)? validator;
+  final bool obscure;
+  final TextInputType keyboardType;
+  final TextInputAction action;
+  final List<TextInputFormatter>? formatters;
+  final VoidCallback? onToggle;
 
-            _Field(
-              controller: _studId,
-              hint: 'Student ID',
-              icon: Icons.badge_outlined,
-              keyboardType: TextInputType.number,
-              formatters: [FilteringTextInputFormatter.digitsOnly],
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-            const SizedBox(height: _C.s14),
+  @override
+  State<_LineFormField> createState() => _LineFormFieldState();
+}
 
-            _Field(
-              controller: _email,
-              hint: 'Email address ',
-              icon: Icons.mail_outline_rounded,
-              keyboardType: TextInputType.emailAddress,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Email is required';
-                final clean = v.trim().toLowerCase();
-                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(clean)) {
-                  return 'Enter a valid email address';
-                }
-                if (!clean.endsWith('@gmail.com')) {
-                  return 'Only Gmail addresses are accepted (@gmail.com)';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: _C.s14),
+class _LineFormFieldState extends State<_LineFormField> {
+  final _focus = FocusNode();
+  bool _focused = false;
 
-            _Field(
-              controller: _password,
-              hint: 'Password',
-              icon: Icons.lock_outline_rounded,
-              obscure: _obscure,
-              action: TextInputAction.done,
-              onToggle: () => setState(() => _obscure = !_obscure),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 6) return 'Minimum 6 characters';
-                return null;
-              },
-            ),
-            const SizedBox(height: _C.s24),
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => setState(() => _focused = _focus.hasFocus));
+  }
 
-            _buildButton(),
-          ]),
-        ),
-      );
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
 
-  // ── CTA Button ────────────────────────────────────────────────
-  Widget _buildButton() => SizedBox(
-        height: 52,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          decoration: BoxDecoration(
-            color: _loading ? _C.accent.withOpacity(0.55) : _C.accent,
-            borderRadius: BorderRadius.circular(_C.r14),
-            boxShadow: _loading ? null : _C.btnShadow,
-          ),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(_C.r14),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(_C.r14),
-              onTap: _loading ? null : _signUp,
-              splashColor: Colors.white.withOpacity(0.15),
-              highlightColor: Colors.white.withOpacity(0.08),
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: _loading
-                      ? const SizedBox(
-                          key: ValueKey('s'),
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.white))
-                      : const Text('Create Account',
-                          key: ValueKey('l'),
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2)),
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: widget.controller,
+      focusNode: _focus,
+      obscureText: widget.obscure,
+      keyboardType: widget.keyboardType,
+      textInputAction: widget.action,
+      inputFormatters: widget.formatters,
+      validator: widget.validator,
+      style: const TextStyle(
+          fontSize: 15, color: _kText, fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        hintText: widget.hint,
+        hintStyle: const TextStyle(
+            color: _kSubText, fontSize: 14.5, fontWeight: FontWeight.w400),
+        contentPadding: const EdgeInsets.only(bottom: 10),
+        isDense: true,
+        border:
+            const UnderlineInputBorder(borderSide: BorderSide(color: _kBorder)),
+        enabledBorder:
+            const UnderlineInputBorder(borderSide: BorderSide(color: _kBorder)),
+        focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: _kBlue, width: 1.8)),
+        errorBorder:
+            const UnderlineInputBorder(borderSide: BorderSide(color: _kError)),
+        focusedErrorBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: _kError, width: 1.8)),
+        errorStyle:
+            const TextStyle(fontSize: 11.5, height: 1.4, color: _kError),
+        suffixIcon: widget.onToggle != null
+            ? GestureDetector(
+                onTap: widget.onToggle,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Icon(
+                    widget.obscure
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 19,
+                    color: _focused ? _kBlue : _kSubText,
+                  ),
                 ),
-              ),
-            ),
-          ),
-        ),
-      );
-
-  // ── Footer ────────────────────────────────────────────────────
-  Widget _buildFooter() => Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('Already have an account?  ',
-              style: TextStyle(color: _C.textSub, fontSize: 13.5)),
-          GestureDetector(
-            onTap: () => Navigator.pushReplacementNamed(context, '/signin'),
-            child: const Text('Sign In',
-                style: TextStyle(
-                    color: _C.accent,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ],
-      );
+              )
+            : null,
+      ),
+    );
+  }
 }

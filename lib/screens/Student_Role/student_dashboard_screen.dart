@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/app_state.dart';
 import '/screens/notifications/notification_screen.dart';
 
@@ -20,127 +21,168 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   static const Color _orgAccent = Color(0xFF06B6D4);
   static const Color _notifAccent = Color(0xFF22C55E);
 
+  // ─── Double-tap-to-exit state tracker ────────────────────────────────────
+  DateTime? _lastBackPressed;
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
-    return Scaffold(
-      backgroundColor: _background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ─── HERO SLIVER APP BAR ──────────────────────────────────────────
-          SliverAppBar(
-            expandedHeight: size.height * 0.40,
-            pinned: true,
-            stretch: true,
-            backgroundColor: _primary,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              onPressed: () {
-                AppState.instance.setRole(null);
-                Navigator.pushReplacementNamed(context, '/role');
-              },
-            ),
-            title: const Text(
-              'Dashboard',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 17,
-                letterSpacing: 0.4,
-              ),
-            ),
-            centerTitle: true,
-            flexibleSpace: FlexibleSpaceBar(
-              stretchModes: const [StretchMode.blurBackground],
-              background: _HeroHeader(
-                primary: _primary,
-                secondary: _secondary,
-              ),
-            ),
-          ),
+    // ── PopScope: intercepts hardware/physical back button ─────────────────
+    // canPop: false prevents the navigator from popping this root screen.
+    // onPopInvokedWithResult fires on every back gesture/button press.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        final now = DateTime.now();
 
-          // ─── BODY CONTENT ─────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ── Section label ─────────────────────────────────────
-                      const _SectionLabel(text: 'Quick Actions'),
-                      const SizedBox(height: 16),
+        if (_lastBackPressed == null ||
+            now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
+          // First press — store timestamp and show "Tap again to exit" toast
+          _lastBackPressed = now;
 
-                      // ── RESTRUCTURED: 2-col top row ───────────────────────
-                      // BEFORE: three identical full-width list rows stacked
-                      //         vertically — monotonous, lots of dead space.
-                      // AFTER:  My Profile + Organizations sit side-by-side in
-                      //         a 2-column grid row (equal weight, scannable at
-                      //         a glance), while Notifications spans full width
-                      //         below (justified by its higher urgency / info
-                      //         density — it is the primary feedback channel).
-                      //         This breaks the repetitive stack and creates a
-                      //         visual hierarchy: explore (top) → track (bottom).
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // My Profile tile
-                          Expanded(
-                            child: _ActionTile(
-                              label: 'My Profile',
-                              subtitle: 'View & update info',
-                              icon: Icons.person_rounded,
-                              accentColor: _profileAccent,
-                              onTap: () =>
-                                  Navigator.pushNamed(context, '/profile'),
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Tap again to exit',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFF1E293B),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              margin: EdgeInsets.only(
+                bottom: MediaQuery.of(context).size.height - 140,
+                left: 40,
+                right: 40,
+              ),
+            ),
+          );
+        } else {
+          // Second press within 2 seconds — exit the app cleanly
+          ScaffoldMessenger.of(context).clearSnackBars();
+          SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: _background,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // ─── HERO SLIVER APP BAR ──────────────────────────────────────────
+            SliverAppBar(
+              expandedHeight: size.height * 0.40,
+              pinned: true,
+              stretch: true,
+              backgroundColor: _primary,
+              elevation: 0,
+              // ── Back button removed: this is a root/top-level screen ────────
+              // automaticallyImplyLeading: false ensures no back arrow is shown
+              // even if a previous route exists in the navigator stack.
+              automaticallyImplyLeading: false,
+              title: const Text(
+                'Dashboard',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              centerTitle: true,
+              flexibleSpace: FlexibleSpaceBar(
+                stretchModes: const [StretchMode.blurBackground],
+                background: _HeroHeader(
+                  primary: _primary,
+                  secondary: _secondary,
+                ),
+              ),
+            ),
+
+            // ─── BODY CONTENT ─────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Section label ─────────────────────────────────────
+                        const _SectionLabel(text: 'Quick Actions'),
+                        const SizedBox(height: 16),
+
+                        // ── RESTRUCTURED: 2-col top row ───────────────────────
+                        // BEFORE: three identical full-width list rows stacked
+                        //         vertically — monotonous, lots of dead space.
+                        // AFTER:  My Profile + Organizations sit side-by-side in
+                        //         a 2-column grid row (equal weight, scannable at
+                        //         a glance), while Notifications spans full width
+                        //         below (justified by its higher urgency / info
+                        //         density — it is the primary feedback channel).
+                        //         This breaks the repetitive stack and creates a
+                        //         visual hierarchy: explore (top) → track (bottom).
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // My Profile tile
+                            Expanded(
+                              child: _ActionTile(
+                                label: 'My Profile',
+                                subtitle: 'View & update info',
+                                icon: Icons.person_rounded,
+                                accentColor: _profileAccent,
+                                onTap: () =>
+                                    Navigator.pushNamed(context, '/profile'),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          // Organizations tile
-                          Expanded(
-                            child: _ActionTile(
-                              label: 'Organizations',
-                              subtitle: 'Browse & apply',
-                              icon: Icons.groups_rounded,
-                              accentColor: _orgAccent,
-                              onTap: () =>
-                                  Navigator.pushNamed(context, '/orglist'),
+                            const SizedBox(width: 12),
+                            // Organizations tile
+                            Expanded(
+                              child: _ActionTile(
+                                label: 'Organizations',
+                                subtitle: 'Browse & apply',
+                                icon: Icons.groups_rounded,
+                                accentColor: _orgAccent,
+                                onTap: () =>
+                                    Navigator.pushNamed(context, '/orglist'),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
 
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                      // Notifications — full width, primary feedback channel
-                      _ActionCard(
-                        label: 'Notifications',
-                        subtitle: 'See updates on your applications',
-                        icon: Icons.notifications_rounded,
-                        accentColor: _notifAccent,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationScreen(),
+                        // Notifications — full width, primary feedback channel
+                        _ActionCard(
+                          label: 'Notifications',
+                          subtitle: 'See updates on your applications',
+                          icon: Icons.notifications_rounded,
+                          accentColor: _notifAccent,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const NotificationScreen(),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

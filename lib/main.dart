@@ -10,6 +10,7 @@ import 'screens/role_selection_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/Student_Role/student_dashboard_screen.dart';
 import 'screens/Student_Role/student_dashboard_events.dart';
+import 'screens/auth/unified_login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
       initialRoute: '/calendar', // Start with the calendar dashboard screen
       routes: {
         '/role': (context) => const RoleSelectionScreen(),
+        '/login': (context) => const UnifiedLoginPage(),
         '/orglist': (context) => const OrgListScreen(),
         '/signin': (context) => const SignInPage(),
         '/signup': (context) => const SignUpPage(),
