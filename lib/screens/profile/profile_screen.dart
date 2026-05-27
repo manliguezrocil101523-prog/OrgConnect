@@ -272,12 +272,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  void _navigateToChangePassword() => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => const _ChangePasswordSheet(),
-      );
   void _showLogoutDialog() => showDialog(
         context: context,
         barrierDismissible: true,
@@ -514,7 +508,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                             : _ViewCard(
                                 key: const ValueKey('view'),
                                 profile: _profile,
-                                onChangePassword: _navigateToChangePassword,
                                 onLogout: _showLogoutDialog,
                                 loggedInEmail: Supabase.instance.client.auth
                                         .currentUser?.email ??
@@ -993,13 +986,11 @@ class _FieldDef {
 
 class _ViewCard extends StatelessWidget {
   final Map<String, dynamic>? profile;
-  final VoidCallback? onChangePassword;
   final VoidCallback? onLogout;
   final String loggedInEmail;
   const _ViewCard({
     super.key,
     required this.profile,
-    this.onChangePassword,
     this.onLogout,
     this.loggedInEmail = '',
   });
@@ -1039,42 +1030,7 @@ class _ViewCard extends StatelessWidget {
         ]),
       ),
       const SizedBox(height: 28),
-      const _SectionLabel(text: 'Account Security'),
-      const SizedBox(height: 12),
-      Container(
-        decoration: _cardDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Material(
-            color: Colors.transparent,
-            child: ListTile(
-              onTap: onChangePassword,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-              leading:
-                  _IconBox(icon: Icons.lock_outline_rounded, color: _kPrimary),
-              title: const Text('Change Password',
-                  style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w600,
-                      color: _kSlate0F)),
-              subtitle: const Text('Update your account password',
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      color: _kSlate94,
-                      fontWeight: FontWeight.w400)),
-              trailing: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                    color: _kBg, borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.chevron_right_rounded,
-                    color: _kSlate94, size: 18),
-              ),
-            ),
-          ),
-        ),
-      ),
+      const _SectionLabel(text: 'Account'),
       const SizedBox(height: 12),
       Container(
         decoration: _cardDecoration(),
@@ -1467,211 +1423,3 @@ class _SectionLabel extends StatelessWidget {
 // =============================================================================
 // _ChangePasswordSheet
 // =============================================================================
-class _ChangePasswordSheet extends StatefulWidget {
-  const _ChangePasswordSheet();
-  @override
-  State<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
-}
-
-class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
-  final _currentCtrl = TextEditingController();
-  final _newCtrl = TextEditingController();
-  final _confirmCtrl = TextEditingController();
-
-  bool _obscureCurrent = true, _obscureNew = true, _obscureConfirm = true;
-  bool _isLoading = false;
-  String? _errorMessage;
-
-  @override
-  void dispose() {
-    _currentCtrl.dispose();
-    _newCtrl.dispose();
-    _confirmCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final cur = _currentCtrl.text.trim();
-    final newPass = _newCtrl.text.trim();
-    final confirm = _confirmCtrl.text.trim();
-    setState(() => _errorMessage = null);
-
-    if (cur.isEmpty || newPass.isEmpty || confirm.isEmpty) {
-      setState(() => _errorMessage = 'Please fill in all fields.');
-      return;
-    }
-    if (newPass.length < 6) {
-      setState(
-          () => _errorMessage = 'New password must be at least 6 characters.');
-      return;
-    }
-    if (newPass != confirm) {
-      setState(() => _errorMessage = 'New passwords do not match.');
-      return;
-    }
-    if (cur == newPass) {
-      setState(() =>
-          _errorMessage = 'New password must differ from current password.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    // FIX Bug 2: capture the parent ScaffoldMessenger BEFORE popping so the
-    // snackbar still shows after the sheet is dismissed.
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      final email = Supabase.instance.client.auth.currentUser?.email ?? '';
-      await Supabase.instance.client.auth
-          .signInWithPassword(email: email, password: cur);
-      await Supabase.instance.client.auth
-          .updateUser(UserAttributes(password: newPass));
-
-      if (!mounted) return;
-      Navigator.pop(context);
-
-      // FIX Bug 2: use the pre-captured messenger, not context (which is gone)
-      messenger.showSnackBar(SnackBar(
-        content: const Row(children: [
-          Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-          SizedBox(width: 8),
-          Text('Password updated successfully!'),
-        ]),
-        backgroundColor: _kSuccess,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
-    } on AuthException catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage =
-            e.message.toLowerCase().contains('invalid')
-                ? 'Current password is incorrect.'
-                : e.message);
-      }
-    } catch (e) {
-      if (mounted) setState(() => _errorMessage = 'Unexpected error: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Widget _pwField(
-      {required String label,
-      required TextEditingController controller,
-      required bool obscure,
-      required VoidCallback onToggle}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.only(left: 4, bottom: 7),
-        child: Text(label,
-            style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF374151),
-                letterSpacing: 0.2)),
-      ),
-      TextField(
-        controller: controller,
-        obscureText: obscure,
-        style: const TextStyle(
-            fontSize: 14, fontWeight: FontWeight.w500, color: _kSlate0F),
-        decoration: _fieldDecoration(
-          icon: Icons.lock_outline_rounded,
-          iconColor: _kPrimary,
-          onToggleObscure: onToggle,
-          obscure: obscure,
-        ),
-      ),
-    ]);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Container(
-      decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      padding: EdgeInsets.fromLTRB(24, 20, 24, 24 + bottomInset),
-      child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: _kSlateE2,
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Row(children: [
-              _IconBox(icon: Icons.lock_outline_rounded, color: _kPrimary),
-              const SizedBox(width: 12),
-              const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Change Password',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: _kSlate0F)),
-                    Text('Must be at least 6 characters',
-                        style: TextStyle(fontSize: 12, color: _kSlate94)),
-                  ]),
-            ]),
-            const SizedBox(height: 24),
-            _pwField(
-                label: 'Current Password',
-                controller: _currentCtrl,
-                obscure: _obscureCurrent,
-                onToggle: () =>
-                    setState(() => _obscureCurrent = !_obscureCurrent)),
-            const SizedBox(height: 16),
-            _pwField(
-                label: 'New Password',
-                controller: _newCtrl,
-                obscure: _obscureNew,
-                onToggle: () => setState(() => _obscureNew = !_obscureNew)),
-            const SizedBox(height: 16),
-            _pwField(
-                label: 'Confirm New Password',
-                controller: _confirmCtrl,
-                obscure: _obscureConfirm,
-                onToggle: () =>
-                    setState(() => _obscureConfirm = !_obscureConfirm)),
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFE4E6),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _kRed.withOpacity(0.25)),
-                ),
-                child: Row(children: [
-                  const Icon(Icons.error_outline_rounded,
-                      color: _kRed, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child: Text(_errorMessage!,
-                          style: const TextStyle(
-                              color: _kRed,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500))),
-                ]),
-              ),
-            ],
-            const SizedBox(height: 28),
-            _GradientButton(
-              label: 'Update Password',
-              icon: Icons.lock_reset_rounded,
-              onTap: _submit,
-              isLoading: _isLoading,
-            ),
-          ]),
-    );
-  }
-}

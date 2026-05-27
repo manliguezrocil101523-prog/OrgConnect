@@ -1,4 +1,7 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
 import 'officer_applications_screen.dart';
 import 'officer_members_screen.dart';
@@ -6,7 +9,7 @@ import 'officer_events_screen.dart';
 import 'officer_authorization_screen.dart';
 import '../auth/unified_login_page.dart';
 
-class BaseOfficerDashboard extends StatelessWidget {
+class BaseOfficerDashboard extends StatefulWidget {
   final String orgId;
   final String orgName;
 
@@ -16,6 +19,11 @@ class BaseOfficerDashboard extends StatelessWidget {
     required this.orgName,
   });
 
+  @override
+  State<BaseOfficerDashboard> createState() => _BaseOfficerDashboardState();
+}
+
+class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   static const Color _primary = Color(0xFF4F46E5);
   static const Color _secondary = Color(0xFF06B6D4);
   static const Color _background = Color(0xFFF8FAFC);
@@ -24,138 +32,137 @@ class BaseOfficerDashboard extends StatelessWidget {
   static const Color _textMuted = Color(0xFF94A3B8);
   static const Color _green = Color(0xFF22C55E);
 
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final org =
-        AppState.instance.organizations.firstWhere((o) => o.id == orgId);
+  // ── Double-tap-to-exit state ───────────────────────────────────────────────
+  DateTime? _lastBackPressed;
 
-    return Scaffold(
-      backgroundColor: _background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── App Bar ────────────────────────────────────────────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: size.height * 0.22,
-            backgroundColor: _primary,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              tooltip: 'Back',
-              onPressed: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const UnifiedLoginPage(),
-                ),
+  // ── End drawer key ─────────────────────────────────────────────────────────
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+// ── Pending applications badge ─────────────────────────────────────────────
+// ── Application counts per status ─────────────────────────────────────────
+  int _pendingCount = 0;
+  int _lastDismissedCount = -1;
+  Map<String, int> _statusCounts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _initBadge();
+  }
+
+  Future<void> _initBadge() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt('badge_dismissed_${widget.orgId}') ?? 0;
+    if (mounted) setState(() => _lastDismissedCount = stored);
+    await _fetchApplicationCounts();
+  }
+
+  Future<void> _fetchApplicationCounts() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('applications')
+          .select('status')
+          .eq('org_name', widget.orgName);
+
+      final list = response as List;
+
+      final Map<String, int> counts = {};
+      for (final row in list) {
+        final status = row['status'] as String? ?? '';
+        counts[status] = (counts[status] ?? 0) + 1;
+      }
+
+      if (mounted) {
+        setState(() {
+          _statusCounts = counts;
+          _pendingCount = counts['pending'] ?? 0;
+          // ← _badgeDismissed = false is REMOVED
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _dismissBadge() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('badge_dismissed_${widget.orgId}', _pendingCount);
+    if (mounted) setState(() => _lastDismissedCount = _pendingCount);
+  }
+
+  bool get _showBadge =>
+      _lastDismissedCount >= 0 && _pendingCount > _lastDismissedCount;
+
+  // ── Logout confirmation dialog ─────────────────────────────────────────────
+  Future<void> _showLogoutDialog() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          'Log out of OrgConnect?',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        content: const Text(
+          'Are you sure you want to log out of your account? '
+          'You will need to enter your credentials to log back in.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF64748B),
+            height: 1.5,
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          // Cancel
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF64748B),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFFE2E8F0)),
               ),
             ),
-            title: const Text(
-              'Officer Dashboard',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 17,
-                letterSpacing: 0.3,
-              ),
-            ),
-            centerTitle: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: _OfficerHeroHeader(
-                primary: _primary,
-                secondary: _secondary,
-                org: org,
-              ),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
           ),
-
-          // ── Body ───────────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 28, 20, 48),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ── Section Label ──────────────────────────────────
-                      const _SectionLabel(text: 'Manage'),
-                      const SizedBox(height: 16),
-
-                      // ── Manage Applications ────────────────────────────
-                      _ApplicationsCard(
-                        color: _primary,
-                        onTap: () => _showApplicationFilters(context),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      // ── Members & Events Grid ──────────────────────────
-                      IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: _GridActionCard(
-                                icon: Icons.groups_rounded,
-                                title: 'Members',
-                                subtitle: 'View & update',
-                                color: _secondary,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const OfficerMembersScreen(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _GridActionCard(
-                                icon: Icons.event_available_rounded,
-                                title: 'Events',
-                                subtitle: 'Create & manage',
-                                color: _green,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => OfficerEventsScreen(
-                                      orgId: orgId,
-                                      orgName: orgName,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      // ── Footer hint ────────────────────────────────────
-                      Center(
-                        child: Text(
-                          'Tap any card to get started',
-                          style: TextStyle(
-                            fontSize: 12,
-                            // FIX 5: Darker grey for WCAG contrast compliance
-                            color: Colors.grey[600],
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+          const SizedBox(width: 8),
+          // Log Out (destructive)
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop(); // close dialog
+              await Supabase.instance.client.auth.signOut();
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const UnifiedLoginPage()),
+                  (route) => false,
+                );
+              }
+            },
+            child: const Text(
+              'Log Out',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
           ),
         ],
@@ -163,57 +170,289 @@ class BaseOfficerDashboard extends StatelessWidget {
     );
   }
 
-  void _showApplicationFilters(BuildContext context) {
+  // ── Toast overlay for "tap again to exit" ─────────────────────────────────
+  OverlayEntry? _toastEntry;
+
+  void _showExitToast() {
+    _toastEntry?.remove();
+    _toastEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        top: MediaQuery.of(context).padding.top + 16,
+        left: 0,
+        right: 0,
+        child: Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A).withOpacity(0.88),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Text(
+                'Tap again to exit',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_toastEntry!);
+    Future.delayed(const Duration(seconds: 2), () {
+      _toastEntry?.remove();
+      _toastEntry = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _toastEntry?.remove();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final org =
+        AppState.instance.organizations.firstWhere((o) => o.id == widget.orgId);
+
+    // ── Double-tap-to-exit via PopScope ───────────────────────────────────
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPressed == null ||
+            now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
+          _lastBackPressed = now;
+          _showExitToast();
+        } else {
+          SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: _background,
+
+        // ── End Drawer (slides from right) ─────────────────────────────────
+        endDrawer: _ProfileEndDrawer(
+          onLogoutTap: () {
+            Navigator.of(context).pop(); // close drawer first
+            _showLogoutDialog();
+          },
+        ),
+
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // ── App Bar ──────────────────────────────────────────────────────
+            SliverAppBar(
+              pinned: true,
+              expandedHeight: size.height * 0.22,
+              backgroundColor: _primary,
+              elevation: 0,
+              // Objective 1: No leading back button
+              automaticallyImplyLeading: false,
+              leading: const SizedBox.shrink(),
+              title: const Text(
+                'Officer Dashboard',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              centerTitle: true,
+              // Objective 2: Top-right profile icon
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.account_circle,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    tooltip: 'Profile',
+                    onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                  ),
+                ),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: _OfficerHeroHeader(
+                  primary: _primary,
+                  secondary: _secondary,
+                  org: org,
+                ),
+              ),
+            ),
+
+            // ── Body ─────────────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 48),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Section Label ──────────────────────────────────
+                        const _SectionLabel(text: 'Manage'),
+                        const SizedBox(height: 16),
+
+                        // ── Manage Applications ────────────────────────────
+                        _ApplicationsCard(
+                          color: _primary,
+                          pendingCount: _showBadge ? _pendingCount : 0,
+                          onTap: () =>
+                              _showApplicationFilters(context, _statusCounts),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // ── Members & Events Grid ──────────────────────────
+                        IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: _GridActionCard(
+                                  icon: Icons.groups_rounded,
+                                  title: 'Members',
+                                  subtitle: 'View & update',
+                                  color: _secondary,
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const OfficerMembersScreen(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: _GridActionCard(
+                                  icon: Icons.event_available_rounded,
+                                  title: 'Events',
+                                  subtitle: 'Create & manage',
+                                  color: _green,
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => OfficerEventsScreen(
+                                        orgId: widget.orgId,
+                                        orgName: widget.orgName,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 32),
+
+                        // ── Footer hint ────────────────────────────────────
+                        Center(
+                          child: Text(
+                            'Tap any card to get started',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showApplicationFilters(BuildContext context, Map<String, int> counts) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(2),
+      builder: (_) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            const _SectionLabel(text: 'Filter Applications'),
-            const SizedBox(height: 16),
-            _FilterRow(
-              context: context,
-              filters: const [
-                _FilterDef(
-                    'All', Icons.list_alt_rounded, null, Color(0xFF4F46E5)),
-                _FilterDef('Pending', Icons.hourglass_top_rounded, 'pending',
-                    Color(0xFFF59E0B)),
-                _FilterDef('For Approval', Icons.approval_rounded,
-                    'forApproval', Color(0xFF06B6D4)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _FilterRow(
-              context: context,
-              filters: const [
-                _FilterDef('Interviewees', Icons.people_alt_rounded,
-                    'interviewed', Color(0xFF8B5CF6)),
-                _FilterDef('Approved', Icons.check_circle_rounded, 'approved',
-                    Color(0xFF22C55E)),
-                _FilterDef('Declined', Icons.cancel_rounded, 'declined',
-                    Color(0xFFEF4444)),
-              ],
-            ),
-          ],
+              const SizedBox(height: 20),
+              const _SectionLabel(text: 'Filter Applications'),
+              const SizedBox(height: 16),
+              _FilterRow(
+                context: sheetContext,
+                onFilterTapped: () {
+                  _dismissBadge();
+                  setSheetState(() {});
+                },
+                filters: [
+                  _FilterDef('All', Icons.list_alt_rounded, null,
+                      const Color(0xFF4F46E5), 0),
+                  _FilterDef(
+                      'Pending',
+                      Icons.hourglass_top_rounded,
+                      'pending',
+                      const Color(0xFFF59E0B),
+                      _showBadge ? (counts['pending'] ?? 0) : 0),
+                  _FilterDef(
+                      'For Approval',
+                      Icons.approval_rounded,
+                      'forApproval',
+                      const Color(0xFF06B6D4),
+                      _showBadge ? (counts['for_approval'] ?? 0) : 0),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _FilterRow(
+                context: sheetContext,
+                onFilterTapped: () {
+                  _dismissBadge();
+                  setSheetState(() {});
+                },
+                filters: [
+                  _FilterDef('Interviewees', Icons.people_alt_rounded,
+                      'interviewed', const Color(0xFF8B5CF6), 0),
+                  _FilterDef('Approved', Icons.check_circle_rounded, 'approved',
+                      const Color(0xFF22C55E), 0),
+                  _FilterDef('Declined', Icons.cancel_rounded, 'declined',
+                      const Color(0xFFEF4444), 0),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -221,7 +460,177 @@ class BaseOfficerDashboard extends StatelessWidget {
 }
 
 // =============================================================================
-// _OfficerHeroHeader — FIX 1: Corrected text, improved spacing & chip layout
+// _ProfileEndDrawer — slides from the right, profile header + logout tile
+// =============================================================================
+class _ProfileEndDrawer extends StatelessWidget {
+  final VoidCallback onLogoutTap;
+
+  const _ProfileEndDrawer({required this.onLogoutTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
+    final email = user?.email ?? 'Officer';
+    final topPadding = MediaQuery.of(context).padding.top;
+
+    return Drawer(
+      width: MediaQuery.of(context).size.width * 0.55, // half-ish screen
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
+      ),
+      child: Column(
+        // ← removed SafeArea
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──────────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(
+                24, topPadding + 20, 24, 24), // ← manual top inset
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.40),
+                      width: 2,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.account_circle,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.30),
+                    ),
+                  ),
+                  child: const Text(
+                    'Officer',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: Text(
+              'ACCOUNT',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.6,
+                color: Colors.grey[400],
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: Color(0xFFEF4444),
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'Log Out',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+              subtitle: const Text(
+                'Sign out of your account',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+              onTap: onLogoutTap,
+            ),
+          ),
+
+          const Spacer(),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Text(
+              'OrgConnect • Officer Portal',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[400],
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _OfficerHeroHeader
 // =============================================================================
 class _OfficerHeroHeader extends StatelessWidget {
   final Color primary;
@@ -237,7 +646,6 @@ class _OfficerHeroHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    // Proportional logo that never gets too big or too small
     final logoSize = (size.width * 0.14).clamp(52.0, 72.0);
 
     return Container(
@@ -250,7 +658,6 @@ class _OfficerHeroHeader extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Decorative orbs — keep subtle depth
           Positioned(
             top: -30,
             right: -20,
@@ -275,11 +682,8 @@ class _OfficerHeroHeader extends StatelessWidget {
               ),
             ),
           ),
-
-          // Content row — centred vertically in the expanded area
           SafeArea(
             child: Padding(
-              // Push content below the collapsed app bar title (~56 px)
               padding: const EdgeInsets.only(top: 56),
               child: Align(
                 alignment: Alignment.center,
@@ -289,22 +693,16 @@ class _OfficerHeroHeader extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // ── Circular Logo ──────────────────────────────────
                       _OrgLogoCircle(
                         logoAsset: org.logoAsset,
                         logoSize: logoSize,
                       ),
-
-                      // FIX 1: Adequate gap between logo and text
                       const SizedBox(width: 16),
-
-                      // ── Name + Officer chip ────────────────────────────
                       Flexible(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // FIX 1: Corrected title-case spelling
                             Text(
                               org.name,
                               maxLines: 2,
@@ -317,10 +715,7 @@ class _OfficerHeroHeader extends StatelessWidget {
                                 height: 1.3,
                               ),
                             ),
-
-                            // FIX 1: 8 px breathing room before the chip
                             const SizedBox(height: 8),
-
                             _OfficerChip(),
                           ],
                         ),
@@ -338,7 +733,7 @@ class _OfficerHeroHeader extends StatelessWidget {
 }
 
 // =============================================================================
-// _OrgLogoCircle — extracted for readability
+// _OrgLogoCircle
 // =============================================================================
 class _OrgLogoCircle extends StatelessWidget {
   final String logoAsset;
@@ -392,7 +787,7 @@ class _OrgLogoCircle extends StatelessWidget {
 }
 
 // =============================================================================
-// _OfficerChip — extracted pill badge
+// _OfficerChip
 // =============================================================================
 class _OfficerChip extends StatelessWidget {
   @override
@@ -421,95 +816,133 @@ class _OfficerChip extends StatelessWidget {
 }
 
 // =============================================================================
-// _ApplicationsCard — FIX 3: Replaced vague box with clear chevron + ListTile
+// _ApplicationsCard
 // =============================================================================
 class _ApplicationsCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
+  final int pendingCount;
 
   const _ApplicationsCard({
     required this.color,
     required this.onTap,
+    this.pendingCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      shadowColor: color.withOpacity(0.15),
-      elevation: 3,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        splashColor: color.withOpacity(0.07),
-        highlightColor: color.withOpacity(0.04),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              // Icon container
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [color.withOpacity(0.85), color],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+    final String badgeLabel = pendingCount > 9 ? '9+' : '$pendingCount';
+    final bool showBadge = pendingCount > 0;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          shadowColor: color.withOpacity(0.15),
+          elevation: 3,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            splashColor: color.withOpacity(0.07),
+            highlightColor: color.withOpacity(0.04),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [color.withOpacity(0.85), color],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.list_alt_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: const Icon(
-                  Icons.list_alt_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-
-              const SizedBox(width: 14),
-
-              // Text
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Manage Applications',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Manage Applications',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Review and process student applications',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Review and process student applications',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey[400],
+                    size: 24,
+                  ),
+                ],
               ),
-
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.grey[400],
-                size: 24,
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+
+        // ── Badge ──────────────────────────────────────────────────────────
+        if (showBadge)
+          Positioned(
+            top: -10,
+            right: -6,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFEF4444).withOpacity(0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                badgeLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
 
 // =============================================================================
-// _GridActionCard — FIX 4: Proportional layout, full-card tap, balanced arrow
+// _GridActionCard
 // =============================================================================
 class _GridActionCard extends StatelessWidget {
   final IconData icon;
@@ -544,12 +977,10 @@ class _GridActionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // FIX 4: Top row — icon left, arrow right (logical position)
               Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // FIX 4: Proportionally sized icon container (~32 px icon)
                   Container(
                     width: 44,
                     height: 44,
@@ -561,10 +992,7 @@ class _GridActionCard extends StatelessWidget {
                   ),
                 ],
               ),
-
               const SizedBox(height: 14),
-
-              // Title
               Text(
                 title,
                 style: const TextStyle(
@@ -573,10 +1001,7 @@ class _GridActionCard extends StatelessWidget {
                   color: Color(0xFF0F172A),
                 ),
               ),
-
               const SizedBox(height: 4),
-
-              // Subtitle
               Text(
                 subtitle,
                 style: const TextStyle(
@@ -584,10 +1009,7 @@ class _GridActionCard extends StatelessWidget {
                   color: Color(0xFF94A3B8),
                 ),
               ),
-
-              const Spacer(), // pushes the arrow to the bottom
-
-              // 👇 Arrow moved HERE (bottom-right)
+              const Spacer(),
               Align(
                 alignment: Alignment.bottomRight,
                 child: Container(
@@ -613,21 +1035,30 @@ class _GridActionCard extends StatelessWidget {
 }
 
 // =============================================================================
-// _FilterRow + _FilterDef (unchanged logic, minor padding tweak)
+// _FilterRow + _FilterDef
+// =============================================================================
+// =============================================================================
+// _FilterRow + _FilterDef
 // =============================================================================
 class _FilterDef {
   final String label;
   final IconData icon;
   final String? filter;
   final Color color;
-  const _FilterDef(this.label, this.icon, this.filter, this.color);
+  final int count;
+  const _FilterDef(this.label, this.icon, this.filter, this.color, this.count);
 }
 
 class _FilterRow extends StatelessWidget {
   final BuildContext context;
   final List<_FilterDef> filters;
+  final VoidCallback onFilterTapped;
 
-  const _FilterRow({required this.context, required this.filters});
+  const _FilterRow({
+    required this.context,
+    required this.filters,
+    required this.onFilterTapped,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -642,15 +1073,19 @@ class _FilterRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            OfficerApplicationsScreen(filter: f.filter),
-                      ),
-                    ),
+                    onTap: () {
+                      onFilterTapped();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              OfficerApplicationsScreen(filter: f.filter),
+                        ),
+                      );
+                    },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 6),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
@@ -658,28 +1093,63 @@ class _FilterRow extends StatelessWidget {
                           width: 1.2,
                         ),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Stack(
+                        clipBehavior: Clip.none,
                         children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: f.color.withOpacity(0.10),
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            child: Icon(f.icon, color: f.color, size: 18),
+                          // ── Main content ──────────────────────────────
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Center(
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: f.color.withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(9),
+                                  ),
+                                  child: Icon(f.icon, color: f.color, size: 18),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                f.label,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: f.color,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            f.label,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: f.color,
+
+                          // ── Circle badge (inside, top-right) ──────────
+                          if (f.count > 0)
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: f.color,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.white, width: 1.5),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: f.color.withOpacity(0.35),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                          ),
                         ],
                       ),
                     ),
@@ -694,7 +1164,7 @@ class _FilterRow extends StatelessWidget {
 }
 
 // =============================================================================
-// _SectionLabel — FIX 2: Slightly bolder weight, balanced padding
+// _SectionLabel
 // =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -705,7 +1175,6 @@ class _SectionLabel extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Accent bar
         Container(
           width: 3,
           height: 16,
@@ -719,15 +1188,13 @@ class _SectionLabel extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        // FIX 2: w800 instead of w700 — reads more clearly as a section header
         Text(
           text.toUpperCase(),
           style: const TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.8,
-            color:
-                Color(0xFF64748B), // slightly darker than before for contrast
+            color: Color(0xFF64748B),
           ),
         ),
       ],

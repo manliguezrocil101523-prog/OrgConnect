@@ -1,7 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/app_state.dart';
+
 import '/screens/notifications/notification_screen.dart';
+// ── ADD THIS IMPORT (line 5) ─────────────────────────────────────────────────
+import '/screens/Student_Role/student_dashboard_events.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
@@ -24,13 +28,33 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   // ─── Double-tap-to-exit state tracker ────────────────────────────────────
   DateTime? _lastBackPressed;
 
+  // ─── AppState listener so badge refreshes when notifications change ───────
+  @override
+  void initState() {
+    super.initState();
+    AppState.instance.addListener(_onAppStateChanged);
+  }
+
+  @override
+  void dispose() {
+    AppState.instance.removeListener(_onAppStateChanged);
+    super.dispose();
+  }
+
+  void _onAppStateChanged() => setState(() {});
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
-    // ── PopScope: intercepts hardware/physical back button ─────────────────
-    // canPop: false prevents the navigator from popping this root screen.
-    // onPopInvokedWithResult fires on every back gesture/button press.
+    // Unread count for the notification badge
+    final unreadCount = AppState.instance.notifications
+        .where((n) =>
+            (n.studentId == AppState.instance.currentStudent?.id ||
+                n.studentId == AppState.instance.currentStudent?.studentId) &&
+            !n.read)
+        .length;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -38,7 +62,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
         if (_lastBackPressed == null ||
             now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
-          // First press — store timestamp and show "Tap again to exit" toast
           _lastBackPressed = now;
 
           ScaffoldMessenger.of(context).clearSnackBars();
@@ -67,7 +90,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             ),
           );
         } else {
-          // Second press within 2 seconds — exit the app cleanly
           ScaffoldMessenger.of(context).clearSnackBars();
           SystemChannels.platform.invokeMethod('SystemNavigator.pop');
         }
@@ -84,9 +106,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               stretch: true,
               backgroundColor: _primary,
               elevation: 0,
-              // ── Back button removed: this is a root/top-level screen ────────
-              // automaticallyImplyLeading: false ensures no back arrow is shown
-              // even if a previous route exists in the navigator stack.
               automaticallyImplyLeading: false,
               title: const Text(
                 'Dashboard',
@@ -117,24 +136,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ── Section label ─────────────────────────────────────
+                        // ── SECTION: Quick Actions ─────────────────────────
                         const _SectionLabel(text: 'Quick Actions'),
                         const SizedBox(height: 16),
 
-                        // ── RESTRUCTURED: 2-col top row ───────────────────────
-                        // BEFORE: three identical full-width list rows stacked
-                        //         vertically — monotonous, lots of dead space.
-                        // AFTER:  My Profile + Organizations sit side-by-side in
-                        //         a 2-column grid row (equal weight, scannable at
-                        //         a glance), while Notifications spans full width
-                        //         below (justified by its higher urgency / info
-                        //         density — it is the primary feedback channel).
-                        //         This breaks the repetitive stack and creates a
-                        //         visual hierarchy: explore (top) → track (bottom).
+                        // ── ROW 1: My Profile + Organizations (unchanged) ──
+                        // ── ROW 1: My Profile + Organizations ──────────────
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // My Profile tile
                             Expanded(
                               child: _ActionTile(
                                 label: 'My Profile',
@@ -146,7 +156,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            // Organizations tile
                             Expanded(
                               child: _ActionTile(
                                 label: 'Organizations',
@@ -162,18 +171,41 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
                         const SizedBox(height: 12),
 
-                        // Notifications — full width, primary feedback channel
-                        _ActionCard(
-                          label: 'Notifications',
-                          subtitle: 'See updates on your applications',
-                          icon: Icons.notifications_rounded,
-                          accentColor: _notifAccent,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const NotificationScreen(),
+                        // ── ROW 2: Notifications + Events ──────────────────
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: _ActionTileWithBadge(
+                                label: 'Notifications',
+                                subtitle: 'App updates',
+                                icon: Icons.notifications_rounded,
+                                accentColor: _notifAccent,
+                                badgeCount: unreadCount,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const NotificationScreen(),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _ActionTile(
+                                label: 'Events',
+                                subtitle: 'View schedule',
+                                icon: Icons.calendar_month_rounded,
+                                accentColor: Color(0xFF4F46E5),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const StudentDashboard(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -189,26 +221,13 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 }
 
 // =============================================================================
-// _HeroHeader
+// _CalendarCard
+// Embeds the StudentDashboard (student_dashboard_events.dart) calendar widget
+// directly into the dashboard page as a card.
 // =============================================================================
-// STRUCTURAL CHANGE: Two-zone layout replacing the single centered column.
-//
-// BEFORE: Avatar → name → subtitle stacked in the center of the gradient —
-//         lots of empty gradient above and below, no visual anchor, felt
-//         like a placeholder screen.
-//
-// AFTER:
-//   • TOP ZONE (flex 1): Avatar in a side-by-side row with name + subtitle
-//     text. Avatar is left-anchored and the text block fills the remaining
-//     width. This gives the header a real "identity card" feel and eliminates
-//     the orphaned centered circle.
-//   • BOTTOM ZONE: A frosted summary strip pinned to the bottom edge of the
-//     hero. Three stat chips (Applications / Orgs Joined / Notifications)
-//     give the user an immediate activity snapshot and fill the dead space
-//     that previously existed beneath the avatar. The strip also provides a
-//     clean visual transition into the white card area below.
-//
-// All colors, gradient, orb decorations, SafeArea — UNCHANGED.
+
+// =============================================================================
+// _HeroHeader  (UNCHANGED)
 // =============================================================================
 class _HeroHeader extends StatelessWidget {
   final Color primary;
@@ -234,7 +253,7 @@ class _HeroHeader extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Decorative orb — top right (UNCHANGED)
+          // Decorative orb — top right
           Positioned(
             top: -30,
             right: -20,
@@ -247,7 +266,7 @@ class _HeroHeader extends StatelessWidget {
               ),
             ),
           ),
-          // Decorative orb — bottom left (UNCHANGED)
+          // Decorative orb — bottom left
           Positioned(
             bottom: 10,
             left: -40,
@@ -261,21 +280,17 @@ class _HeroHeader extends StatelessWidget {
             ),
           ),
 
-          // ── Main content — restructured into two zones ──────────────────
           SafeArea(
             child: Column(
               children: [
-                // ── TOP ZONE: Identity row ────────────────────────────────
-                // Avatar left-anchored + name/greeting text right of it.
-                // Fills the vertical space that was previously wasted above
-                // a centered avatar.
+                // TOP ZONE: Identity row
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(24, 56, 24, 16),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Avatar ring — same layering as original
+                        // Avatar ring
                         Container(
                           width: avatarSize + 10,
                           height: avatarSize + 10,
@@ -292,15 +307,7 @@ class _HeroHeader extends StatelessWidget {
                               ),
                               child: Padding(
                                 padding: const EdgeInsets.all(3),
-                                child: CircleAvatar(
-                                  radius: avatarSize / 2,
-                                  backgroundColor: const Color(0xFFE0E7FF),
-                                  child: Icon(
-                                    Icons.person_rounded,
-                                    size: avatarSize * 0.50,
-                                    color: const Color(0xFF4F46E5),
-                                  ),
-                                ),
+                                child: _buildAvatar(avatarSize),
                               ),
                             ),
                           ),
@@ -308,7 +315,7 @@ class _HeroHeader extends StatelessWidget {
 
                         const SizedBox(width: 16),
 
-                        // Name + subtitle — moved from centered to beside avatar
+                        // Name + subtitle
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -343,12 +350,7 @@ class _HeroHeader extends StatelessWidget {
                   ),
                 ),
 
-                // ── BOTTOM ZONE: Frosted summary strip ───────────────────
-                // Pinned to the bottom of the hero. Three stat chips give
-                // the user an instant activity snapshot and eliminate the
-                // dead space that sat below the avatar in the original.
-                // The frosted surface also acts as a smooth visual bridge
-                // into the white card content area below.
+                // BOTTOM ZONE: Frosted summary strip
                 Container(
                   width: double.infinity,
                   padding:
@@ -389,14 +391,43 @@ class _HeroHeader extends StatelessWidget {
       ),
     );
   }
-}
+
+  // paste here ↓
+  Widget _buildAvatar(double avatarSize) {
+    final student = AppState.instance.currentStudent;
+    final avatarUrl = student?.avatarUrl ?? '';
+
+    ImageProvider? bgImage;
+    Widget? fallbackChild;
+
+    if (avatarUrl.startsWith('data:')) {
+      try {
+        final base64Str = avatarUrl.substring(avatarUrl.indexOf(',') + 1);
+        bgImage = MemoryImage(base64Decode(base64Str));
+      } catch (_) {}
+    } else if (avatarUrl.isNotEmpty) {
+      bgImage = NetworkImage(avatarUrl);
+    }
+
+    fallbackChild = bgImage == null
+        ? Icon(
+            Icons.person_rounded,
+            size: avatarSize * 0.50,
+            color: const Color(0xFF4F46E5),
+          )
+        : null;
+
+    return CircleAvatar(
+      radius: avatarSize / 2,
+      backgroundColor: const Color(0xFFE0E7FF),
+      backgroundImage: bgImage,
+      child: fallbackChild,
+    );
+  }
+} // ← this is the original closing brace of _HeroHeader
 
 // =============================================================================
-// _HeroStatChip
-// =============================================================================
-// New structural element — part of the hero bottom strip.
-// Icon + label chip in the frosted hero footer. Uses only white/opacity
-// so it inherits whatever gradient is behind it without hardcoding colors.
+// _HeroStatChip  (UNCHANGED)
 // =============================================================================
 class _HeroStatChip extends StatelessWidget {
   final String label;
@@ -437,9 +468,7 @@ class _HeroStatChip extends StatelessWidget {
 }
 
 // =============================================================================
-// _VerticalDividerChip
-// =============================================================================
-// Thin separator between hero stat chips. White/opacity only.
+// _VerticalDividerChip  (UNCHANGED)
 // =============================================================================
 class _VerticalDividerChip extends StatelessWidget {
   const _VerticalDividerChip();
@@ -455,7 +484,7 @@ class _VerticalDividerChip extends StatelessWidget {
 }
 
 // =============================================================================
-// _SectionLabel — UNCHANGED
+// _SectionLabel  (UNCHANGED)
 // =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -493,22 +522,7 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // =============================================================================
-// _ActionTile  (NEW — compact square tile for the 2-col grid row)
-// =============================================================================
-// STRUCTURAL CHANGE: replaces _ActionCard for the top two actions.
-//
-// BEFORE: My Profile + Organizations were full-width horizontal cards,
-//         each ~70 dp tall, identical to Notifications — no visual
-//         distinction, repetitive rhythm, poor use of horizontal space.
-//
-// AFTER:  Compact square tiles designed for the 2-col layout:
-//   • Icon badge centered at the top
-//   • Label + subtitle below it
-//   • Same color tokens (accentColor, white surface, same shadow formula)
-//   • Same InkWell + borderRadius tap feedback
-//   • Same onTap navigation callbacks — 100% preserved
-//
-// All color values match the originals exactly (_profileAccent, _orgAccent).
+// _ActionTile — compact square tile for the 2-col grid row (UNCHANGED)
 // =============================================================================
 class _ActionTile extends StatelessWidget {
   final String label;
@@ -542,7 +556,7 @@ class _ActionTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon badge — same dimensions as _ActionCard
+              // Icon badge
               Container(
                 width: 42,
                 height: 42,
@@ -579,7 +593,7 @@ class _ActionTile extends StatelessWidget {
 
               const SizedBox(height: 10),
 
-              // Bottom affordance row — icon + "Open" label
+              // Bottom affordance row
               Row(
                 children: [
                   Icon(
@@ -608,7 +622,153 @@ class _ActionTile extends StatelessWidget {
 }
 
 // =============================================================================
-// _ActionCard — UNCHANGED (used for Notifications full-width row)
+// _ActionTileWithBadge
+// Same visual as _ActionTile but adds an unread-count badge in the top-right
+// corner.  Replaces the old full-width _ActionCard for Notifications so the
+// card height/width matches My Profile and Organizations exactly.
+// =============================================================================
+class _ActionTileWithBadge extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final Color accentColor;
+  final VoidCallback onTap;
+  final int badgeCount;
+
+  const _ActionTileWithBadge({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.accentColor,
+    required this.onTap,
+    required this.badgeCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final showBadge = badgeCount > 0;
+    final badgeLabel = badgeCount > 9 ? '9+' : '$badgeCount';
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // ── Tile body — identical layout to _ActionTile ───────────────────
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          shadowColor: accentColor.withOpacity(0.12),
+          elevation: 3,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            splashColor: accentColor.withOpacity(0.07),
+            highlightColor: accentColor.withOpacity(0.04),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Icon badge
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: accentColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: accentColor, size: 20),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF94A3B8),
+                      height: 1.3,
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 13,
+                        color: accentColor.withOpacity(0.70),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Open',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: accentColor.withOpacity(0.70),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // ── Unread badge — top-right corner of the tile ───────────────────
+        if (showBadge)
+          Positioned(
+            top: -8,
+            right: -6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white, width: 1.8),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF4F46E5).withOpacity(0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                badgeLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// _ActionCard — KEPT for reference / future use but no longer used on screen
 // =============================================================================
 class _ActionCard extends StatelessWidget {
   final String label;
@@ -616,6 +776,7 @@ class _ActionCard extends StatelessWidget {
   final IconData icon;
   final Color accentColor;
   final VoidCallback onTap;
+  final int? badgeCount;
 
   const _ActionCard({
     required this.label,
@@ -623,77 +784,113 @@ class _ActionCard extends StatelessWidget {
     required this.icon,
     required this.accentColor,
     required this.onTap,
+    this.badgeCount,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      shadowColor: accentColor.withOpacity(0.12),
-      elevation: 3,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        splashColor: accentColor.withOpacity(0.07),
-        highlightColor: accentColor.withOpacity(0.04),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          child: Row(
-            children: [
-              // Icon badge
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: accentColor, size: 20),
-              ),
+    final showBadge = badgeCount != null && badgeCount! > 0;
+    final badgeLabel =
+        (badgeCount != null && badgeCount! > 9) ? '9+' : '$badgeCount';
 
-              const SizedBox(width: 14),
-
-              // Label + subtitle
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF0F172A),
-                        height: 1.2,
-                      ),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          shadowColor: accentColor.withOpacity(0.12),
+          elevation: 3,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            splashColor: accentColor.withOpacity(0.07),
+            highlightColor: accentColor.withOpacity(0.04),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: accentColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF94A3B8),
-                        height: 1.3,
-                      ),
+                    child: Icon(icon, color: accentColor, size: 20),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0F172A),
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF94A3B8),
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFFCBD5E1),
+                    size: 20,
+                  ),
+                ],
               ),
-
-              const SizedBox(width: 8),
-
-              // Chevron
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFFCBD5E1),
-                size: 20,
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        if (showBadge)
+          Positioned(
+            top: -10,
+            right: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white, width: 1.8),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF4F46E5).withOpacity(0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                badgeLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

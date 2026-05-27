@@ -708,8 +708,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
           ? () async {
               await AppState.instance.submitApplication(
                 orgName: widget.title,
-                studentId: AppState.instance.currentStudent?.id ??
-                    studentIdCtrl.text.trim(),
+                studentId: studentIdCtrl.text.trim(),
                 name: nameCtrl.text.trim(),
                 contact: contactCtrl.text.trim(),
                 email: emailCtrl.text.trim(),

@@ -11,7 +11,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
+  uuid: ^4.4.0
   cupertino_icons: ^1.0.2
   file_picker: ^10.3.7
   table_calendar: ^3.0.9

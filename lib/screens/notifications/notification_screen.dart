@@ -28,7 +28,11 @@ class _NotificationScreenState extends State<NotificationScreen>
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
 
     AppState.instance.addListener(_onAppStateChanged);
-    AppState.instance.fetchNotifications();
+
+    // Force fresh fetch every time this screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppState.instance.fetchNotifications();
+    });
   }
 
   @override
@@ -48,9 +52,14 @@ class _NotificationScreenState extends State<NotificationScreen>
 
   @override
   Widget build(BuildContext context) {
-    final notifications = AppState.instance.notifications
-        .where((n) => n.studentId == AppState.instance.currentStudent?.id)
-        .toList();
+    final currentStudent = AppState.instance.currentStudent;
+    final allNotifications = AppState.instance.notifications;
+
+    final notifications = currentStudent == null
+        ? []
+        : allNotifications
+            .where((n) => n.studentId == currentStudent.id)
+            .toList();
 
     final interviewNotifications = notifications
         .where((n) => n.title.toLowerCase().contains('interview'))

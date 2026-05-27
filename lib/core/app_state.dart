@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -103,6 +104,7 @@ class StudentProfile {
 /// Student application to an organization
 class Application {
   final String id;
+  final String? userId;
   final String orgName;
   final String? orgId;
   final String studentId;
@@ -118,6 +120,7 @@ class Application {
 
   Application({
     required this.id,
+    this.userId,
     required this.orgName,
     required this.studentId,
     required this.name,
@@ -134,6 +137,7 @@ class Application {
 
   Application copyWith({
     String? id,
+    String? userId,
     String? orgName,
     String? studentId,
     String? name,
@@ -149,6 +153,7 @@ class Application {
   }) {
     return Application(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       orgName: orgName ?? this.orgName,
       studentId: studentId ?? this.studentId,
       name: name ?? this.name,
@@ -347,6 +352,7 @@ class AppState extends ChangeNotifier {
     fetchNotifications();
     fetchMembers();
     fetchApplications();
+    _subscribeToRealtime(); // 👈 ADD THIS LINE ONLY
     organizations = [
       Organization(
         id: '001',
@@ -975,7 +981,31 @@ class AppState extends ChangeNotifier {
         studentId: '123456789'),
   ];
   final List<Notification> notifications = <Notification>[];
+  supabase.RealtimeChannel? _applicationsChannel;
+  supabase.RealtimeChannel? _notificationsChannel;
 
+// ── Real-time subscriptions ───────────────────────────────────────────────
+  void _subscribeToRealtime() {
+    _applicationsChannel = supabase.Supabase.instance.client
+        .channel('public:applications')
+        .onPostgresChanges(
+          event: supabase.PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'applications',
+          callback: (payload) => fetchApplications(),
+        )
+        .subscribe();
+
+    _notificationsChannel = supabase.Supabase.instance.client
+        .channel('public:notifications')
+        .onPostgresChanges(
+          event: supabase.PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'notifications',
+          callback: (payload) => fetchNotifications(),
+        )
+        .subscribe();
+  }
   // ── Status helper ─────────────────────────────────────────────────────────
 
   /// Converts a Supabase status string back to the [ApplicationStatus] enum.
@@ -1002,9 +1032,12 @@ class AppState extends ChangeNotifier {
   /// the local [applications] list. Called once on startup.
   Future<void> fetchApplications() async {
     try {
-      final response = await supabase.Supabase.instance.client
-          .from('applications')
-          .select('*');
+      final query =
+          supabase.Supabase.instance.client.from('applications').select('*');
+
+      final response = currentOfficerOrgId != null
+          ? await query.eq('org_id', currentOfficerOrgId!)
+          : await query;
 
       applications.clear();
       for (var item in response) {
@@ -1023,6 +1056,7 @@ class AppState extends ChangeNotifier {
 
         applications.add(Application(
           id: item['id'],
+          userId: item['user_id'],
           orgName: item['org_name'] ?? '',
           orgId: item['org_id'],
           studentId: item['student_id'] ?? '',
@@ -1055,6 +1089,13 @@ class AppState extends ChangeNotifier {
     required String skills,
     List<String> attachments = const [],
   }) async {
+    final currentUser = supabase.Supabase.instance.client.auth.currentUser;
+
+    // Guard: user must be logged in
+    if (currentUser == null) {
+      throw Exception('User not logged in');
+    }
+
     final found = _findOrgByName(orgName);
     final app = Application(
       id: _genId(),
@@ -1070,12 +1111,14 @@ class AppState extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     applications.add(app);
+
     try {
-      await supabase.Supabase.instance.client.from('applications').upsert({
+      await supabase.Supabase.instance.client.from('applications').insert({
         'id': app.id,
         'org_name': app.orgName,
         'org_id': app.orgId,
         'student_id': app.studentId,
+        'user_id': currentUser.id, // ✅ auth UUID, satisfies RLS
         'name': app.name,
         'contact': app.contact,
         'email': app.email,
@@ -1084,7 +1127,8 @@ class AppState extends ChangeNotifier {
         'attachments': jsonEncode(app.attachments),
         'created_at': app.createdAt.toIso8601String(),
         'status': app.status.toString().split('.').last,
-      }).select();
+      });
+      print('SUCCESS: Application inserted with user_id: ${currentUser.id}');
     } catch (e) {
       print('Error persisting application to Supabase: $e');
     }
@@ -1097,15 +1141,14 @@ class AppState extends ChangeNotifier {
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
     applications[idx] = applications[idx].copyWith(status: status);
-    try {
-      final a = applications[idx];
-      supabase.Supabase.instance.client.from('applications').upsert({
-        'id': a.id,
-        'status': a.status.toString().split('.').last,
-      }).select();
-    } catch (e) {
-      print('Error updating application status in Supabase: $e');
-    }
+
+    // ✅ ADD THIS — save to Supabase
+    supabase.Supabase.instance.client
+        .from('applications')
+        .update({'status': status.toString().split('.').last})
+        .eq('id', applicationId)
+        .then((_) {})
+        .catchError((e) => print('Error updating status: $e'));
 
     notifyListeners();
     return true;
@@ -1118,7 +1161,16 @@ class AppState extends ChangeNotifier {
     final app = applications[idx];
     applications[idx] = app.copyWith(status: ApplicationStatus.accepted);
 
-    addMember(
+    // ✅ ADD THIS — save accepted status to Supabase
+    try {
+      await supabase.Supabase.instance.client
+          .from('applications')
+          .update({'status': 'accepted'}).eq('id', applicationId);
+    } catch (e) {
+      print('Error updating application status: $e');
+    }
+
+    await addMember(
       name: app.name,
       position: defaultPosition,
       orgName: app.orgName,
@@ -1135,16 +1187,17 @@ class AppState extends ChangeNotifier {
       }
     }
 
+    // Find the matching student profile id (UUID) from the application's studentId (school ID)
+    // Fetch the correct profile UUID for this student from Supabase
     await addNotification(Notification(
       id: _genId(),
       title: 'Application Accepted',
       message:
           'Your application to ${app.orgName} has been accepted. You are now a member.',
       date: DateTime.now(),
-      studentId: app.studentId,
+      studentId: app.userId,
       orgId: app.orgId,
     ));
-
     notifyListeners();
     return true;
   }
@@ -1156,12 +1209,13 @@ class AppState extends ChangeNotifier {
     final app = applications[idx];
 
     applications[idx] = app.copyWith(
-      status: ApplicationStatus.for_approval,
+      status: ApplicationStatus.interview_scheduled, // ✅ correct
       interviewAt: interviewAt,
     );
 
     final orgId = app.orgId ?? _findOrgByName(app.orgName)?.id;
 
+    // Fetch the correct profile UUID for this student from Supabase
     await addNotification(Notification(
       id: _genId(),
       title: 'Interview Scheduled',
@@ -1169,15 +1223,13 @@ class AppState extends ChangeNotifier {
           'Your interview for ${app.orgName} has been scheduled on ${interviewAt.toLocal().toString()}.',
       date: DateTime.now(),
       orgId: orgId,
-      studentId: app.studentId,
+      studentId: app.userId,
     ));
-
     try {
-      await supabase.Supabase.instance.client.from('applications').upsert({
-        'id': app.id,
+      await supabase.Supabase.instance.client.from('applications').update({
         'status': 'interview_scheduled',
         'interview_at': interviewAt.toIso8601String(),
-      }).select();
+      }).eq('id', app.id);
     } catch (e) {
       print('Error saving interview schedule to Supabase: $e');
     }
@@ -1260,17 +1312,43 @@ class AppState extends ChangeNotifier {
     return removed;
   }
 
+  static const _validPositions = [
+    'Member',
+    'Officer',
+    'President',
+    'Vice President',
+    'Secretary'
+  ];
+
+  String _sanitizePosition(String? raw) {
+    if (raw == null) return 'Member';
+    // Try exact match first
+    if (_validPositions.contains(raw)) return raw;
+    // Try case-insensitive match
+    final lower = raw.toLowerCase();
+    for (final p in _validPositions) {
+      if (p.toLowerCase() == lower) return p;
+    }
+    // No match — default to Member
+    return 'Member';
+  }
+
   Future<void> fetchMembers() async {
     try {
-      final response =
-          await supabase.Supabase.instance.client.from('members').select('*');
+      final query =
+          supabase.Supabase.instance.client.from('members').select('*');
+
+      final response = currentOfficerOrgId != null
+          ? await query.eq('org_id', currentOfficerOrgId!)
+          : await query;
 
       members.clear();
       for (var item in response) {
         members.add(Member(
           id: item['id'],
           name: item['name'],
-          position: item['position'] ?? 'Member',
+          // AFTER
+          position: _sanitizePosition(item['position']),
           orgName: item['org_name'] ?? '',
           orgId: item['org_id'],
         ));
@@ -1410,19 +1488,23 @@ class AppState extends ChangeNotifier {
       final response = await supabase.Supabase.instance.client
           .from('notifications')
           .select('*')
-          .order('date', ascending: false);
+          .order('created_at', ascending: false);
 
       notifications.clear();
       for (var item in response) {
-        notifications.add(Notification(
-          id: item['id'],
-          title: item['title'],
-          message: item['message'],
-          date: DateTime.parse(item['date']),
-          read: item['read'] ?? false,
-          orgId: item['org_id'],
-          studentId: item['student_id'],
-        ));
+        try {
+          notifications.add(Notification(
+            id: item['id'],
+            title: item['title'] ?? '',
+            message: item['message'] ?? '',
+            date: DateTime.parse(item['date'] ?? item['created_at']),
+            read: item['read'] ?? false,
+            orgId: item['org_id'],
+            studentId: item['student_id'],
+          ));
+        } catch (parseErr) {
+          print('Error parsing notification: $parseErr');
+        }
       }
       notifyListeners();
     } catch (e) {
@@ -1614,7 +1696,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  static String _genId() => 'id-${DateTime.now().millisecondsSinceEpoch}';
+  static String _genId() => const Uuid().v4();
 
   Organization? _findOrgByName(String name) {
     try {

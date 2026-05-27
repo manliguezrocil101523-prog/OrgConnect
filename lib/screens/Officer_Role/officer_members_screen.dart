@@ -62,7 +62,12 @@ class OfficerMembersScreen extends StatelessWidget {
           AnimatedBuilder(
             animation: AppState.instance,
             builder: (ctx, _) {
-              final members = AppState.instance.members;
+              final orgId = AppState.instance.currentOfficerOrgId;
+              final members = orgId != null
+                  ? AppState.instance.members
+                      .where((m) => m.orgId == orgId)
+                      .toList()
+                  : AppState.instance.members;
               if (members.isEmpty) {
                 return SliverFillRemaining(
                     child: _Empty(
@@ -119,9 +124,36 @@ class OfficerMembersScreen extends StatelessWidget {
   // ── Member dialog ────────────────────────────────────────────────────────
   void _dialog(BuildContext context, {Member? existing}) {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final orgCtrl = TextEditingController(text: existing?.orgName ?? '');
+    // AFTER
+    const _validPositions = [
+      'Member',
+      'Officer',
+      'President',
+      'Vice President',
+      'Secretary'
+    ];
+
     String position =
-        existing?.position.isNotEmpty == true ? existing!.position : 'Member';
+        (existing != null && _validPositions.contains(existing.position))
+            ? existing.position
+            : 'Member';
+
+    // Hardcoded officer org — resolved once at dialog open, never from user input
+    final String? officerOrgId = AppState.instance.currentOfficerOrgId;
+    final String officerOrgName = officerOrgId != null
+        ? AppState.instance.organizations
+            .firstWhere(
+              (o) => o.id == officerOrgId,
+              orElse: () => AppState.instance.organizations.first,
+            )
+            .name
+        : (existing?.orgName ?? '');
+
+    // Guard: bail out if no officer org context is available
+    if (officerOrgId == null) {
+      _snack(context, 'No organization context. Please re-login.', Colors.red);
+      return;
+    }
 
     showDialog(
       context: context,
@@ -147,14 +179,11 @@ class OfficerMembersScreen extends StatelessWidget {
                             hint: 'Enter member name',
                             icon: Icons.person_rounded),
                         const SizedBox(height: 14),
-                        // Position dropdown
+                        // Position dropdown — unchanged
                         _FieldLabel('Position'),
                         DropdownButtonFormField<String>(
                           value: position,
                           decoration: _fieldDeco(Icons.badge_rounded),
-                          // FIX Bug 7: 'Member' was the default value but was
-                          // missing from the items list, causing a Flutter
-                          // assertion error ("value must be in items").
                           items: [
                             'Member',
                             'Officer',
@@ -168,11 +197,34 @@ class OfficerMembersScreen extends StatelessWidget {
                           onChanged: (v) => ss(() => position = v ?? 'Member'),
                         ),
                         const SizedBox(height: 14),
-                        _Field(
-                            ctrl: orgCtrl,
-                            label: 'Organization',
-                            hint: 'Enter organization name',
-                            icon: Icons.groups_rounded),
+                        // Read-only org display — not editable by officer
+                        _FieldLabel('Organization'),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(children: [
+                            const Icon(Icons.groups_rounded,
+                                color: Color(0xFF4F46E5), size: 18),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                officerOrgName,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF64748B)),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Icon(Icons.lock_rounded,
+                                color: Color(0xFFCBD5E1), size: 14),
+                          ]),
+                        ),
                         const SizedBox(height: 22),
                         Row(children: [
                           Expanded(
@@ -181,19 +233,24 @@ class OfficerMembersScreen extends StatelessWidget {
                           const SizedBox(width: 12),
                           Expanded(child: _SaveBtn(onTap: () {
                             final name = nameCtrl.text.trim();
-                            final org = orgCtrl.text.trim();
-                            if (name.isEmpty || org.isEmpty) return;
+                            if (name.isEmpty) return;
                             if (existing == null) {
+                              // ADD: org identifiers sourced from officer session only
                               AppState.instance.addMember(
-                                  name: name, position: position, orgName: org);
-                              // FIX Bug 6: use ctx (dialog context) for snack
-                              // so the messenger scope is always valid.
+                                name: name,
+                                position: position,
+                                orgName: officerOrgName, // hardcoded
+                                orgId: officerOrgId, // hardcoded
+                              );
                               _snack(ctx, 'Added $name', _ok);
                             } else {
+                              // UPDATE: preserve id, override org identifiers
                               AppState.instance.updateMember(existing.copyWith(
-                                  name: name,
-                                  position: position,
-                                  orgName: org));
+                                name: name,
+                                position: position,
+                                orgName: officerOrgName, // hardcoded
+                                orgId: officerOrgId, // hardcoded
+                              ));
                               _snack(ctx, 'Updated $name', _ok);
                             }
                             Navigator.pop(ctx);

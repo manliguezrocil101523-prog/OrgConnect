@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ Supabase SDK
 import 'core/app_state.dart'; // Import AppState for initialization
 
-// Import your screens
 import 'screens/organizations/org_list_screen.dart';
 import 'screens/auth/sign_in_page.dart';
 import 'screens/auth/sign_up_page.dart';
-import 'screens/role_selection_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/Student_Role/student_dashboard_screen.dart';
 import 'screens/Student_Role/student_dashboard_events.dart';
 import 'screens/auth/unified_login_page.dart';
+import 'screens/auth/auth_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,19 +49,16 @@ class MyApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFEAF6F0),
       ),
-      initialRoute: '/calendar', // Start with the calendar dashboard screen
+      initialRoute: '/',
       routes: {
-        '/role': (context) => const RoleSelectionScreen(),
+        '/': (context) => const AuthGate(),
         '/login': (context) => const UnifiedLoginPage(),
         '/orglist': (context) => const OrgListScreen(),
         '/signin': (context) => const SignInPage(),
         '/signup': (context) => const SignUpPage(),
-
-        '/home': (context) =>
-            const StudentDashboardScreen(), // Profile/Org/Notification dashboard
+        '/home': (context) => const StudentDashboardScreen(),
         '/profile': (context) => const ProfileScreen(),
-        '/calendar': (context) =>
-            const StudentDashboard(), // Calendar dashboard
+        '/calendar': (context) => const StudentDashboard(),
       },
     );
   }

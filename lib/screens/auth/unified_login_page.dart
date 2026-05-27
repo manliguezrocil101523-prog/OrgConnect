@@ -1,23 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
+
 import '../../core/app_state.dart';
 import '../Student_Role/student_dashboard_screen.dart';
-import '../Student_Role/student_dashboard_events.dart';
 import '../Officer_Role/officer_rule_screen.dart';
 import '../Admin_Role/admin_dashboard_screen.dart';
 
-const _kBlue = Color(0xFF2563EB);
-const _kBlueSoft = Color(0xFFEFF6FF);
-const _kBg = Color(0xFFF8FAFF);
-const _kText = Color(0xFF1E293B);
-const _kSubText = Color(0xFF94A3B8);
-const _kBorder = Color(0xFFCBD5E1);
-const _kWhite = Colors.white;
+const _kPrimaryBlue = Color(0xFF0D5BD7);
+const _kBorderColor = Color(0xFFE5E7EB);
+const _kHintColor = Color(0xFF9CA3AF);
+const _kTextColor = Color(0xFF111827);
+const _kBackground = Color(0xFFF8FAFC);
 const _kError = Color(0xFFDC2626);
 
 class UnifiedLoginPage extends StatefulWidget {
   const UnifiedLoginPage({super.key});
+
   @override
   State<UnifiedLoginPage> createState() => _UnifiedLoginPageState();
 }
@@ -31,14 +30,25 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
   bool _isLoading = false;
   bool _obscure = true;
 
-  late final AnimationController _ac = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 600))
-    ..forward();
-  late final Animation<double> _fade =
-      CurvedAnimation(parent: _ac, curve: Curves.easeOut);
-  late final Animation<Offset> _slide =
-      Tween(begin: const Offset(0, 0.06), end: Offset.zero)
-          .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
+  late final AnimationController _animationController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  )..forward();
+
+  late final Animation<double> _fadeAnimation = CurvedAnimation(
+    parent: _animationController,
+    curve: Curves.easeOut,
+  );
+
+  late final Animation<Offset> _slideAnimation = Tween<Offset>(
+    begin: const Offset(0, 0.05),
+    end: Offset.zero,
+  ).animate(
+    CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ),
+  );
 
   @override
   void initState() {
@@ -49,35 +59,44 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
   @override
   void dispose() {
-    _ac.dispose();
+    _animationController.dispose();
+
     _emailCtrl
       ..removeListener(_validate)
       ..dispose();
+
     _passCtrl
       ..removeListener(_validate)
       ..dispose();
+
     super.dispose();
   }
 
   void _validate() {
-    final v =
+    final valid =
         _emailCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
-    if (v != _isFormValid) setState(() => _isFormValid = v);
-  }
 
-  void _goBack() => Navigator.pushReplacement(
-      context, MaterialPageRoute(builder: (_) => const StudentDashboard()));
+    if (valid != _isFormValid) {
+      setState(() => _isFormValid = valid);
+    }
+  }
 
   Future<void> _signIn() async {
     if (!_isFormValid || _isLoading) return;
+
     setState(() => _isLoading = true);
+
     final email = _emailCtrl.text.trim();
     final password = _passCtrl.text.trim();
 
     try {
-      final res = await Supabase.instance.client.auth
-          .signInWithPassword(email: email, password: password);
+      final res = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
       if (!mounted) return;
+
       if (res.user == null) {
         _snack('Invalid email or password.', isError: true);
         return;
@@ -90,53 +109,94 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
           .single();
 
       final isActive = profileData['active'] ?? true;
+
       if (!isActive) {
         await Supabase.instance.client.auth.signOut();
-        _snack('Your account has been deactivated. Contact admin.',
-            isError: true);
+
+        _snack(
+          'Your account has been deactivated. Contact admin.',
+          isError: true,
+        );
+
         return;
       }
 
       final role = profileData['role']?.toString() ?? 'student';
+
       if (!mounted) return;
 
+      // ================= ADMIN =================
       if (role == 'admin') {
         AppState.instance.setRole(UserRole.admin);
+
         Navigator.pushReplacement(
-            context, MaterialPageRoute(builder: (_) => const AdminDashboard()));
-      } else if (role == 'officer') {
+          context,
+          MaterialPageRoute(
+            builder: (_) => const AdminDashboard(),
+          ),
+        );
+      }
+
+      // ================= OFFICER =================
+      else if (role == 'officer') {
         final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
+
         if (assignedOrgId.isEmpty) {
           await Supabase.instance.client.auth.signOut();
-          _snack('You have not been assigned to an organization yet.',
-              isError: true);
+
+          _snack(
+            'You have not been assigned to an organization yet.',
+            isError: true,
+          );
+
           return;
         }
+
         final orgs = AppState.instance.organizations;
+
         final orgIndex = orgs.indexWhere((o) => o.id == assignedOrgId);
+
         if (orgIndex == -1) {
           await Supabase.instance.client.auth.signOut();
-          _snack('Assigned organization not found. Contact admin.',
-              isError: true);
+
+          _snack(
+            'Assigned organization not found. Contact admin.',
+            isError: true,
+          );
+
           return;
         }
+
         AppState.instance.setRole(UserRole.officer);
         AppState.instance.setCurrentOfficerOrgId(assignedOrgId);
+
+        await AppState.instance.fetchApplications();
+        await AppState.instance.fetchMembers();
+
+        if (!mounted) return;
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) => BaseOfficerDashboard(
-                orgId: orgs[orgIndex].id, orgName: orgs[orgIndex].name),
+              orgId: orgs[orgIndex].id,
+              orgName: orgs[orgIndex].name,
+            ),
           ),
         );
-      } else {
+      }
+
+      // ================= STUDENT =================
+      else {
         final rawJoined = profileData['joined_org_ids'];
+
         final joinedOrgIds = switch (rawJoined) {
           null => <String>[],
           String s => List<String>.from(jsonDecode(s) as List),
           List l => List<String>.from(l),
           _ => <String>[],
         };
+
         final profile = StudentProfile(
           id: profileData['id'],
           name: profileData['name'] ?? '',
@@ -147,10 +207,18 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
           avatarUrl: profileData['avatar_url'] ?? '',
           joinedOrgIds: joinedOrgIds,
         );
+
         AppState.instance.setRole(UserRole.student);
+
         await AppState.instance.setStudentProfile(profile);
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const StudentDashboardScreen()));
+        await AppState.instance.fetchNotifications();
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const StudentDashboardScreen(),
+          ),
+        );
       }
     } on AuthException catch (e) {
       if (e.message.toLowerCase().contains('email not confirmed')) {
@@ -159,44 +227,66 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
         _snack(e.message, isError: true);
       }
     } catch (e) {
-      _snack('Something went wrong. Please try again.', isError: true);
+      _snack(
+        'Something went wrong. Please try again.',
+        isError: true,
+      );
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   void _snack(String msg, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: isError ? _kError : const Color(0xFF059669),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? _kError : const Color(0xFF059669),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    );
   }
 
   void _showEmailConfirmationDialog(String email) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
         title: const Text('Email Not Confirmed'),
-        content: Text('Your email ($email) has not been confirmed yet. '
-            'Please check your inbox for a verification link.'),
+        content: Text(
+          'Your email ($email) has not been confirmed yet. '
+          'Please check your inbox for a verification link.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK')),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
           TextButton(
             onPressed: () async {
               try {
-                await Supabase.instance.client.auth
-                    .resend(type: OtpType.signup, email: email);
+                await Supabase.instance.client.auth.resend(
+                  type: OtpType.signup,
+                  email: email,
+                );
+
                 if (!ctx.mounted) return;
+
                 _snack('Confirmation email sent!');
                 Navigator.of(ctx).pop();
               } catch (e) {
-                _snack('Failed to resend: $e', isError: true);
+                _snack(
+                  'Failed to resend: $e',
+                  isError: true,
+                );
               }
             },
             child: const Text('Resend Email'),
@@ -208,173 +298,223 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final screenW = mq.size.width;
+    final screenH = mq.size.height;
+
+    // Responsive scale factor — clamps between small (320dp) and large (428dp) phones
+    final scale = (screenW / 390).clamp(0.82, 1.18);
+
+    // Responsive spacing helpers
+    final hPad = (screenW * 0.062).clamp(16.0, 32.0);
+    final cardHPad = (screenW * 0.062).clamp(16.0, 28.0);
+    final cardVPad = (screenH * 0.032).clamp(20.0, 36.0);
+    final logoHeight = (screenH * 0.19).clamp(110.0, 200.0);
+    final btnHeight = (screenH * 0.072).clamp(50.0, 62.0);
+    final fieldSpacing = (screenH * 0.022).clamp(12.0, 22.0);
+    final sectionSpacing = (screenH * 0.038).clamp(20.0, 40.0);
+
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goBack();
-      },
+      onPopInvokedWithResult: (didPop, _) {},
       child: Scaffold(
-        backgroundColor: _kBg,
+        backgroundColor: _kBackground,
         body: SafeArea(
-          child: Stack(
-            children: [
-              // ── Back button ────────────────────────────────────
-              Align(
-                alignment: Alignment.topLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8, left: 8),
-                  child: IconButton(
-                    onPressed: _goBack,
-                    style: IconButton.styleFrom(
-                      backgroundColor: _kBlueSoft,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 18, color: _kBlue),
-                  ),
-                ),
+          child: Center(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.symmetric(
+                horizontal: hPad,
+                vertical: (screenH * 0.025).clamp(12.0, 24.0),
               ),
-
-              // ── Main content ───────────────────────────────────
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
-                  child: FadeTransition(
-                    opacity: _fade,
-                    child: SlideTransition(
-                      position: _slide,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 380),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // ── Title block ──────────────────────
-                            const SizedBox(height: 32),
-                            const Text(
-                              'Sign In',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
-                                color: _kBlue,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'Welcome back! Please sign in to continue',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                color: _kSubText,
-                              ),
-                            ),
-
-                            // ── Fields ───────────────────────────
-                            const SizedBox(height: 44),
-                            _LineField(
-                              controller: _emailCtrl,
-                              hint: 'Email Address',
-                              keyboardType: TextInputType.emailAddress,
-                            ),
-                            const SizedBox(height: 28),
-                            _LineField(
-                              controller: _passCtrl,
-                              hint: 'Password',
-                              obscure: _obscure,
-                              onToggle: () =>
-                                  setState(() => _obscure = !_obscure),
-                              onSubmitted: (_) => _signIn(),
-                            ),
-
-                            // ── Forgot password ──────────────────
-                            const SizedBox(height: 14),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: GestureDetector(
-                                onTap: () {},
-                                child: const Text(
-                                  'Forgot Password?',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: _kText,
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                            // ── Login button ─────────────────────
-                            const SizedBox(height: 36),
-                            SizedBox(
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed: _isFormValid && !_isLoading
-                                    ? _signIn
-                                    : null,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _kBlue,
-                                  disabledBackgroundColor:
-                                      _kBlue.withOpacity(0.45),
-                                  foregroundColor: _kWhite,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(30)),
-                                ),
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2.2, color: _kWhite),
-                                      )
-                                    : const Text(
-                                        'Login',
-                                        style: TextStyle(
-                                          fontSize: 15.5,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: 0.3,
-                                        ),
-                                      ),
-                              ),
-                            ),
-
-                            // ── Sign up link ─────────────────────
-                            const SizedBox(height: 24),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text(
-                                  "Don't have an account?  ",
-                                  style: TextStyle(
-                                      fontSize: 13.5, color: _kSubText),
-                                ),
-                                GestureDetector(
-                                  onTap: () =>
-                                      Navigator.pushNamed(context, '/signup'),
-                                  child: const Text(
-                                    'Sign Up',
-                                    style: TextStyle(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: _kBlue,
-                                      decoration: TextDecoration.underline,
-                                      decorationColor: _kBlue,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 32),
-                          ],
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: cardHPad,
+                        vertical: cardVPad,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(
+                          (screenW * 0.085).clamp(24.0, 36.0),
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 24,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // ================= IMAGE =================
+                          Image.asset(
+                            'assets/login.png',
+                            height: logoHeight,
+                            fit: BoxFit.contain,
+                          ),
+
+                          SizedBox(height: fieldSpacing),
+
+                          // ================= TITLE =================
+                          Text(
+                            'Welcome!',
+                            style: TextStyle(
+                              fontSize: (34 * scale).clamp(26.0, 38.0),
+                              fontWeight: FontWeight.w800,
+                              color: _kTextColor,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+
+                          SizedBox(height: (8 * scale).clamp(5.0, 10.0)),
+
+                          Text(
+                            'Log in to your existing account',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: (15 * scale).clamp(12.0, 16.0),
+                              color: const Color(0xFF6B7280),
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+
+                          SizedBox(height: sectionSpacing),
+
+                          // ================= EMAIL FIELD =================
+                          _ModernField(
+                            controller: _emailCtrl,
+                            hint: 'Email',
+                            icon: Icons.person_outline_rounded,
+                            keyboardType: TextInputType.emailAddress,
+                            scale: scale,
+                          ),
+
+                          SizedBox(height: fieldSpacing),
+
+                          // ================= PASSWORD FIELD =================
+                          _ModernField(
+                            controller: _passCtrl,
+                            hint: 'Password',
+                            icon: Icons.lock_outline_rounded,
+                            obscure: _obscure,
+                            scale: scale,
+                            onToggle: () {
+                              setState(() {
+                                _obscure = !_obscure;
+                              });
+                            },
+                            onSubmitted: (_) => _signIn(),
+                          ),
+
+                          SizedBox(
+                            height: (fieldSpacing * 0.75).clamp(8.0, 16.0),
+                          ),
+
+                          // ================= FORGOT PASSWORD =================
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: GestureDetector(
+                              onTap: () {},
+                              child: Text(
+                                'Forgot Password?',
+                                style: TextStyle(
+                                  fontSize: (14 * scale).clamp(11.0, 15.0),
+                                  fontWeight: FontWeight.w500,
+                                  color: _kTextColor,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(height: sectionSpacing),
+
+                          // ================= LOGIN BUTTON =================
+                          SizedBox(
+                            width: double.infinity,
+                            height: btnHeight,
+                            child: ElevatedButton(
+                              onPressed:
+                                  _isFormValid && !_isLoading ? _signIn : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _kPrimaryBlue,
+                                disabledBackgroundColor:
+                                    _kPrimaryBlue.withOpacity(0.45),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(40),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? SizedBox(
+                                      width: (24 * scale).clamp(18.0, 26.0),
+                                      height: (24 * scale).clamp(18.0, 26.0),
+                                      child: const CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(
+                                      'LOG IN',
+                                      style: TextStyle(
+                                        fontSize: (17 * scale).clamp(
+                                          14.0,
+                                          19.0,
+                                        ),
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                            ),
+                          ),
+
+                          SizedBox(height: fieldSpacing),
+
+                          // ================= SIGNUP =================
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                "Don't have an account? ",
+                                style: TextStyle(
+                                  color: const Color(0xFF6B7280),
+                                  fontSize: (14 * scale).clamp(11.0, 15.0),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/signup',
+                                  );
+                                },
+                                child: Text(
+                                  'Sign Up',
+                                  style: TextStyle(
+                                    color: _kPrimaryBlue,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: (14 * scale).clamp(11.0, 15.0),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -382,81 +522,111 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
   }
 }
 
-// ── Underline-style field (no validation needed for login) ────────────────────
-class _LineField extends StatefulWidget {
-  const _LineField({
+class _ModernField extends StatefulWidget {
+  const _ModernField({
     required this.controller,
     required this.hint,
+    required this.icon,
     this.obscure = false,
     this.keyboardType = TextInputType.text,
     this.onToggle,
     this.onSubmitted,
+    this.scale = 1.0,
   });
 
   final TextEditingController controller;
   final String hint;
+  final IconData icon;
   final bool obscure;
   final TextInputType keyboardType;
   final VoidCallback? onToggle;
   final ValueChanged<String>? onSubmitted;
+  final double scale;
 
   @override
-  State<_LineField> createState() => _LineFieldState();
+  State<_ModernField> createState() => _ModernFieldState();
 }
 
-class _LineFieldState extends State<_LineField> {
-  final _focus = FocusNode();
+class _ModernFieldState extends State<_ModernField> {
+  final FocusNode _focusNode = FocusNode();
+
   bool _focused = false;
 
   @override
   void initState() {
     super.initState();
-    _focus.addListener(() => setState(() => _focused = _focus.hasFocus));
+
+    _focusNode.addListener(() {
+      setState(() {
+        _focused = _focusNode.hasFocus;
+      });
+    });
   }
 
   @override
   void dispose() {
-    _focus.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.controller,
-      focusNode: _focus,
-      obscureText: widget.obscure,
-      keyboardType: widget.keyboardType,
-      onSubmitted: widget.onSubmitted,
-      style: const TextStyle(
-          fontSize: 15, color: _kText, fontWeight: FontWeight.w500),
-      decoration: InputDecoration(
-        hintText: widget.hint,
-        hintStyle: const TextStyle(
-            color: _kSubText, fontSize: 14.5, fontWeight: FontWeight.w400),
-        contentPadding: const EdgeInsets.only(bottom: 10),
-        isDense: true,
-        border:
-            const UnderlineInputBorder(borderSide: BorderSide(color: _kBorder)),
-        enabledBorder:
-            const UnderlineInputBorder(borderSide: BorderSide(color: _kBorder)),
-        focusedBorder: const UnderlineInputBorder(
-            borderSide: BorderSide(color: _kBlue, width: 1.8)),
-        suffixIcon: widget.onToggle != null
-            ? GestureDetector(
-                onTap: widget.onToggle,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
+    final s = widget.scale;
+    final vertPad = (20 * s).clamp(14.0, 22.0);
+    final horzPad = (22 * s).clamp(16.0, 24.0);
+    final fontSize = (15 * s).clamp(12.0, 16.0);
+    final iconSize = (22 * s).clamp(18.0, 24.0);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(40),
+        border: Border.all(
+          color: _focused ? _kPrimaryBlue : _kBorderColor,
+          width: _focused ? 2 : 1.2,
+        ),
+        color: Colors.white,
+      ),
+      child: TextField(
+        controller: widget.controller,
+        focusNode: _focusNode,
+        obscureText: widget.obscure,
+        keyboardType: widget.keyboardType,
+        onSubmitted: widget.onSubmitted,
+        style: TextStyle(
+          fontSize: fontSize,
+          color: _kTextColor,
+          fontWeight: FontWeight.w500,
+        ),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: horzPad,
+            vertical: vertPad,
+          ),
+          hintText: widget.hint,
+          hintStyle: TextStyle(
+            color: _kHintColor,
+            fontSize: fontSize,
+          ),
+          prefixIcon: Icon(
+            widget.icon,
+            color: _focused ? _kPrimaryBlue : _kHintColor,
+            size: iconSize,
+          ),
+          suffixIcon: widget.onToggle != null
+              ? GestureDetector(
+                  onTap: widget.onToggle,
                   child: Icon(
                     widget.obscure
                         ? Icons.visibility_off_outlined
                         : Icons.visibility_outlined,
-                    size: 19,
-                    color: _focused ? _kBlue : _kSubText,
+                    color: _focused ? _kPrimaryBlue : _kHintColor,
+                    size: iconSize,
                   ),
-                ),
-              )
-            : null,
+                )
+              : null,
+        ),
       ),
     );
   }
