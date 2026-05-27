@@ -225,7 +225,7 @@ class _StudentDashboardState extends State<StudentDashboard>
             centerTitle: true,
             leading: IconButton(
               icon: const Icon(Icons.chevron_left_rounded,
-                  color: Colors.white, size: 28),
+                  color: _DT.primary, size: 28),
               onPressed: () => Navigator.pushReplacementNamed(context, '/home'),
             ),
             title: const Text('Dashboard',
