@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/app_state.dart';
-
 import '/screens/notifications/notification_screen.dart';
-// ── ADD THIS IMPORT (line 5) ─────────────────────────────────────────────────
 import '/screens/Student_Role/student_dashboard_events.dart';
+import '/screens/profile/profile_screen.dart';
+import '/screens/organizations/org_list_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
@@ -41,7 +42,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     super.dispose();
   }
 
-  void _onAppStateChanged() => setState(() {});
+  void _onAppStateChanged() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -107,15 +113,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               backgroundColor: _primary,
               elevation: 0,
               automaticallyImplyLeading: false,
-              title: const Text(
-                'Dashboard',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17,
-                  letterSpacing: 0.4,
-                ),
-              ),
               centerTitle: true,
               flexibleSpace: FlexibleSpaceBar(
                 stretchModes: const [StretchMode.blurBackground],
@@ -151,8 +148,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                 subtitle: 'View & update info',
                                 icon: Icons.person_rounded,
                                 accentColor: _profileAccent,
-                                onTap: () =>
-                                    Navigator.pushNamed(context, '/profile'),
+                                onTap: () => Navigator.push(context,
+                                    _slideRoute(const ProfileScreen())),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -162,8 +159,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                 subtitle: 'Browse & apply',
                                 icon: Icons.groups_rounded,
                                 accentColor: _orgAccent,
-                                onTap: () =>
-                                    Navigator.pushNamed(context, '/orglist'),
+                                onTap: () => Navigator.push(context,
+                                    _slideRoute(const OrgListScreen())),
                               ),
                             ),
                           ],
@@ -182,12 +179,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                 icon: Icons.notifications_rounded,
                                 accentColor: _notifAccent,
                                 badgeCount: unreadCount,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const NotificationScreen(),
-                                  ),
-                                ),
+                                onTap: () => Navigator.push(context,
+                                    _slideRoute(const NotificationScreen())),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -197,12 +190,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                 subtitle: 'View schedule',
                                 icon: Icons.calendar_month_rounded,
                                 accentColor: Color(0xFF4F46E5),
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const StudentDashboard(),
-                                  ),
-                                ),
+                                onTap: () => Navigator.push(context,
+                                    _slideRoute(const StudentDashboard())),
                               ),
                             ),
                           ],
@@ -394,34 +383,43 @@ class _HeroHeader extends StatelessWidget {
 
   // paste here ↓
   Widget _buildAvatar(double avatarSize) {
-    final student = AppState.instance.currentStudent;
-    final avatarUrl = student?.avatarUrl ?? '';
+    return ListenableBuilder(
+      listenable: AppState.instance,
+      builder: (context, _) {
+        final student = AppState.instance.currentStudent;
+        final avatarUrl = student?.avatarUrl ?? '';
 
-    ImageProvider? bgImage;
-    Widget? fallbackChild;
+        ImageProvider? bgImage;
+        Widget? fallbackChild;
 
-    if (avatarUrl.startsWith('data:')) {
-      try {
-        final base64Str = avatarUrl.substring(avatarUrl.indexOf(',') + 1);
-        bgImage = MemoryImage(base64Decode(base64Str));
-      } catch (_) {}
-    } else if (avatarUrl.isNotEmpty) {
-      bgImage = NetworkImage(avatarUrl);
-    }
+        if (avatarUrl.startsWith('data:')) {
+          try {
+            final base64Str = avatarUrl.substring(avatarUrl.indexOf(',') + 1);
+            bgImage = MemoryImage(base64Decode(base64Str));
+          } catch (_) {}
+        } else if (avatarUrl.isNotEmpty) {
+          bgImage = CachedNetworkImageProvider(avatarUrl);
+        }
 
-    fallbackChild = bgImage == null
-        ? Icon(
-            Icons.person_rounded,
-            size: avatarSize * 0.50,
-            color: const Color(0xFF4F46E5),
-          )
-        : null;
+        fallbackChild = bgImage == null
+            ? Icon(
+                Icons.person_rounded,
+                size: avatarSize * 0.50,
+                color: const Color(0xFF4F46E5),
+              )
+            : null;
 
-    return CircleAvatar(
-      radius: avatarSize / 2,
-      backgroundColor: const Color(0xFFE0E7FF),
-      backgroundImage: bgImage,
-      child: fallbackChild,
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          child: CircleAvatar(
+            key: ValueKey(avatarUrl),
+            radius: avatarSize / 2,
+            backgroundColor: const Color(0xFFE0E7FF),
+            backgroundImage: bgImage,
+            child: fallbackChild,
+          ),
+        );
+      },
     );
   }
 } // ← this is the original closing brace of _HeroHeader
@@ -893,4 +891,30 @@ class _ActionCard extends StatelessWidget {
       ],
     );
   }
+}
+
+// ─── Smooth slide-transition helper ──────────────────────────────────────────
+Route<T> _slideRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: const Duration(milliseconds: 280),
+    reverseTransitionDuration: const Duration(milliseconds: 240),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(1.0, 0.0),
+          end: Offset.zero,
+        ).animate(curved),
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
 }

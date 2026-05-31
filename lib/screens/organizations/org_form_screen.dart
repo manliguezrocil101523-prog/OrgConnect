@@ -1,8 +1,12 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/app_state.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:typed_data';
 
 class OrgFormScreen extends StatefulWidget {
   final String title;
@@ -123,6 +127,8 @@ class _OrgFormContentState extends State<OrgFormContent> {
 
   bool agreed = false;
   List<PlatformFile> attachments = [];
+  XFile? _profileImage;
+  Uint8List? _profileImageBytes;
 
   // Course quick-select options
   static const List<String> _courseOptions = [
@@ -171,6 +177,83 @@ class _OrgFormContentState extends State<OrgFormContent> {
       'Dec'
     ];
     return '${months[now.month - 1]} ${now.day}, ${now.year}';
+  }
+
+  Future<String> _uploadProfileImage(XFile image) async {
+    try {
+      final bytes = await image.readAsBytes();
+
+      // Safe extension: use mimeType or name, never path (path is blob URL on web)
+      String fileExt = 'jpg'; // default fallback
+      if (image.name.contains('.')) {
+        fileExt = image.name.split('.').last.toLowerCase();
+      } else if (image.mimeType != null && image.mimeType!.contains('/')) {
+        fileExt = image.mimeType!.split('/').last.toLowerCase();
+      }
+
+      final fileName =
+          'profile_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+      final filePath = 'profiles/$fileName';
+
+      await Supabase.instance.client.storage
+          .from('application_assets')
+          .uploadBinary(filePath, bytes,
+              fileOptions: FileOptions(contentType: 'image/$fileExt'));
+
+      final url = Supabase.instance.client.storage
+          .from('application_assets')
+          .getPublicUrl(filePath);
+
+      return url;
+    } catch (e) {
+      print('Error uploading profile image: $e');
+      return '';
+    }
+  }
+
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _profileImage = picked;
+        _profileImageBytes = bytes;
+      });
+    }
+  }
+
+  Future<List<String>> _uploadAttachments() async {
+    final List<String> urls = [];
+    for (final file in attachments) {
+      try {
+        final bytes = file.bytes;
+        if (bytes == null) continue;
+
+        final fileExt = (file.extension ?? 'jpg').toLowerCase();
+        final fileName =
+            'attachment_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+        final filePath = 'attachments/$fileName';
+
+        await Supabase.instance.client.storage
+            .from('application_assets')
+            .uploadBinary(filePath, bytes,
+                fileOptions:
+                    FileOptions(contentType: 'application/octet-stream'));
+
+        final url = Supabase.instance.client.storage
+            .from('application_assets')
+            .getPublicUrl(filePath);
+
+        urls.add(url);
+      } catch (e) {
+        print('Error uploading attachment ${file.name}: $e');
+      }
+    }
+    return urls;
   }
 
   Future<void> _pickAttachments() async {
@@ -420,22 +503,28 @@ class _OrgFormContentState extends State<OrgFormContent> {
                         ),
                         const Spacer(),
                         GestureDetector(
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Profile picture upload is a visual placeholder. Integrate image_picker to enable uploads.'),
-                                duration: Duration(seconds: 3),
-                              ),
-                            );
-                          },
+                          onTap: _pickProfileImage,
                           child: Stack(
                             clipBehavior: Clip.none,
                             children: [
                               CircleAvatar(
                                 radius: 28,
-                                backgroundImage: AssetImage(widget.logoAsset),
                                 backgroundColor: Colors.white,
+                                backgroundImage: _profileImageBytes != null
+                                    ? MemoryImage(_profileImageBytes!)
+                                        as ImageProvider
+                                    : widget.logoAsset.startsWith('http')
+                                        ? NetworkImage(widget.logoAsset)
+                                            as ImageProvider
+                                        : widget.logoAsset.isNotEmpty
+                                            ? AssetImage(widget.logoAsset)
+                                                as ImageProvider
+                                            : null,
+                                child: _profileImage == null &&
+                                        widget.logoAsset.isEmpty
+                                    ? const Icon(Icons.groups_rounded,
+                                        color: Color(0xFF79CFC4), size: 24)
+                                    : null,
                               ),
                               Positioned(
                                 bottom: -2,
@@ -636,57 +725,61 @@ class _OrgFormContentState extends State<OrgFormContent> {
           ),
         ),
         // Quick-select buttons
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8, top: 2),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: _courseOptions.map((course) {
-              final isSelected = courseCtrl.text == course;
-              return GestureDetector(
-                onTap: () {
-                  setState(() => courseCtrl.text = course);
-                  courseCtrl.selection = TextSelection.fromPosition(
-                    TextPosition(offset: courseCtrl.text.length),
-                  );
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF79CFC4) : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected
-                          ? const Color(0xFF79CFC4)
-                          : const Color(0xFFDDE1E7),
-                      width: 1.5,
-                    ),
-                    boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                              color: const Color(0xFF79CFC4)
-                                  .withValues(alpha: 0.3),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            )
-                          ]
-                        : [],
-                  ),
-                  child: Text(
-                    course,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+        ListenableBuilder(
+          listenable: courseCtrl,
+          builder: (context, _) => Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8, top: 2),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: _courseOptions.map((course) {
+                final isSelected = courseCtrl.text == course;
+                return GestureDetector(
+                  onTap: () {
+                    courseCtrl.text = course;
+                    courseCtrl.selection = TextSelection.fromPosition(
+                      TextPosition(offset: courseCtrl.text.length),
+                    );
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
                       color:
-                          isSelected ? Colors.white : const Color(0xFF5A6370),
-                      letterSpacing: 0.4,
+                          isSelected ? const Color(0xFF79CFC4) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF79CFC4)
+                            : const Color(0xFFDDE1E7),
+                        width: 1.5,
+                      ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: const Color(0xFF79CFC4)
+                                    .withValues(alpha: 0.3),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              )
+                            ]
+                          : [],
+                    ),
+                    child: Text(
+                      course,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF5A6370),
+                        letterSpacing: 0.4,
+                      ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
         ),
       ],
@@ -706,15 +799,34 @@ class _OrgFormContentState extends State<OrgFormContent> {
     return GestureDetector(
       onTap: enabled
           ? () async {
+              // Upload profile image first if selected
+              // Upload profile image first if selected
+              String profilePicUrl = '';
+              if (_profileImage != null) {
+                profilePicUrl = await _uploadProfileImage(_profileImage!);
+              }
+
+// Upload attachments and get URLs
+              List<String> attachmentUrls = [];
+              if (attachments.isNotEmpty) {
+                attachmentUrls = await _uploadAttachments();
+              }
+
               await AppState.instance.submitApplication(
                 orgName: widget.title,
                 studentId: studentIdCtrl.text.trim(),
                 name: nameCtrl.text.trim(),
+                course: courseCtrl.text.trim(),
+                yearSection: yearSectionCtrl.text.trim(),
                 contact: contactCtrl.text.trim(),
                 email: emailCtrl.text.trim(),
+                facebook: facebookCtrl.text.trim(),
                 reason: reasonCtrl.text.trim(),
                 skills: skillsCtrl.text.trim(),
-                attachments: attachments.map((f) => f.name).toList(),
+                experience: experienceCtrl.text.trim(),
+                emergencyContact: emergencyCtrl.text.trim(),
+                attachments: attachmentUrls, // ← now URLs instead of file names
+                profilePicUrl: profilePicUrl,
               );
 
               if (context.mounted) {

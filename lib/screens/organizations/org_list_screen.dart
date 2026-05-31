@@ -1,65 +1,7 @@
 import 'package:flutter/material.dart';
 import 'org_profile_screen.dart';
-
-// ─────────────────────────────────────────────
-// Data model for an organization entry
-// ─────────────────────────────────────────────
-class OrgData {
-  final String id; // zero-padded, e.g. "001"
-  final String name; // display name, e.g. "Primera Bida"
-  final String asset; // asset path
-
-  const OrgData({
-    required this.id,
-    required this.name,
-    required this.asset,
-  });
-}
-
-// ─────────────────────────────────────────────
-// Master list of all 22 organizations
-// ─────────────────────────────────────────────
-const List<OrgData> _allOrgs = [
-  OrgData(id: '001', name: 'Primera Bida', asset: 'assets/primerabida.jpg'),
-  OrgData(id: '002', name: 'El Tiatro', asset: 'assets/eltiatro.jpg'),
-  OrgData(id: '003', name: 'Cronica', asset: 'assets/cronica.jpg'),
-  OrgData(id: '004', name: 'BCC Musicality', asset: 'assets/bccmusicality.jpg'),
-  OrgData(id: '005', name: 'Drum and Lyre', asset: 'assets/drumandlyre.jpg'),
-  OrgData(
-      id: '006',
-      name: 'Page Turners Book Club',
-      asset: 'assets/pageturnersbookclub.jpg'),
-  OrgData(id: '007', name: 'Gender United', asset: 'assets/genderunited.jpg'),
-  OrgData(
-      id: '008', name: 'College Elegante', asset: 'assets/collegeelegante.jpg'),
-  OrgData(id: '009', name: 'SCAP', asset: 'assets/scap.jpg'),
-  OrgData(
-      id: '010', name: 'BCC Nightingale', asset: 'assets/bccnigthngale.jpg'),
-  OrgData(id: '011', name: 'Speakiconics', asset: 'assets/speakiconics.jpg'),
-  OrgData(
-      id: '012',
-      name: 'Kultura de Filipino',
-      asset: 'assets/culturadefelipino.jpg'),
-  OrgData(id: '013', name: 'Inkwell', asset: 'assets/inkwell.jpg'),
-  OrgData(
-      id: '014',
-      name: 'Christian Campus Ministry',
-      asset: 'assets/christiancampusministry.jpg'),
-  OrgData(id: '015', name: 'BCC ACES', asset: 'assets/bccaces.jpg'),
-  OrgData(
-      id: '016',
-      name: 'Crafty Creators Club',
-      asset: 'assets/craftycreatorsclub.jpg'),
-  OrgData(id: '017', name: 'SSG', asset: 'assets/ssg.jpg'),
-  OrgData(id: '018', name: 'Kasanga Squad', asset: 'assets/kasangasquad.jpg'),
-  OrgData(id: '019', name: 'CodeHex', asset: 'assets/codehex.jpg'),
-  OrgData(id: '020', name: 'Moto Club', asset: 'assets/motoclub.jpg'),
-  OrgData(id: '021', name: 'BCC DC', asset: 'assets/bccdc.jpg'),
-  OrgData(
-      id: '022',
-      name: 'Peer Facilitators Circle',
-      asset: 'assets/peerfacilatatorscircles.jpg'),
-];
+import '../../core/app_state.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // ─────────────────────────────────────────────
 // Color palette & shared constants
@@ -87,24 +29,27 @@ class OrgListScreen extends StatefulWidget {
 
 class _OrgListScreenState extends State<OrgListScreen> {
   final TextEditingController _searchController = TextEditingController();
-  List<OrgData> _filtered = _allOrgs;
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    // Refresh from Supabase every time this screen opens
+    @override
+    void initState() {
+      super.initState();
+      _searchController.addListener(_onSearchChanged);
+
+      // ✅ Defer until after the first frame is fully built
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppState.instance.fetchOrganizations();
+      });
+    }
   }
 
-  /// Filters orgs in real-time as user types (case-insensitive)
   void _onSearchChanged() {
-    final query = _searchController.text.trim().toLowerCase();
-    setState(() {
-      _filtered = query.isEmpty
-          ? _allOrgs
-          : _allOrgs
-              .where((o) => o.name.toLowerCase().contains(query))
-              .toList();
-    });
+    setState(() => _query = _searchController.text.trim().toLowerCase());
   }
 
   @override
@@ -114,51 +59,54 @@ class _OrgListScreenState extends State<OrgListScreen> {
     super.dispose();
   }
 
+  List<Organization> get _filtered {
+    final orgs = AppState.instance.organizations;
+    if (_query.isEmpty) return orgs;
+    return orgs.where((o) => o.name.toLowerCase().contains(_query)).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _AppColors.background,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // ── Header image + title ──────────────────
-            SliverToBoxAdapter(child: _HeaderSection(onBack: _goBack)),
-
-            // ── Search bar ───────────────────────────
-            SliverToBoxAdapter(
-              child: _SearchBar(controller: _searchController),
-            ),
-
-            // ── Result count label ───────────────────
-            SliverToBoxAdapter(
-              child: _ResultCountLabel(count: _filtered.length),
-            ),
-
-            // ── Organization grid ────────────────────
-            _filtered.isEmpty
-                ? const SliverFillRemaining(child: _EmptyState())
-                : SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverGrid(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => _OrgCard(org: _filtered[index]),
-                        childCount: _filtered.length,
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        final filtered = _filtered;
+        return Scaffold(
+          backgroundColor: _AppColors.background,
+          body: SafeArea(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _HeaderSection(onBack: _goBack)),
+                SliverToBoxAdapter(
+                  child: _SearchBar(controller: _searchController),
+                ),
+                SliverToBoxAdapter(
+                  child: _ResultCountLabel(count: filtered.length),
+                ),
+                filtered.isEmpty
+                    ? const SliverFillRemaining(child: _EmptyState())
+                    : SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        sliver: SliverGrid(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _OrgCard(org: filtered[index]),
+                            childCount: filtered.length,
+                          ),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 14,
+                            mainAxisSpacing: 14,
+                            childAspectRatio: 1.05,
+                          ),
+                        ),
                       ),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: 1.05,
-                      ),
-                    ),
-                  ),
-
-            // ── Bottom tagline ────────────────────────
-            const SliverToBoxAdapter(child: _FooterTagline()),
-          ],
-        ),
-      ),
+                const SliverToBoxAdapter(child: _FooterTagline()),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -389,13 +337,12 @@ class _ResultCountLabel extends StatelessWidget {
 // Individual organization card
 // ─────────────────────────────────────────────
 class _OrgCard extends StatelessWidget {
-  final OrgData org;
+  final Organization org;
   const _OrgCard({required this.org});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      // ── Navigation: original logic untouched ──
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -419,20 +366,39 @@ class _OrgCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(17),
           child: Column(
             children: [
-              // ── Logo area ──────────────────────────
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Image.asset(
-                    org.asset,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    height: double.infinity,
-                  ),
+                  child: // NEW — replace with this
+                      org.logoAsset.startsWith('http')
+                          ? CachedNetworkImage(
+                              imageUrl: org.logoAsset,
+                              fit: BoxFit.contain,
+                              width: double.infinity,
+                              height: double.infinity,
+                              placeholder: (context, url) => const Center(
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: _AppColors.accent,
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => const Icon(
+                                Icons.groups_rounded,
+                                color: _AppColors.accent,
+                                size: 40,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.groups_rounded,
+                              color: _AppColors.accent,
+                              size: 40,
+                            ),
                 ),
               ),
-
-              // ── Name label strip ───────────────────
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),

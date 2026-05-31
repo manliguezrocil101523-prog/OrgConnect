@@ -6,8 +6,9 @@ import '../../core/app_state.dart';
 import 'officer_applications_screen.dart';
 import 'officer_members_screen.dart';
 import 'officer_events_screen.dart';
-import 'officer_authorization_screen.dart';
 import '../auth/unified_login_page.dart';
+import 'officer_org_profile_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class BaseOfficerDashboard extends StatefulWidget {
   final String orgId;
@@ -48,6 +49,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   void initState() {
     super.initState();
     _initBadge();
+    AppState.instance.fetchEvents();
   }
 
   Future<void> _initBadge() async {
@@ -218,169 +220,176 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final org =
-        AppState.instance.organizations.firstWhere((o) => o.id == widget.orgId);
 
     // ── Double-tap-to-exit via PopScope ───────────────────────────────────
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        final now = DateTime.now();
-        if (_lastBackPressed == null ||
-            now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
-          _lastBackPressed = now;
-          _showExitToast();
-        } else {
-          SystemChannels.platform.invokeMethod('SystemNavigator.pop');
-        }
-      },
-      child: Scaffold(
-        key: _scaffoldKey,
-        backgroundColor: _background,
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        final org = AppState.instance.organizations.firstWhere(
+          (o) => o.id == widget.orgId,
+          orElse: () => Organization(
+            id: widget.orgId,
+            name: widget.orgName,
+            logoAsset: '',
+            shortDesc: '',
+          ),
+        );
 
-        // ── End Drawer (slides from right) ─────────────────────────────────
-        endDrawer: _ProfileEndDrawer(
-          onLogoutTap: () {
-            Navigator.of(context).pop(); // close drawer first
-            _showLogoutDialog();
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            final now = DateTime.now();
+            if (_lastBackPressed == null ||
+                now.difference(_lastBackPressed!) >
+                    const Duration(seconds: 2)) {
+              _lastBackPressed = now;
+              _showExitToast();
+            } else {
+              SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+            }
           },
-        ),
+          child: Scaffold(
+            key: _scaffoldKey,
+            backgroundColor: _background,
 
-        body: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            // ── App Bar ──────────────────────────────────────────────────────
-            SliverAppBar(
-              pinned: true,
-              expandedHeight: size.height * 0.22,
-              backgroundColor: _primary,
-              elevation: 0,
-              // Objective 1: No leading back button
-              automaticallyImplyLeading: false,
-              leading: const SizedBox.shrink(),
-              title: const Text(
-                'Officer Dashboard',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              centerTitle: true,
-              // Objective 2: Top-right profile icon
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.account_circle,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    tooltip: 'Profile',
-                    onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                  ),
-                ),
-              ],
-              flexibleSpace: FlexibleSpaceBar(
-                background: _OfficerHeroHeader(
-                  primary: _primary,
-                  secondary: _secondary,
-                  org: org,
-                ),
-              ),
+            // ── End Drawer (slides from right) ─────────────────────────────────
+            endDrawer: _ProfileEndDrawer(
+              onLogoutTap: () {
+                Navigator.of(context).pop(); // close drawer first
+                _showLogoutDialog();
+              },
             ),
 
-            // ── Body ─────────────────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 48),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 500),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ── Section Label ──────────────────────────────────
-                        const _SectionLabel(text: 'Manage'),
-                        const SizedBox(height: 16),
+            body: CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                // ── App Bar ──────────────────────────────────────────────────────
+                SliverAppBar(
+                  pinned: true,
+                  expandedHeight: size.height * 0.22,
+                  backgroundColor: _primary,
+                  elevation: 0,
+                  // Objective 1: No leading back button
+                  automaticallyImplyLeading: false,
+                  leading: const SizedBox.shrink(),
 
-                        // ── Manage Applications ────────────────────────────
-                        _ApplicationsCard(
-                          color: _primary,
-                          pendingCount: _showBadge ? _pendingCount : 0,
-                          onTap: () =>
-                              _showApplicationFilters(context, _statusCounts),
+                  centerTitle: true,
+                  // Objective 2: Top-right profile icon
+                  actions: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.account_circle,
+                          color: Colors.white,
+                          size: 28,
                         ),
+                        tooltip: 'Profile',
+                        onPressed: () =>
+                            _scaffoldKey.currentState?.openEndDrawer(),
+                      ),
+                    ),
+                  ],
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: _OfficerHeroHeader(
+                      primary: _primary,
+                      secondary: _secondary,
+                      org: org,
+                    ),
+                  ),
+                ),
 
-                        const SizedBox(height: 14),
+                // ── Body ─────────────────────────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 48),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 500),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Section Label ──────────────────────────────────
+                            const _SectionLabel(text: 'Manage'),
+                            const SizedBox(height: 16),
 
-                        // ── Members & Events Grid ──────────────────────────
-                        IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                child: _GridActionCard(
-                                  icon: Icons.groups_rounded,
-                                  title: 'Members',
-                                  subtitle: 'View & update',
-                                  color: _secondary,
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const OfficerMembersScreen(),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _GridActionCard(
-                                  icon: Icons.event_available_rounded,
-                                  title: 'Events',
-                                  subtitle: 'Create & manage',
-                                  color: _green,
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => OfficerEventsScreen(
-                                        orgId: widget.orgId,
-                                        orgName: widget.orgName,
+                            // ── Manage Applications ────────────────────────────
+                            _ApplicationsCard(
+                              color: _primary,
+                              pendingCount: _showBadge ? _pendingCount : 0,
+                              onTap: () => _showApplicationFilters(
+                                  context, _statusCounts),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            // ── Members & Events Grid ──────────────────────────
+                            IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(
+                                    child: _GridActionCard(
+                                      icon: Icons.groups_rounded,
+                                      title: 'Members',
+                                      subtitle: 'View & update',
+                                      color: _secondary,
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const OfficerMembersScreen(),
+                                        ),
                                       ),
                                     ),
                                   ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: _GridActionCard(
+                                      icon: Icons.event_available_rounded,
+                                      title: 'Events',
+                                      subtitle: 'Create & manage',
+                                      color: _green,
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => OfficerEventsScreen(
+                                            orgId: widget.orgId,
+                                            orgName: widget.orgName,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 32),
+
+                            // ── Footer hint ────────────────────────────────────
+                            Center(
+                              child: Text(
+                                'Tap any card to get started',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 0.2,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        // ── Footer hint ────────────────────────────────────
-                        Center(
-                          child: Text(
-                            'Tap any card to get started',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              letterSpacing: 0.2,
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -474,7 +483,7 @@ class _ProfileEndDrawer extends StatelessWidget {
     final topPadding = MediaQuery.of(context).padding.top;
 
     return Drawer(
-      width: MediaQuery.of(context).size.width * 0.55, // half-ish screen
+      width: MediaQuery.of(context).size.width * 0.50,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
@@ -515,10 +524,45 @@ class _ProfileEndDrawer extends StatelessWidget {
                       width: 2,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.account_circle,
-                    color: Colors.white,
-                    size: 36,
+                  child: ClipOval(
+                    child: () {
+                      final orgId = AppState.instance.currentOfficerOrgId;
+                      final org = orgId != null
+                          ? AppState.instance.organizations.firstWhere(
+                              (o) => o.id == orgId,
+                              orElse: () => Organization(
+                                  id: '',
+                                  name: '',
+                                  logoAsset: '',
+                                  shortDesc: ''),
+                            )
+                          : null;
+                      final logo = org?.logoAsset ?? '';
+
+                      if (logo.startsWith('http')) {
+                        return CachedNetworkImage(
+                          imageUrl: logo,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => const Icon(
+                            Icons.account_circle,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                          errorWidget: (_, __, ___) => const Icon(
+                            Icons.account_circle,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        );
+                      }
+                      return const Icon(
+                        Icons.account_circle,
+                        color: Colors.white,
+                        size: 36,
+                      );
+                    }(),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -571,7 +615,62 @@ class _ProfileEndDrawer extends StatelessWidget {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.edit_note_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'Edit Org Profile',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              subtitle: const Text(
+                'Update logo & info',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+              onTap: () {
+                Navigator.of(context).pop(); // close drawer first
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OfficerOrgProfileScreen(
+                      orgId: AppState.instance.currentOfficerOrgId!,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
 
+          const Spacer(),
+          const Divider(
+            height: 1,
+            indent: 24,
+            endIndent: 24,
+            color: Color(0xFFE2E8F0),
+          ),
+          const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: ListTile(
@@ -609,11 +708,9 @@ class _ProfileEndDrawer extends StatelessWidget {
               onTap: onLogoutTap,
             ),
           ),
-
-          const Spacer(),
-
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            padding: EdgeInsets.fromLTRB(
+                24, 0, 24, MediaQuery.of(context).padding.bottom + 16),
             child: Text(
               'OrgConnect • Officer Portal',
               style: TextStyle(
@@ -744,6 +841,62 @@ class _OrgLogoCircle extends StatelessWidget {
     required this.logoSize,
   });
 
+  Widget _buildLogoImage(String logoAsset, double logoSize) {
+    if (logoAsset.startsWith('http')) {
+      return CachedNetworkImage(
+        imageUrl: logoAsset,
+        width: logoSize,
+        height: logoSize,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => CircleAvatar(
+          radius: logoSize / 2,
+          backgroundColor: const Color(0xFFE0E7FF),
+          child: const Icon(
+            Icons.groups_rounded,
+            color: Color(0xFF4F46E5),
+            size: 28,
+          ),
+        ),
+        errorWidget: (context, url, error) => CircleAvatar(
+          radius: logoSize / 2,
+          backgroundColor: const Color(0xFFE0E7FF),
+          child: const Icon(
+            Icons.groups_rounded,
+            color: Color(0xFF4F46E5),
+            size: 28,
+          ),
+        ),
+      );
+    }
+
+    if (logoAsset.isNotEmpty) {
+      return Image.asset(
+        logoAsset,
+        width: logoSize,
+        height: logoSize,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => CircleAvatar(
+          radius: logoSize / 2,
+          backgroundColor: const Color(0xFFE0E7FF),
+          child: const Icon(
+            Icons.groups_rounded,
+            color: Color(0xFF4F46E5),
+            size: 28,
+          ),
+        ),
+      );
+    }
+    return CircleAvatar(
+      radius: logoSize / 2,
+      backgroundColor: const Color(0xFFE0E7FF),
+      child: const Icon(
+        Icons.groups_rounded,
+        color: Color(0xFF4F46E5),
+        size: 28,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -763,21 +916,7 @@ class _OrgLogoCircle extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(3),
             child: ClipOval(
-              child: Image.asset(
-                logoAsset,
-                width: logoSize,
-                height: logoSize,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => CircleAvatar(
-                  radius: logoSize / 2,
-                  backgroundColor: const Color(0xFFE0E7FF),
-                  child: const Icon(
-                    Icons.groups_rounded,
-                    color: Color(0xFF4F46E5),
-                    size: 28,
-                  ),
-                ),
-              ),
+              child: _buildLogoImage(logoAsset, logoSize),
             ),
           ),
         ),

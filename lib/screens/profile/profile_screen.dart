@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/unified_login_page.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 const _kPrimary = Color(0xFF4F46E5);
@@ -223,16 +224,20 @@ class _ProfileScreenState extends State<ProfileScreen>
     setState(() => _isLoading = true);
 
     try {
+      final userId = AppState.instance.currentStudent?.id ?? '';
+      String avatarUrl = AppState.instance.currentStudent?.avatarUrl ?? '';
+      if (_avatarBytes != null && userId.isNotEmpty) {
+        avatarUrl = await AppState.instance.uploadAvatar(_avatarBytes!, userId);
+      }
+
       final updated = StudentProfile(
-        id: AppState.instance.currentStudent?.id ?? '',
+        id: userId,
         name: nameCtrl.text.trim(),
         email: emailCtrl.text.trim(),
         studentId: studentIdCtrl.text.trim(),
         contact: contactCtrl.text.trim(),
         facebook: facebookCtrl.text.trim(),
-        avatarUrl: _avatarBytes != null
-            ? 'data:image/png;base64,${base64Encode(_avatarBytes!)}'
-            : AppState.instance.currentStudent?.avatarUrl ?? '',
+        avatarUrl: avatarUrl,
         joinedOrgIds: AppState.instance.currentStudent?.joinedOrgIds ?? [],
       );
       await AppState.instance.setStudentProfile(updated);
@@ -240,7 +245,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (!mounted) return;
       setState(() {
         _isEditing = false;
-        _isLoading = false; // FIX Bug 1: moved into the try block, not missing
+        _isLoading = false;
         _profile = {
           'student_id': studentIdCtrl.text.trim(),
           'name': nameCtrl.text.trim(),
@@ -421,7 +426,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           avatarImage = null;
         }
       } else if (url.isNotEmpty) {
-        avatarImage = NetworkImage(url);
+        avatarImage = CachedNetworkImageProvider(url);
       }
     }
 
@@ -442,7 +447,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       color: Colors.white, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
-                title: const Text('Student Profile',
+                title: const Text('Profile',
                     style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -575,12 +580,12 @@ class _ProfileHeroHeader extends StatelessWidget {
         // Use a plain Image.network wrapped in ClipOval as child so errors
         // are handled gracefully.
         avatarChild = ClipOval(
-          child: Image.network(
-            url,
+          child: CachedNetworkImage(
+            imageUrl: url,
             fit: BoxFit.cover,
             width: avatarSize,
             height: avatarSize,
-            errorBuilder: (_, __, ___) => Icon(
+            errorWidget: (_, __, ___) => Icon(
               Icons.person_rounded,
               size: avatarSize * 0.48,
               color: _kPrimary,

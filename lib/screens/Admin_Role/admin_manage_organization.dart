@@ -1,19 +1,47 @@
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
-class AdminOrganizationsScreen extends StatelessWidget {
+class AdminOrganizationsScreen extends StatefulWidget {
   const AdminOrganizationsScreen({super.key});
 
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color primary = Color(0xFF1E293B);
-  static const Color accent = Color(0xFF6366F1);
-  static const Color cardColor = Colors.white;
-  static const Color danger = Color(0xFFEF4444);
+  @override
+  State<AdminOrganizationsScreen> createState() =>
+      _AdminOrganizationsScreenState();
+}
 
-  static const String _placeholderLogo = 'assets/primerabida.jpg';
+class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _precacheOrgImages();
+  }
+
+  Future<void> _precacheOrgImages() async {
+    final orgs = AppState.instance.organizations;
+    for (final o in orgs) {
+      if (!mounted) return;
+      if (o.logoAsset.startsWith('http')) {
+        await precacheImage(NetworkImage(o.logoAsset), context);
+      } else if (o.logoAsset.isNotEmpty) {
+        await precacheImage(AssetImage(o.logoAsset), context);
+      }
+    }
+  }
+
+  static const Color accent = Color(0xFF6366F1);
+  static const Color danger = Color(0xFFEF4444);
 
   @override
   Widget build(BuildContext context) {
+    final isDark = AppState.instance.isDark;
+    final background =
+        isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F7FA);
+    final cardColor = isDark ? const Color(0xFF181C27) : Colors.white;
+    final primary = isDark ? const Color(0xFF181C27) : const Color(0xFF1E293B);
+    final textMain = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
+    final textSub = isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600;
+    final textSub2 = isDark ? const Color(0xFF64748B) : Colors.grey.shade700;
+
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
@@ -34,7 +62,15 @@ class AdminOrganizationsScreen extends StatelessWidget {
       body: AnimatedBuilder(
         animation: AppState.instance,
         builder: (context, _) {
+          final isLoading = AppState.instance.isLoadingOrganizations;
           final orgs = AppState.instance.organizations;
+
+          if (isLoading) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
           if (orgs.isEmpty) {
             return const Center(child: Text('No organizations'));
           }
@@ -51,7 +87,7 @@ class AdminOrganizationsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
@@ -62,18 +98,93 @@ class AdminOrganizationsScreen extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(
-                        o.logoAsset,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 56,
-                          height: 56,
-                          color: accent.withOpacity(0.15),
-                          child: Icon(Icons.groups_outlined, color: accent),
-                        ),
-                      ),
+                      child: o.logoAsset.startsWith('http')
+                          ? Image.network(
+                              o.logoAsset,
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                              // ✅ Smooth fade-in while loading from network
+                              frameBuilder: (context, child, frame,
+                                  wasSynchronouslyLoaded) {
+                                if (wasSynchronouslyLoaded || frame != null) {
+                                  return child; // already cached — show instantly
+                                }
+                                return AnimatedOpacity(
+                                  opacity: frame == null ? 0.0 : 1.0,
+                                  duration: const Duration(milliseconds: 350),
+                                  curve: Curves.easeIn,
+                                  child: child,
+                                );
+                              },
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  width: 56,
+                                  height: 56,
+                                  color: accent.withOpacity(0.15),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: accent,
+                                      value:
+                                          loadingProgress.expectedTotalBytes !=
+                                                  null
+                                              ? loadingProgress
+                                                      .cumulativeBytesLoaded /
+                                                  loadingProgress
+                                                      .expectedTotalBytes!
+                                              : null,
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (_, __, ___) => Container(
+                                width: 56,
+                                height: 56,
+                                color: accent.withOpacity(0.15),
+                                child:
+                                    Icon(Icons.groups_outlined, color: accent),
+                              ),
+                            )
+                          : o.logoAsset.isNotEmpty
+                              ? Image.asset(
+                                  o.logoAsset,
+                                  width: 56,
+                                  height: 56,
+                                  fit: BoxFit.cover,
+                                  // ✅ Smooth fade-in for asset images too
+                                  frameBuilder: (context, child, frame,
+                                      wasSynchronouslyLoaded) {
+                                    if (wasSynchronouslyLoaded || frame != null)
+                                      return child;
+                                    return AnimatedOpacity(
+                                      opacity: frame == null ? 0.0 : 1.0,
+                                      duration:
+                                          const Duration(milliseconds: 350),
+                                      curve: Curves.easeIn,
+                                      child: child,
+                                    );
+                                  },
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 56,
+                                    height: 56,
+                                    color: accent.withOpacity(0.15),
+                                    child: Icon(Icons.groups_outlined,
+                                        color: accent),
+                                  ),
+                                )
+                              : Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: accent.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(Icons.groups_outlined,
+                                      color: accent),
+                                ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -82,9 +193,10 @@ class AdminOrganizationsScreen extends StatelessWidget {
                         children: [
                           Text(
                             o.name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
+                              color: textMain,
                             ),
                           ),
                           if (o.category.isNotEmpty) ...[
@@ -92,7 +204,7 @@ class AdminOrganizationsScreen extends StatelessWidget {
                             Text(
                               o.category,
                               style: TextStyle(
-                                color: Colors.grey.shade600,
+                                color: textSub,
                                 fontSize: 13,
                               ),
                             ),
@@ -103,7 +215,7 @@ class AdminOrganizationsScreen extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Colors.grey.shade700,
+                              color: textSub2,
                               fontSize: 12.5,
                               height: 1.35,
                             ),
@@ -160,25 +272,43 @@ class AdminOrganizationsScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final name = nameCtrl.text.trim();
               final desc = descCtrl.text.trim();
               if (name.isEmpty || desc.isEmpty) return;
-              AppState.instance.addOrganization(
-                name: name,
-                logoAsset: _placeholderLogo,
-                shortDesc: desc,
-              );
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Organization added'),
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              );
+              try {
+                await AppState.instance.addOrganization(
+                  name: name,
+                  logoAsset: '',
+                  shortDesc: desc,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Organization added successfully'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Failed to add organization'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: Colors.red,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Save'),
           ),
@@ -202,18 +332,36 @@ class AdminOrganizationsScreen extends StatelessWidget {
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: danger),
-            onPressed: () {
-              AppState.instance.removeOrganization(o.id);
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Removed ${o.name}'),
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              );
+            onPressed: () async {
+              try {
+                await AppState.instance.removeOrganization(o.id);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Removed ${o.name}'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Failed to remove organization'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: Colors.red,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Remove'),
           ),

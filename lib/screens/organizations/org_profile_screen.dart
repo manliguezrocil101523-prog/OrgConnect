@@ -4,7 +4,7 @@ import 'org_form_screen.dart';
 
 // =============================================================================
 // DESIGN SYSTEM TOKENS
-// Centralized to prevent repeating across classes. 
+// Centralized to prevent repeating across classes.
 // Ideally, these should live in your Theme.of(context).
 // =============================================================================
 abstract class _AppColors {
@@ -31,7 +31,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
-    // REMOVED: _tabCtrl.addListener(() => setState(() {})); 
+    // REMOVED: _tabCtrl.addListener(() => setState(() {}));
     // TabBarView handles its own state. Do not trigger global rebuilds.
   }
 
@@ -45,19 +45,21 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
   Widget build(BuildContext context) {
     // FIXED: Safe retrieval. Prevents 'StateError' crashes if org is missing.
     // In a real app, you would show a "404 Not Found" widget if org == null.
-    final orgMatches = AppState.instance.organizations
-        .where((o) => o.id == widget.orgId);
-    
+    final orgMatches =
+        AppState.instance.organizations.where((o) => o.id == widget.orgId);
+
     if (orgMatches.isEmpty) {
-      return const Scaffold(body: Center(child: Text('Organization not found')));
+      return const Scaffold(
+          body: Center(child: Text('Organization not found')));
     }
-    
+
     final org = orgMatches.first;
 
     return Scaffold(
       backgroundColor: _AppColors.background,
       body: NestedScrollView(
         physics: const BouncingScrollPhysics(),
+        floatHeaderSlivers: true,
         headerSliverBuilder: (_, __) => [
           SliverAppBar(
             pinned: true,
@@ -99,10 +101,12 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
                   labelColor: _AppColors.primary,
                   unselectedLabelColor: _AppColors.textMuted,
                   labelStyle: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                   unselectedLabelStyle: const TextStyle(
-                    fontWeight: FontWeight.w500, fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
                   ),
                   indicatorColor: _AppColors.primary,
                   indicatorWeight: 3,
@@ -119,8 +123,9 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
         body: TabBarView(
           controller: _tabCtrl,
           children: [
-            _ProfileTab(org: org),
-            _ApplyTab(org: org, orgId: widget.orgId),
+            PrimaryScrollController.none(child: _ProfileTab(org: org)),
+            PrimaryScrollController.none(
+                child: _ApplyTab(org: org, orgId: widget.orgId)),
           ],
         ),
       ),
@@ -150,14 +155,24 @@ class _OrgHeroHeader extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(top: -30, right: -20,
-            child: Container(width: 180, height: 180,
-              decoration: BoxDecoration(shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.07)))),
-          Positioned(bottom: 30, left: -40,
-            child: Container(width: 130, height: 130,
-              decoration: BoxDecoration(shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05)))),
+          Positioned(
+              top: -30,
+              right: -20,
+              child: Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.07)))),
+          Positioned(
+              bottom: 30,
+              left: -40,
+              child: Container(
+                  width: 130,
+                  height: 130,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.05)))),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.only(top: 52),
@@ -165,7 +180,8 @@ class _OrgHeroHeader extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: logoSize + 12, height: logoSize + 12,
+                    width: logoSize + 12,
+                    height: logoSize + 12,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withOpacity(0.18),
@@ -174,21 +190,37 @@ class _OrgHeroHeader extends StatelessWidget {
                       padding: const EdgeInsets.all(3),
                       child: Container(
                         decoration: const BoxDecoration(
-                          shape: BoxShape.circle, color: Colors.white),
+                            shape: BoxShape.circle, color: Colors.white),
                         child: Padding(
                           padding: const EdgeInsets.all(3),
                           child: ClipOval(
-                            child: Image.asset(
-                              org.logoAsset,
-                              width: logoSize, height: logoSize,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => CircleAvatar(
-                                radius: logoSize / 2,
-                                backgroundColor: const Color(0xFFE0E7FF),
-                                child: const Icon(Icons.groups_rounded,
-                                    color: _AppColors.primary, size: 36),
-                              ),
-                            ),
+                            child: org.logoAsset.startsWith('http')
+                                ? Image.network(
+                                    org.logoAsset,
+                                    width: logoSize,
+                                    height: logoSize,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => CircleAvatar(
+                                      radius: logoSize / 2,
+                                      backgroundColor: const Color(0xFFE0E7FF),
+                                      child: const Icon(Icons.groups_rounded,
+                                          color: _AppColors.primary, size: 36),
+                                    ),
+                                  )
+                                : Image.asset(
+                                    org.logoAsset.isNotEmpty
+                                        ? org.logoAsset
+                                        : 'assets/primerabida.jpg',
+                                    width: logoSize,
+                                    height: logoSize,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => CircleAvatar(
+                                      radius: logoSize / 2,
+                                      backgroundColor: const Color(0xFFE0E7FF),
+                                      child: const Icon(Icons.groups_rounded,
+                                          color: _AppColors.primary, size: 36),
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -201,10 +233,13 @@ class _OrgHeroHeader extends StatelessWidget {
                       org.name,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        color: Colors.white, fontSize: 18,
-                        fontWeight: FontWeight.w800, letterSpacing: 0.1,
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.1,
                       ),
-                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -215,8 +250,7 @@ class _OrgHeroHeader extends StatelessWidget {
                         _HeaderPill(org.acronym),
                         const SizedBox(width: 8),
                       ],
-                      if (org.category.isNotEmpty)
-                        _HeaderPill(org.category),
+                      if (org.category.isNotEmpty) _HeaderPill(org.category),
                     ],
                   ),
                 ],
@@ -235,28 +269,41 @@ class _HeaderPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-    decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.18),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.white.withOpacity(0.30), width: 1),
-    ),
-    child: Text(text, style: const TextStyle(
-      color: Colors.white, fontSize: 11.5,
-      fontWeight: FontWeight.w600, letterSpacing: 0.3,
-    )),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.18),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.30), width: 1),
+        ),
+        child: Text(text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            )),
+      );
 }
 
 // =============================================================================
 // _ProfileTab
 // =============================================================================
-class _ProfileTab extends StatelessWidget {
+class _ProfileTab extends StatefulWidget {
   final Organization org;
   const _ProfileTab({required this.org});
 
   @override
+  State<_ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<_ProfileTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // required by mixin
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
@@ -266,26 +313,39 @@ class _ProfileTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (org.about.isNotEmpty)
-                _InfoCard(icon: Icons.info_rounded, label: 'About', value: org.about, multiLine: true),
-              if (org.missionVision.isNotEmpty)
-                _InfoCard(icon: Icons.flag_rounded, label: 'Mission & Vision', value: org.missionVision, multiLine: true),
-              if (org.adviser.isNotEmpty)
-                _InfoCard(icon: Icons.person_rounded, label: 'Adviser', value: org.adviser),
-              if (org.contactEmail.isNotEmpty || org.contactPhone.isNotEmpty || org.socialLink.isNotEmpty)
-                _ContactCard(org: org),
-              if (org.officers.isNotEmpty)
+              if (widget.org.about.isNotEmpty)
+                _InfoCard(
+                    icon: Icons.info_rounded,
+                    label: 'About',
+                    value: widget.org.about,
+                    multiLine: true),
+              if (widget.org.missionVision.isNotEmpty)
+                _InfoCard(
+                    icon: Icons.flag_rounded,
+                    label: 'Mission & Vision',
+                    value: widget.org.missionVision,
+                    multiLine: true),
+              if (widget.org.adviser.isNotEmpty)
+                _InfoCard(
+                    icon: Icons.person_rounded,
+                    label: 'Adviser',
+                    value: widget.org.adviser),
+              if (widget.org.contactEmail.isNotEmpty ||
+                  widget.org.contactPhone.isNotEmpty ||
+                  widget.org.socialLink.isNotEmpty)
+                _ContactCard(org: widget.org),
+              if (widget.org.officers.isNotEmpty)
                 _ListCard(
                   icon: Icons.people_rounded,
                   label: 'Officers',
-                  items: org.officers,
+                  items: widget.org.officers,
                   accentColor: _AppColors.primary,
                 ),
-              if (org.activitiesHighlights.isNotEmpty)
+              if (widget.org.activitiesHighlights.isNotEmpty)
                 _ListCard(
                   icon: Icons.event_note_rounded,
                   label: 'Activities & Events',
-                  items: org.activitiesHighlights,
+                  items: widget.org.activitiesHighlights,
                   accentColor: _AppColors.secondary,
                 ),
             ],
@@ -320,19 +380,22 @@ class _ApplyTab extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [_AppColors.primary, _AppColors.secondary],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
                       color: _AppColors.primary.withOpacity(0.28),
-                      blurRadius: 18, offset: const Offset(0, 6),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
                 child: Row(children: [
                   Container(
-                    width: 46, height: 46,
+                    width: 46,
+                    height: 46,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.20),
                       borderRadius: BorderRadius.circular(12),
@@ -346,14 +409,18 @@ class _ApplyTab extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text('Join the Organization',
-                          style: TextStyle(color: Colors.white,
-                              fontSize: 15, fontWeight: FontWeight.w700)),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700)),
                         const SizedBox(height: 3),
-                        Text('Apply to ${org.name}',
+                        Text(
+                          'Apply to ${org.name}',
                           style: TextStyle(
                               color: Colors.white.withOpacity(0.78),
                               fontSize: 12.5),
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -362,7 +429,8 @@ class _ApplyTab extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               // UNTOUCHED: original form widget
-              OrgFormContent(title: org.name, logoAsset: org.logoAsset),
+              // Lazy-loaded: only builds when Apply tab is first shown
+              _LazyOrgForm(title: org.name, logoAsset: org.logoAsset),
             ],
           ),
         ),
@@ -397,18 +465,23 @@ class _InfoCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: _AppColors.primary.withOpacity(0.05),
-              blurRadius: 16, offset: const Offset(0, 5)),
-          BoxShadow(color: Colors.black.withOpacity(0.02),
-              blurRadius: 4, offset: const Offset(0, 2)),
+          BoxShadow(
+              color: _AppColors.primary.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 5)),
+          BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 4,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: Row(
-        crossAxisAlignment: multiLine
-            ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        crossAxisAlignment:
+            multiLine ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           Container(
-            width: 38, height: 38,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: _AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(10),
@@ -420,16 +493,21 @@ class _InfoCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label.toUpperCase(), style: const TextStyle(
-                  fontSize: 10, fontWeight: FontWeight.w700,
-                  color: _AppColors.textMuted, letterSpacing: 0.8,
-                )),
+                Text(label.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: _AppColors.textMuted,
+                      letterSpacing: 0.8,
+                    )),
                 const SizedBox(height: 4),
-                Text(value, style: TextStyle(
-                  fontSize: 13.5, fontWeight: FontWeight.w500,
-                  color: _AppColors.textDark,
-                  height: multiLine ? 1.5 : 1.2,
-                )),
+                Text(value,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                      color: _AppColors.textDark,
+                      height: multiLine ? 1.5 : 1.2,
+                    )),
               ],
             ),
           ),
@@ -452,15 +530,18 @@ class _ContactCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: _AppColors.primary.withOpacity(0.05),
-              blurRadius: 16, offset: const Offset(0, 5)),
+          BoxShadow(
+              color: _AppColors.primary.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 5)),
         ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 38, height: 38,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: _AppColors.secondary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(10),
@@ -473,10 +554,13 @@ class _ContactCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('CONTACT', style: TextStyle(
-                  fontSize: 10, fontWeight: FontWeight.w700,
-                  color: _AppColors.textMuted, letterSpacing: 0.8,
-                )),
+                const Text('CONTACT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: _AppColors.textMuted,
+                      letterSpacing: 0.8,
+                    )),
                 const SizedBox(height: 6),
                 if (org.contactEmail.isNotEmpty)
                   _contactRow(Icons.email_rounded, org.contactEmail),
@@ -493,15 +577,20 @@ class _ContactCard extends StatelessWidget {
   }
 
   Widget _contactRow(IconData icon, String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 5),
-    child: Row(children: [
-      Icon(icon, size: 13, color: _AppColors.textMuted),
-      const SizedBox(width: 6),
-      Expanded(child: Text(text, style: const TextStyle(
-        fontSize: 13, color: _AppColors.textDark, fontWeight: FontWeight.w500,
-      ), overflow: TextOverflow.ellipsis)),
-    ]),
-  );
+        padding: const EdgeInsets.only(bottom: 5),
+        child: Row(children: [
+          Icon(icon, size: 13, color: _AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(
+              child: Text(text,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _AppColors.textDark,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis)),
+        ]),
+      );
 }
 
 class _ListCard extends StatelessWidget {
@@ -526,15 +615,18 @@ class _ListCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: accentColor.withOpacity(0.05),
-              blurRadius: 16, offset: const Offset(0, 5)),
+          BoxShadow(
+              color: accentColor.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 5)),
         ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 38, height: 38,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: accentColor.withOpacity(0.08),
               borderRadius: BorderRadius.circular(10),
@@ -546,35 +638,67 @@ class _ListCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label.toUpperCase(), style: const TextStyle(
-                  fontSize: 10, fontWeight: FontWeight.w700,
-                  color: _AppColors.textMuted, letterSpacing: 0.8,
-                )),
+                Text(label.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: _AppColors.textMuted,
+                      letterSpacing: 0.8,
+                    )),
                 const SizedBox(height: 8),
                 ...items.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 6, height: 6,
-                        margin: const EdgeInsets.only(top: 5, right: 8),
-                        decoration: BoxDecoration(
-                          color: accentColor, shape: BoxShape.circle,
-                        ),
+                      padding: const EdgeInsets.only(bottom: 5),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(top: 5, right: 8),
+                            decoration: BoxDecoration(
+                              color: accentColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Expanded(
+                              child: Text(item,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: _AppColors.textDark,
+                                    height: 1.4,
+                                  ))),
+                        ],
                       ),
-                      Expanded(child: Text(item, style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w500,
-                        color: _AppColors.textDark, height: 1.4,
-                      ))),
-                    ],
-                  ),
-                )),
+                    )),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+class _LazyOrgForm extends StatefulWidget {
+  final String title;
+  final String logoAsset;
+  const _LazyOrgForm({required this.title, required this.logoAsset});
+
+  @override
+  State<_LazyOrgForm> createState() => _LazyOrgFormState();
+}
+
+class _LazyOrgFormState extends State<_LazyOrgForm> {
+  bool _hasBuilt = false;
+  Widget? _form;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_hasBuilt) {
+      _hasBuilt = true;
+      _form = OrgFormContent(title: widget.title, logoAsset: widget.logoAsset);
+    }
+    return _form!;
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart' hide Notification;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 
 // =============================================================================
 // DESIGN SYSTEM — Officer Applications Screen
@@ -87,15 +89,6 @@ class OfficerApplicationsScreen extends StatelessWidget {
               icon: const Icon(Icons.arrow_back_ios_new_rounded,
                   color: Colors.white, size: 20),
               onPressed: () => Navigator.pop(context),
-            ),
-            title: Text(
-              _filterTitle(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 17,
-                letterSpacing: 0.3,
-              ),
             ),
             centerTitle: true,
             flexibleSpace: FlexibleSpaceBar(
@@ -378,78 +371,274 @@ class OfficerApplicationsScreen extends StatelessWidget {
   }
 
   void _showDetails(BuildContext context, Application a) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.92,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_primary, _secondary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: const Icon(Icons.person_rounded,
-                      color: Colors.white, size: 18),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Text(
-                  "${a.name}'s Application",
-                  style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A)),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                )),
-              ]),
-              const SizedBox(height: 20),
-              SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _detailRow('Student ID', a.studentId),
-                    _detailRow('Contact', a.contact),
-                    _detailRow('Email', a.email),
-                    _detailRow('Reason', a.reason),
-                    _detailRow('Skills', a.skills),
-                    _detailRow('Status', _statusText(a.status)),
-                    _detailRow('Submitted', a.createdAt.toLocal().toString()),
-                    if (a.interviewAt != null)
-                      _detailRow(
-                          'Interview', a.interviewAt!.toLocal().toString()),
-                    if (a.attachments.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Text('Attachments:',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      ...a.attachments.map((f) =>
-                          Text('• $f', style: const TextStyle(fontSize: 12))),
-                    ],
-                  ],
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+
+              // ── Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(children: [
+                  // Profile picture
+                  // Profile picture
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: const LinearGradient(
+                        colors: [_primary, _secondary],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: a.profilePicUrl.isNotEmpty
+                          ? Image.network(
+                              a.profilePicUrl,
+                              fit: BoxFit.cover,
+                              width: 48,
+                              height: 48,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null
+                                      ? child
+                                      : const Center(
+                                          child: SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white),
+                                          ),
+                                        ),
+                              errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.person_rounded,
+                                  color: Colors.white,
+                                  size: 22),
+                            )
+                          : const Icon(Icons.person_rounded,
+                              color: Colors.white, size: 22),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "${a.name}'s Application",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          a.orgName,
+                          style: const TextStyle(
+                              fontSize: 12, color: Color(0xFF94A3B8)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _sc(a.status).bg,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _sc(a.status).ring),
+                    ),
+                    child: Text(
+                      _statusText(a.status),
+                      style: TextStyle(
+                        color: _sc(a.status).fg,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+
+              // ── Scrollable content
+              Expanded(
+                child: ListView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  children: [
+                    _sectionHeader('Personal Information'),
+                    const SizedBox(height: 10),
+                    _infoCard([
+                      _detailRow('Student ID', a.studentId),
+                      _detailRow('Full Name', a.name),
+                      _detailRow('Course', a.course),
+                      _detailRow('Year & Section', a.yearSection),
+                    ]),
+
+                    const SizedBox(height: 16),
+                    _sectionHeader('Contact Information'),
+                    const SizedBox(height: 10),
+                    _infoCard([
+                      _detailRow('Contact No.', a.contact),
+                      _detailRow('Email', a.email),
+                      _detailRow('Facebook', a.facebook),
+                    ]),
+
+                    const SizedBox(height: 16),
+                    _sectionHeader('Application Details'),
+                    const SizedBox(height: 10),
+                    _infoCard([
+                      _detailRow('Reason for Joining', a.reason),
+                      _detailRow('Skills / Talents', a.skills),
+                      _detailRow('Previous Experience', a.experience),
+                      _detailRow('Emergency Contact', a.emergencyContact),
+                    ]),
+
+                    const SizedBox(height: 16),
+                    _sectionHeader('Status & Dates'),
+                    const SizedBox(height: 10),
+                    _infoCard([
+                      _detailRow('Status', _statusText(a.status)),
+                      _detailRow('Submitted',
+                          a.createdAt.toLocal().toString().split('.')[0]),
+                      if (a.interviewAt != null)
+                        _detailRow('Interview',
+                            a.interviewAt!.toLocal().toString().split('.')[0]),
+                    ]),
+
+                    // ── Attachments
+                    if (a.attachments.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _sectionHeader('Attachments'),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: a.attachments.asMap().entries.map((entry) {
+                            final url = entry.value;
+                            final ext = url.contains('.')
+                                ? url
+                                    .split('.')
+                                    .last
+                                    .split('?')
+                                    .first
+                                    .toLowerCase()
+                                : '';
+                            const imgExts = [
+                              'jpg',
+                              'jpeg',
+                              'png',
+                              'gif',
+                              'webp',
+                              'heic'
+                            ];
+                            const vidExts = [
+                              'mp4',
+                              'mov',
+                              'avi',
+                              'mkv',
+                              'm4v',
+                              'webm'
+                            ];
+
+                            if (imgExts.contains(ext)) {
+                              return _AttachmentImage(
+                                  url: url, context: context);
+                            } else if (vidExts.contains(ext)) {
+                              return _AttachmentVideo(
+                                  url: url, context: context);
+                            } else {
+                              // Fallback: unknown type, show link chip
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF64748B)
+                                        .withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: const Color(0xFF64748B)
+                                            .withOpacity(0.25)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                          Icons.insert_drive_file_rounded,
+                                          size: 14,
+                                          color: Color(0xFF64748B)),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          url,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF64748B),
+                                              fontWeight: FontWeight.w600),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+                    OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      child: const Text('Close',
+                          style: TextStyle(color: Color(0xFF64748B))),
+                    ),
+                  ],
                 ),
-                child: const Text('Close',
-                    style: TextStyle(color: Color(0xFF64748B))),
               ),
             ],
           ),
@@ -457,6 +646,60 @@ class OfficerApplicationsScreen extends StatelessWidget {
       ),
     );
   }
+
+// ── Detail view helpers (add these right after _showDetails)
+  Widget _sectionHeader(String title) => Row(children: [
+        Container(
+          width: 3,
+          height: 14,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [_primary, _secondary],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.4,
+            color: Color(0xFF94A3B8),
+          ),
+        ),
+      ]);
+
+  Widget _infoCard(List<Widget> rows) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: rows.asMap().entries.map((e) {
+            final isLast = e.key == rows.length - 1;
+            return Column(
+              children: [
+                e.value,
+                if (!isLast) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              ],
+            );
+          }).toList(),
+        ),
+      );
 
   void _scheduleInterview(BuildContext context, Application a) {
     DateTime selDate = DateTime.now().add(const Duration(days: 3));
@@ -679,17 +922,34 @@ class OfficerApplicationsScreen extends StatelessWidget {
   }
 
   Widget _detailRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-              width: 90,
-              child: Text('$label:',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 12))),
-          Expanded(
-              child: Text(value.isEmpty ? '—' : value,
-                  style: const TextStyle(fontSize: 12))),
-        ]),
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 130,
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                value.isEmpty ? '—' : value,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
       );
 
   Widget _dialogHeader(IconData icon, String title) => Row(children: [
@@ -1245,4 +1505,179 @@ class _SectionLabel extends StatelessWidget {
                 letterSpacing: 1.6,
                 color: Color(0xFF94A3B8))),
       ]);
+}
+
+// =============================================================================
+// _AttachmentImage — tappable image thumbnail
+// =============================================================================
+class _AttachmentImage extends StatelessWidget {
+  final String url;
+  final BuildContext context;
+  const _AttachmentImage({required this.url, required this.context});
+
+  @override
+  Widget build(BuildContext ctx) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => _FullScreenImage(url: url),
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.network(
+            url,
+            height: 180,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            loadingBuilder: (_, child, progress) {
+              if (progress == null) return child;
+              return Container(
+                height: 180,
+                color: const Color(0xFFF1F5F9),
+                child: const Center(child: CircularProgressIndicator()),
+              );
+            },
+            errorBuilder: (_, __, ___) => Container(
+              height: 80,
+              color: const Color(0xFFF1F5F9),
+              child: const Center(
+                child: Icon(Icons.broken_image_rounded,
+                    color: Color(0xFF94A3B8), size: 32),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _AttachmentVideo — thumbnail tile that opens Chewie player
+// =============================================================================
+class _AttachmentVideo extends StatelessWidget {
+  final String url;
+  final BuildContext context;
+  const _AttachmentVideo({required this.url, required this.context});
+
+  @override
+  Widget build(BuildContext ctx) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => _VideoPlayerScreen(url: url),
+          ),
+        ),
+        child: Container(
+          height: 120,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Center(
+            child: Icon(Icons.play_circle_fill_rounded,
+                color: Colors.white, size: 52),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _FullScreenImage — full screen image viewer
+// =============================================================================
+class _FullScreenImage extends StatelessWidget {
+  final String url;
+  const _FullScreenImage({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_rounded,
+                color: Colors.white, size: 48),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _VideoPlayerScreen — in-app video player using Chewie
+// =============================================================================
+class _VideoPlayerScreen extends StatefulWidget {
+  final String url;
+  const _VideoPlayerScreen({required this.url});
+
+  @override
+  State<_VideoPlayerScreen> createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
+  late VideoPlayerController _videoCtrl;
+  ChewieController? _chewieCtrl;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _videoCtrl = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (!mounted) return;
+        setState(() {
+          _chewieCtrl = ChewieController(
+            videoPlayerController: _videoCtrl,
+            autoPlay: true,
+            looping: false,
+            aspectRatio: _videoCtrl.value.aspectRatio,
+          );
+        });
+      }).catchError((_) {
+        if (mounted) setState(() => _error = true);
+      });
+  }
+
+  @override
+  void dispose() {
+    _chewieCtrl?.dispose();
+    _videoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: _error
+            ? const Text('Failed to load video.',
+                style: TextStyle(color: Colors.white))
+            : _chewieCtrl != null
+                ? Chewie(controller: _chewieCtrl!)
+                : const CircularProgressIndicator(color: Colors.white),
+      ),
+    );
+  }
 }

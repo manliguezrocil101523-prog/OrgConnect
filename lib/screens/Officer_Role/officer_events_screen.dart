@@ -47,12 +47,6 @@ class OfficerEventsScreen extends StatelessWidget {
                   color: Colors.white, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
-            title: const Text('Events',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 17,
-                    letterSpacing: 0.3)),
             centerTitle: true,
             flexibleSpace:
                 FlexibleSpaceBar(background: _GradientHero(orgName: orgName)),

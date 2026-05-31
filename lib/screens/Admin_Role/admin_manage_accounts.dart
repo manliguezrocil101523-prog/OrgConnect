@@ -13,10 +13,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
   List<Map<String, dynamic>> dbUsers = [];
   bool isLoading = true;
 
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color primary = Color(0xFF1E293B);
   static const Color accent = Color(0xFF6366F1);
-  static const Color cardColor = Colors.white;
   static const Color success = Color(0xFF22C55E);
   static const Color danger = Color(0xFFEF4444);
 
@@ -234,6 +231,17 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = AppState.instance.isDark;
+    final background =
+        isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F7FA);
+    final cardColor = isDark ? const Color(0xFF181C27) : Colors.white;
+    final primary = isDark ? const Color(0xFF181C27) : const Color(0xFF1E293B);
+    final textMain = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
+    final textSub = isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600;
+    final textSub2 = isDark ? const Color(0xFF64748B) : Colors.grey.shade500;
+    final dropdownBg = isDark ? const Color(0xFF1E2334) : Colors.grey.shade100;
+    final dropdownIcon = isDark ? const Color(0xFF94A3B8) : Colors.black54;
+
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
@@ -288,7 +296,8 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
+                            color:
+                                Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                             blurRadius: 12,
                             offset: const Offset(0, 6),
                           ),
@@ -319,23 +328,22 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                               children: [
                                 Text(
                                   u['name']?.toString() ?? 'No Name',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 16),
+                                      fontSize: 16,
+                                      color: textMain),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
                                   u['email']?.toString() ?? '',
-                                  style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                      fontSize: 13),
+                                  style:
+                                      TextStyle(color: textSub, fontSize: 13),
                                 ),
                                 if (u['student_id'] != null)
                                   Text(
                                     'ID: ${u['student_id']}',
                                     style: TextStyle(
-                                        color: Colors.grey.shade500,
-                                        fontSize: 12),
+                                        color: textSub2, fontSize: 12),
                                   ),
 
                                 // ── Assigned org badge (shows if officer) ──
@@ -380,13 +388,16 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
+                                    color: dropdownBg,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: DropdownButton<String>(
                                     value: role,
                                     underline: const SizedBox(),
-                                    icon: const Icon(Icons.keyboard_arrow_down),
+                                    dropdownColor: dropdownBg,
+                                    style: TextStyle(color: textMain),
+                                    icon: Icon(Icons.keyboard_arrow_down,
+                                        color: dropdownIcon),
                                     items: const [
                                       DropdownMenuItem(
                                           value: 'student',

@@ -4,37 +4,43 @@ import '../../core/app_state.dart';
 import 'admin_manage_accounts.dart';
 import 'admin_manage_organization.dart';
 import '../auth/unified_login_page.dart';
+import 'dart:math' as math;
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DESIGN SYSTEM — centralised tokens so every widget stays consistent
 // ─────────────────────────────────────────────────────────────────────────────
 abstract class _DS {
-  static const Color bg = Color(0xFFF5F7FA);
-  static const Color surface = Colors.white;
-  static const Color primary = Color(0xFF4F46E5);
-  static const Color primaryDk = Color(0xFF4338CA);
-  static const Color chromeHeader = Color(0xFF1E293B);
+  static const Color bg = Color(0xFF0F1117);
+  static const Color surface = Color(0xFF181C27);
+  static const Color surface2 = Color(0xFF1E2334);
+  static const Color primary = Color(0xFF6366F1);
+  static const Color primaryDk = Color(0xFF4F46E5);
+  static const Color chromeHeader = Color(0xFF181C27);
   static const Color onPrimary = Colors.white;
-  static const Color textHd = Color(0xFF1E293B);
-  static const Color textSub = Color(0xFF64748B);
-  static const Color divider = Color(0xFFE2E8F0);
-  static const Color success = Color(0xFF22C55E);
+  static const Color textHd = Color(0xFFE2E8F0);
+  static const Color textSub = Color(0xFF94A3B8);
+  static const Color divider = Color(0xFF2A2F45);
+  static const Color success = Color(0xFF10B981);
   static const Color warning = Color(0xFFF59E0B);
   static const Color danger = Color(0xFFEF4444);
-  static const Color accent = Color(0xFF6366F1);
+  static const Color accent = Color(0xFF8B5CF6);
+  static const Color teal = Color(0xFF06B6D4);
   static const double radiusCard = 20;
   static const double radiusChip = 40;
+  // Light mode tokens
+  static const Color lightBg = Color(0xFFF1F5F9);
+  static const Color lightSurface = Color(0xFFFFFFFF);
+  static const Color lightSurface2 = Color(0xFFF8FAFC);
+  static const Color lightDivider = Color(0xFFE2E8F0);
+  static const Color lightTextHd = Color(0xFF1E293B);
+  static const Color lightTextSub = Color(0xFF64748B);
 
   static List<BoxShadow> cardShadow = [
     BoxShadow(
-      color: const Color(0xFF4F46E5).withOpacity(0.08),
-      blurRadius: 24,
-      offset: const Offset(0, 8),
-    ),
-    BoxShadow(
-      color: Colors.black.withOpacity(0.04),
-      blurRadius: 6,
-      offset: const Offset(0, 2),
+      color: Colors.black.withOpacity(0.25),
+      blurRadius: 20,
+      offset: const Offset(0, 6),
     ),
   ];
 }
@@ -66,6 +72,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int _students = 0;
   int _officers = 0;
   int _admins = 0;
+  // Theme is now managed globally by AppState — no local state needed
 
   @override
   void initState() {
@@ -76,15 +83,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // ── Data fetching — identical logic from admin_reports.dart ───────────────
   Future<void> _loadReports() async {
     setState(() => _loading = true);
+
     try {
-      await Future.wait([
-        AppState.instance.fetchEvents(),
-        AppState.instance.fetchMembers(),
-        AppState.instance.fetchApplications(),
+      // Fetch everything directly from Supabase — no AppState dependency
+      final results = await Future.wait([
+        Supabase.instance.client.from('profiles').select('role'),
+        Supabase.instance.client.from('members').select('id'),
+        Supabase.instance.client.from('events').select('id, title'),
+        Supabase.instance.client.from('applications').select('id, status'),
       ]);
 
-      final profilesResponse =
-          await Supabase.instance.client.from('profiles').select('role');
+      final profilesResponse = results[0] as List;
+      final membersResponse = results[1] as List;
+      final eventsResponse = results[2] as List;
+      final appsResponse = results[3] as List;
 
       int students = 0, officers = 0, admins = 0;
       for (var p in profilesResponse) {
@@ -96,29 +108,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
         else if (role == 'admin') admins++;
       }
 
-      final apps = AppState.instance.applications;
-      final events = AppState.instance.events
-          .where((e) => !e.title.toLowerCase().contains('interview'))
+      final filteredEvents = eventsResponse
+          .where((e) =>
+              !(e['title'] as String).toLowerCase().contains('interview'))
           .toList();
+
+      int pending = 0,
+          forApproval = 0,
+          accepted = 0,
+          declined = 0,
+          interviewees = 0;
+      for (var a in appsResponse) {
+        final status = a['status'] ?? '';
+        if (status == 'pending')
+          pending++;
+        else if (status == 'for_approval')
+          forApproval++;
+        else if (status == 'accepted')
+          accepted++;
+        else if (status == 'declined')
+          declined++;
+        else if (status == 'interview_scheduled') interviewees++;
+      }
 
       setState(() {
         _totalUsers = profilesResponse.length;
-        _totalOrgs = AppState.instance.organizations.length;
-        _totalMembers = AppState.instance.members.length;
-        _totalEvents = events.length;
-        _totalApps = apps.length;
-        _pending =
-            apps.where((a) => a.status == ApplicationStatus.pending).length;
-        _forApproval = apps
-            .where((a) => a.status == ApplicationStatus.for_approval)
-            .length;
-        _accepted =
-            apps.where((a) => a.status == ApplicationStatus.accepted).length;
-        _declined =
-            apps.where((a) => a.status == ApplicationStatus.declined).length;
-        _interviewees = apps
-            .where((a) => a.status == ApplicationStatus.interview_scheduled)
-            .length;
+        _totalOrgs = AppState.instance.organizations.length; // stays hardcoded
+        _totalMembers = membersResponse.length;
+        _totalEvents = filteredEvents.length;
+        _totalApps = appsResponse.length;
+        _pending = pending;
+        _forApproval = forApproval;
+        _accepted = accepted;
+        _declined = declined;
+        _interviewees = interviewees;
         _students = students;
         _officers = officers;
         _admins = admins;
@@ -146,7 +169,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w700,
-            color: _DS.textHd,
+            color: _DS.lightTextHd,
           ),
         ),
         content: const Text(
@@ -154,7 +177,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           'You will need to enter your credentials to log back in.',
           style: TextStyle(
             fontSize: 14,
-            color: _DS.textSub,
+            color: _DS.lightTextSub,
             height: 1.5,
           ),
         ),
@@ -211,78 +234,134 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _DS.bg,
+    return Theme(
+      data: AppState.instance.isDark ? ThemeData.dark() : ThemeData.light(),
+      child: Scaffold(
+        backgroundColor: AppState.instance.isDark ? _DS.bg : _DS.lightBg,
 
-      // ── Left Sidebar Drawer (unchanged) ──────────────────────────────────
-      drawer: _AdminSidebarDrawer(
-        onLogoutTap: () {
-          Navigator.of(context).pop();
-          _showLogoutDialog(context);
-        },
-      ),
+        // ── Left Sidebar Drawer (unchanged) ──────────────────────────────────
+        drawer: _AdminSidebarDrawer(
+          onLogoutTap: () {
+            Navigator.of(context).pop();
+            _showLogoutDialog(context);
+          },
+        ),
 
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(64 + MediaQuery.of(context).padding.top),
-        child: _DashboardAppBar(onRefresh: _loadReports),
-      ),
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(64),
+          child: _DashboardAppBar(
+            onRefresh: _loadReports,
+            isDark: AppState.instance.isDark,
+            onToggleTheme: () {
+              AppState.instance.toggleTheme();
+              setState(() {}); // rebuild this screen
+            },
+          ),
+        ),
 
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _loadReports,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final bool isWide = constraints.maxWidth >= 640;
-                    return ListView(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isWide ? 40 : 20,
-                        vertical: 28,
-                      ),
-                      children: [
-                        // ── Welcome Banner (unchanged) ────────────────────
-                        const _WelcomeBanner(),
-                        const SizedBox(height: 28),
-
-                        // ── Summary Grid (real data) ──────────────────────
-                        _SectionLabel(label: 'System Overview'),
-                        const SizedBox(height: 14),
-                        _SummaryGrid(
-                          totalOrgs: _totalOrgs,
-                          totalEvents: _totalEvents,
-                          totalMembers: _totalMembers,
-                          totalUsers: _totalUsers,
+        body: SafeArea(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _loadReports,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final bool isWide = constraints.maxWidth >= 640;
+                      return ListView(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isWide ? 40 : 20,
+                          vertical: 28,
                         ),
-                        const SizedBox(height: 28),
+                        children: [
+                          // ── Welcome Banner (unchanged) ────────────────────
+                          _WelcomeBanner(isDark: AppState.instance.isDark),
+                          const SizedBox(height: 28),
 
-                        // ── Applications Overview ─────────────────────────
-                        _SectionLabel(label: 'Applications Overview'),
-                        const SizedBox(height: 14),
-                        _AppStatusCard(
-                          total: _totalApps,
-                          pending: _pending,
-                          forApproval: _forApproval,
-                          accepted: _accepted,
-                          declined: _declined,
-                          interviewees: _interviewees,
-                        ),
-                        const SizedBox(height: 28),
+                          // ── Summary Grid (real data) ──────────────────────
+                          _SectionLabel(
+                              label: 'System Overview',
+                              isDark: AppState.instance.isDark),
+                          const SizedBox(height: 14),
+                          _SummaryGrid(
+                            totalOrgs: _totalOrgs,
+                            totalEvents: _totalEvents,
+                            totalMembers: _totalMembers,
+                            totalUsers: _totalUsers,
+                            isDark: AppState.instance.isDark,
+                          ),
+                          const SizedBox(height: 28),
 
-                        // ── User Roles Breakdown ──────────────────────────
-                        _SectionLabel(label: 'User Roles'),
-                        const SizedBox(height: 14),
-                        _RolesCard(
-                          students: _students,
-                          officers: _officers,
-                          admins: _admins,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  },
+                          // ── Applications Overview ─────────────────────────
+                          // ── Applications Overview + Roles (responsive) ───
+                          _SectionLabel(
+                              label: 'Applications Overview',
+                              isDark: AppState.instance.isDark),
+                          const SizedBox(height: 14),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              if (constraints.maxWidth >= 700) {
+                                // Side-by-side on wide screens
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: _AppStatusCard(
+                                        total: _totalApps,
+                                        pending: _pending,
+                                        forApproval: _forApproval,
+                                        accepted: _accepted,
+                                        declined: _declined,
+                                        interviewees: _interviewees,
+                                        isDark: AppState.instance.isDark,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _RolesCard(
+                                        students: _students,
+                                        officers: _officers,
+                                        admins: _admins,
+                                        isDark: AppState.instance.isDark,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }
+                              // Stacked on mobile
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _AppStatusCard(
+                                    total: _totalApps,
+                                    pending: _pending,
+                                    forApproval: _forApproval,
+                                    accepted: _accepted,
+                                    declined: _declined,
+                                    interviewees: _interviewees,
+                                    isDark: AppState.instance.isDark,
+                                  ),
+                                  const SizedBox(height: 28),
+                                  _SectionLabel(
+                                      label: 'User Roles',
+                                      isDark: AppState.instance.isDark),
+                                  const SizedBox(height: 14),
+                                  _RolesCard(
+                                    students: _students,
+                                    officers: _officers,
+                                    admins: _admins,
+                                    isDark: AppState.instance.isDark,
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      );
+                    },
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -293,36 +372,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
 // ─────────────────────────────────────────────────────────────────────────────
 class _SectionLabel extends StatelessWidget {
   final String label;
-  const _SectionLabel({required this.label});
+  final bool isDark;
+  const _SectionLabel({required this.label, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     return Text(
       label,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.4,
-        color: _DS.textSub,
+        color: isDark ? _DS.textSub : _DS.lightTextSub,
       ),
     );
   }
+}
+
+class _SummaryItem {
+  final IconData icon;
+  final String label;
+  final int value;
+  final Color accent;
+  const _SummaryItem(this.icon, this.label, this.value, this.accent);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUMMARY GRID — 4 cards with real data
 // ─────────────────────────────────────────────────────────────────────────────
 class _SummaryGrid extends StatelessWidget {
-  final int totalOrgs;
-  final int totalEvents;
-  final int totalMembers;
-  final int totalUsers;
+  final int totalOrgs, totalEvents, totalMembers, totalUsers;
+  final bool isDark;
 
   const _SummaryGrid({
     required this.totalOrgs,
     required this.totalEvents,
     required this.totalMembers,
     required this.totalUsers,
+    required this.isDark,
   });
 
   @override
@@ -336,67 +423,89 @@ class _SummaryGrid extends StatelessWidget {
       _SummaryItem(Icons.person_outline, 'Users', totalUsers, _DS.primary),
     ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.4,
-      ),
-      itemCount: items.length,
-      itemBuilder: (_, i) => _SummaryCard(item: items[i]),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final int cols = constraints.maxWidth >= 600 ? 4 : 2;
+        final double ratio = constraints.maxWidth >= 600 ? 1.6 : 1.4;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: ratio,
+          ),
+          itemCount: items.length,
+          itemBuilder: (_, i) => _SummaryCard(item: items[i], isDark: isDark),
+        );
+      },
     );
   }
 }
 
-class _SummaryItem {
-  final IconData icon;
-  final String label;
-  final int value;
-  final Color accent;
-  const _SummaryItem(this.icon, this.label, this.value, this.accent);
-}
-
 class _SummaryCard extends StatelessWidget {
   final _SummaryItem item;
-  const _SummaryCard({required this.item});
+  final bool isDark;
+  const _SummaryCard({required this.item, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _DS.surface,
+        color: isDark ? _DS.surface : _DS.lightSurface,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isDark ? _DS.divider : _DS.lightDivider),
         boxShadow: _DS.cardShadow,
-        border: Border.all(color: _DS.divider),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: item.accent.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(item.icon, color: item.accent, size: 18),
-          ),
-          const Spacer(),
-          Text(
-            '${item.value}',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: _DS.textHd,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 3,
+              decoration: BoxDecoration(
+                color: item.accent,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(14),
+                  topRight: Radius.circular(14),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            item.label,
-            style: const TextStyle(fontSize: 11, color: _DS.textSub),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: item.accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(item.icon, color: item.accent, size: 18),
+              ),
+              const Spacer(),
+              Text(
+                '${item.value}',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: isDark ? _DS.textHd : _DS.lightTextHd,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                item.label,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? _DS.textSub : _DS.lightTextSub),
+              ),
+            ],
           ),
         ],
       ),
@@ -408,12 +517,8 @@ class _SummaryCard extends StatelessWidget {
 // APPLICATIONS STATUS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 class _AppStatusCard extends StatelessWidget {
-  final int total;
-  final int pending;
-  final int forApproval;
-  final int accepted;
-  final int declined;
-  final int interviewees;
+  final int total, pending, forApproval, accepted, declined, interviewees;
+  final bool isDark;
 
   const _AppStatusCard({
     required this.total,
@@ -422,42 +527,190 @@ class _AppStatusCard extends StatelessWidget {
     required this.accepted,
     required this.declined,
     required this.interviewees,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
+    final statuses = [
+      ('Pending', pending, _DS.warning),
+      ('For Approval', forApproval, _DS.primary),
+      ('Accepted', accepted, _DS.success),
+      ('Declined', declined, _DS.danger),
+      ('Interview', interviewees, _DS.teal),
+    ];
+    final safeTotal = total == 0 ? 1 : total;
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _DS.surface,
+        color: isDark ? _DS.surface : _DS.lightSurface,
         borderRadius: BorderRadius.circular(_DS.radiusCard),
+        border: Border.all(color: isDark ? _DS.divider : _DS.lightDivider),
         boxShadow: _DS.cardShadow,
-        border: Border.all(color: _DS.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Total Applications: $total',
-            style: const TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 15, color: _DS.textHd),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _StatusChip('Pending', pending, _DS.warning),
-              _StatusChip('For Approval', forApproval, _DS.accent),
-              _StatusChip('Accepted', accepted, _DS.success),
-              _StatusChip('Declined', declined, _DS.danger),
-              _StatusChip('Interview', interviewees, _DS.chromeHeader),
+              Text('Application Status',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isDark ? _DS.textHd : _DS.lightTextHd)),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark ? _DS.surface2 : _DS.lightSurface2,
+                  border: Border.all(
+                      color: isDark ? _DS.divider : _DS.lightDivider),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$total Total',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? _DS.textSub : _DS.lightTextSub)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 80,
+                height: 80,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      size: const Size(80, 80),
+                      painter: _DonutPainter(
+                        statuses: statuses.map((s) => (s.$2, s.$3)).toList(),
+                        total: safeTotal,
+                        trackColor: isDark ? _DS.surface2 : _DS.lightSurface2,
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('$total',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? _DS.textHd : _DS.lightTextHd)),
+                        Text('apps',
+                            style: TextStyle(
+                                fontSize: 9,
+                                color:
+                                    isDark ? _DS.textSub : _DS.lightTextSub)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  children: statuses.map((s) {
+                    final pct = s.$2 / safeTotal;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(s.$1,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark
+                                          ? _DS.textSub
+                                          : _DS.lightTextSub)),
+                              Text('${s.$2}',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: s.$3)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: pct,
+                              minHeight: 5,
+                              backgroundColor:
+                                  isDark ? _DS.surface2 : _DS.lightSurface2,
+                              valueColor: AlwaysStoppedAnimation(s.$3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
             ],
           ),
         ],
       ),
     );
   }
+}
+
+class _DonutPainter extends CustomPainter {
+  final List<(int, Color)> statuses;
+  final int total;
+  final Color trackColor;
+
+  const _DonutPainter({
+    required this.statuses,
+    required this.total,
+    required this.trackColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    const strokeW = 11.0;
+    final radius = (size.width - strokeW) / 2;
+
+    // Track
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeW
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(Offset(cx, cy), radius, trackPaint);
+
+    // Segments
+    double startAngle = -math.pi / 2;
+    for (final (count, color) in statuses) {
+      if (count == 0) continue;
+      final sweep = (count / total) * 2 * math.pi;
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeW
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+        Rect.fromCircle(center: Offset(cx, cy), radius: radius),
+        startAngle,
+        sweep - 0.08,
+        false,
+        paint,
+      );
+      startAngle += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => true;
 }
 
 class _StatusChip extends StatelessWidget {
@@ -488,33 +741,134 @@ class _StatusChip extends StatelessWidget {
 // USER ROLES CARD
 // ─────────────────────────────────────────────────────────────────────────────
 class _RolesCard extends StatelessWidget {
-  final int students;
-  final int officers;
-  final int admins;
+  final int students, officers, admins;
+  final bool isDark;
 
   const _RolesCard({
     required this.students,
     required this.officers,
     required this.admins,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
+    final total = students + officers + admins;
+    final safe = total == 0 ? 1 : total;
+    final roles = [
+      ('Students', students, _DS.primary),
+      ('Officers', officers, _DS.accent),
+      ('Admins', admins, _DS.teal),
+    ];
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _DS.surface,
+        color: isDark ? _DS.surface : _DS.lightSurface,
         borderRadius: BorderRadius.circular(_DS.radiusCard),
+        border: Border.all(color: isDark ? _DS.divider : _DS.lightDivider),
         boxShadow: _DS.cardShadow,
-        border: Border.all(color: _DS.divider),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _RoleRow(label: 'Students', value: students),
-          const Divider(color: _DS.divider),
-          _RoleRow(label: 'Officers', value: officers),
-          const Divider(color: _DS.divider),
-          _RoleRow(label: 'Admins', value: admins),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Role Distribution',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isDark ? _DS.textHd : _DS.lightTextHd)),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark ? _DS.surface2 : _DS.lightSurface2,
+                  border: Border.all(
+                      color: isDark ? _DS.divider : _DS.lightDivider),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$total Users',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? _DS.textSub : _DS.lightTextSub)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 36,
+              child: Row(
+                children: roles.map((r) {
+                  final flex = r.$2 == 0 ? 0 : ((r.$2 / safe) * 100).round();
+                  if (flex == 0) return const SizedBox.shrink();
+                  return Expanded(
+                    flex: flex,
+                    child: Container(
+                      color: r.$3,
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${((r.$2 / safe) * 100).round()}%',
+                        style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...roles.map((r) {
+            final pct = ((r.$2 / safe) * 100).round();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                              color: r.$3,
+                              borderRadius: BorderRadius.circular(3))),
+                      const SizedBox(width: 10),
+                      Text(r.$1,
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: isDark ? _DS.textSub : _DS.lightTextSub)),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: r.$3.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text('$pct%',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: r.$3.withOpacity(0.9))),
+                      ),
+                    ],
+                  ),
+                  Text('${r.$2}',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? _DS.textHd : _DS.lightTextHd)),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -782,21 +1136,27 @@ class _SidebarTile extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _DashboardAppBar extends StatelessWidget {
   final VoidCallback onRefresh;
-
-  const _DashboardAppBar({required this.onRefresh});
+  final bool isDark;
+  final VoidCallback onToggleTheme;
+  const _DashboardAppBar({
+    required this.onRefresh,
+    required this.isDark,
+    required this.onToggleTheme,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final iconColor = isDark ? Colors.white : _DS.lightTextHd;
+
     return Container(
       decoration: BoxDecoration(
-        color: _DS.chromeHeader,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+        color: isDark ? _DS.surface : _DS.lightSurface,
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? _DS.divider : _DS.lightDivider,
+            width: 1,
           ),
-        ],
+        ),
       ),
       padding: EdgeInsets.only(
         left: 20,
@@ -806,46 +1166,45 @@ class _DashboardAppBar extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
+            icon: Icon(Icons.menu_rounded, color: iconColor, size: 22),
             tooltip: 'Open menu',
             onPressed: () => Scaffold.of(context).openDrawer(),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
-          const SizedBox(width: 8),
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.20),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.dashboard_rounded,
-                color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
+          if (MediaQuery.of(context).size.width >= 640) ...[
+            const SizedBox(width: 12),
+            Text(
               'Admin Dashboard',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
-                letterSpacing: 0.3,
+                color: iconColor,
+                letterSpacing: 0.2,
               ),
             ),
-          ),
-          // ── Refresh button ─────────────────────────────────────────────
+          ],
+          const Spacer(),
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: Colors.white, size: 20),
+            icon: Icon(Icons.refresh_rounded, color: iconColor, size: 20),
             tooltip: 'Refresh',
             onPressed: onRefresh,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
+          IconButton(
+            icon: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+              color: iconColor,
+              size: 20,
+            ),
+            tooltip: isDark ? 'Light mode' : 'Dark mode',
+            onPressed: onToggleTheme,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
           const SizedBox(width: 4),
-          _AdminChip(),
+          _AdminChip(isDark: isDark),
         ],
       ),
     );
@@ -853,29 +1212,32 @@ class _DashboardAppBar extends StatelessWidget {
 }
 
 class _AdminChip extends StatelessWidget {
+  final bool isDark;
+  const _AdminChip({required this.isDark});
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.18),
+        color: _DS.primary.withOpacity(0.12),
         borderRadius: BorderRadius.circular(_DS.radiusChip),
-        border: Border.all(color: Colors.white.withOpacity(0.30)),
+        border: Border.all(color: _DS.primary.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           CircleAvatar(
             radius: 12,
-            backgroundColor: Colors.white.withOpacity(0.35),
+            backgroundColor: _DS.primary.withOpacity(0.25),
             child:
-                const Icon(Icons.person_rounded, size: 14, color: Colors.white),
+                const Icon(Icons.person_rounded, size: 14, color: _DS.primary),
           ),
           const SizedBox(width: 7),
           const Text(
             'Admin',
             style: TextStyle(
-              color: Colors.white,
+              color: _DS.primary,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -890,7 +1252,8 @@ class _AdminChip extends StatelessWidget {
 // WELCOME BANNER — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 class _WelcomeBanner extends StatelessWidget {
-  const _WelcomeBanner();
+  final bool isDark;
+  const _WelcomeBanner({required this.isDark});
 
   @override
   Widget build(BuildContext context) {
@@ -898,50 +1261,47 @@ class _WelcomeBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
       decoration: BoxDecoration(
-        color: _DS.chromeHeader,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF1A1D2E), const Color(0xFF232742)]
+              : [const Color(0xFFEEF2FF), const Color(0xFFE0E7FF)],
+        ),
         borderRadius: BorderRadius.circular(_DS.radiusCard),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.18),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(
+          color: isDark ? _DS.divider : const Color(0xFFC7D2FE),
+        ),
       ),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'Welcome back 👋',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: isDark ? Colors.white70 : const Color(0xFF6366F1),
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
                   'System Overview',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: isDark ? Colors.white : _DS.lightTextHd,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     height: 1.2,
                   ),
                 ),
-                SizedBox(height: 6),
+                const SizedBox(height: 6),
                 Text(
                   'Manage your platform from one place.',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: isDark ? Colors.white70 : _DS.lightTextSub,
                     fontSize: 13,
                   ),
                 ),
@@ -952,11 +1312,14 @@ class _WelcomeBanner extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+              color: _DS.primary.withOpacity(0.15),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.admin_panel_settings_rounded,
-                color: Colors.white, size: 30),
+            child: Icon(
+              Icons.admin_panel_settings_rounded,
+              color: isDark ? Colors.white : _DS.primary,
+              size: 30,
+            ),
           ),
         ],
       ),

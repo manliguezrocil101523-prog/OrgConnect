@@ -82,7 +82,9 @@ class _StudentDashboardState extends State<StudentDashboard>
     super.initState();
     _focusedDay = DateTime.now();
     _selectedDay = _focusedDay;
+    AppState.instance.fetchEvents(); // ← add this line
     _loadEvents();
+    // ... rest stays exactly the same
 
     _entranceCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 650));
