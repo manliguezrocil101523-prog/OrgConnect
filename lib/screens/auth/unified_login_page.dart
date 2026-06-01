@@ -296,6 +296,115 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
     );
   }
 
+  void _showForgotPasswordDialog() {
+    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    bool isSending = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: !isSending,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              title: const Text(
+                'Reset Password',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enter your email address and we\'ll send you a link to reset your password.',
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Email address',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSending ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kPrimaryBlue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: isSending
+                      ? null
+                      : () async {
+                          final email = emailCtrl.text.trim();
+                          if (email.isEmpty || !email.contains('@')) {
+                            _snack('Please enter a valid email.',
+                                isError: true);
+                            return;
+                          }
+
+                          setDialogState(() => isSending = true);
+
+                          try {
+                            await Supabase.instance.client.auth
+                                .resetPasswordForEmail(
+                              email,
+                              // No redirectTo needed — Supabase handles it
+                            );
+
+                            if (!ctx.mounted) return;
+                            Navigator.of(ctx).pop();
+
+                            // Always show success — never confirm if email exists (security)
+                            _snack(
+                              'If that email is registered, a reset link has been sent.',
+                            );
+                          } catch (e) {
+                            setDialogState(() => isSending = false);
+                            _snack(
+                              'Something went wrong. Please try again.',
+                              isError: true,
+                            );
+                          }
+                        },
+                  child: isSending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Send Link',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
@@ -423,7 +532,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                           Align(
                             alignment: Alignment.centerRight,
                             child: GestureDetector(
-                              onTap: () {},
+                              onTap: () => _showForgotPasswordDialog(),
                               child: Text(
                                 'Forgot Password?',
                                 style: TextStyle(

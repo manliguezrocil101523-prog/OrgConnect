@@ -9,6 +9,10 @@ import 'screens/Student_Role/student_dashboard_screen.dart';
 import 'screens/Student_Role/student_dashboard_events.dart';
 import 'screens/auth/unified_login_page.dart';
 import 'screens/auth/auth_gate.dart';
+import 'screens/auth/forgot_password_page.dart';
+
+// ✅ ADDITION 1 — navigator key declared at top level
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,14 +23,12 @@ void main() async {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldnVya3VzdXh1YnBudGlxZGNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NTI4MzQsImV4cCI6MjA5MjUyODgzNH0.00bDYZHXUND-jaLuQEVBYG_XEFOb0HFwHaf4X0hTFwY',
   );
 
-  // Load both profile AND theme before app starts
   await AppState.instance.loadStudentProfile();
-  await AppState.instance.loadTheme(); // ← NEW
+  await AppState.instance.loadTheme();
 
   runApp(const MyApp());
 }
 
-// ── Changed to StatefulWidget to listen to AppState theme changes ──────────
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -38,8 +40,14 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    // Rebuild MyApp whenever theme changes
     AppState.instance.addListener(_onAppStateChanged);
+
+    // ✅ ADDITION 2 — listen for password recovery event
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        navigatorKey.currentState?.pushNamed('/reset-password');
+      }
+    });
   }
 
   @override
@@ -58,7 +66,9 @@ class _MyAppState extends State<MyApp> {
       title: 'OrgConnect',
       debugShowCheckedModeBanner: false,
 
-      // ── Theme mode driven by AppState ───────────────────────────────────
+      // ✅ ADDITION 3 — attach navigatorKey
+      navigatorKey: navigatorKey,
+
       themeMode: AppState.instance.isDark ? ThemeMode.dark : ThemeMode.light,
 
       theme: ThemeData(
@@ -99,6 +109,7 @@ class _MyAppState extends State<MyApp> {
       routes: {
         '/': (context) => const AuthGate(),
         '/login': (context) => const UnifiedLoginPage(),
+        '/reset-password': (_) => const ForgotPasswordPage(),
         '/orglist': (context) => const OrgListScreen(),
         '/signup': (context) => const SignUpPage(),
         '/home': (context) => const StudentDashboardScreen(),
