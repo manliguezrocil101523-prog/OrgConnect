@@ -418,18 +418,18 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
     final hPad = (screenW * 0.062).clamp(16.0, 32.0);
     final cardHPad = (screenW * 0.062).clamp(16.0, 28.0);
     final cardVPad = (screenH * 0.032).clamp(20.0, 36.0);
-    final logoHeight = (screenH * 0.19).clamp(110.0, 200.0);
+    final logoHeight = (screenH * 0.28).clamp(200.0, 360.0);
     final btnHeight = (screenH * 0.072).clamp(50.0, 62.0);
     final fieldSpacing = (screenH * 0.022).clamp(12.0, 22.0);
-    final sectionSpacing = (screenH * 0.038).clamp(20.0, 40.0);
-
+    final sectionSpacing = (screenH * 0.020).clamp(10.0, 20.0);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {},
       child: Scaffold(
         backgroundColor: _kBackground,
         body: SafeArea(
-          child: Center(
+          child: Align(
+            alignment: Alignment.topCenter,
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               padding: EdgeInsets.symmetric(
@@ -464,37 +464,49 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // ================= IMAGE =================
-                          Image.asset(
-                            'assets/login.png',
-                            height: logoHeight,
-                            fit: BoxFit.contain,
-                          ),
+                          // ================= LOGO =================
+                              
+                               Transform.translate(
+                                    offset: const Offset(0, 35),
+                                    child: Center(
+                                    child: Image.asset(
+                                    'assets/OrgConnectLogo.png',
+                                    height: logoHeight * 1.75,
+                                    fit: BoxFit.contain,
+                           ),
+                    ),
+                  ),
 
-                          SizedBox(height: fieldSpacing),
-
-                          // ================= TITLE =================
-                          Text(
-                            'Welcome!',
-                            style: TextStyle(
-                              fontSize: (34 * scale).clamp(26.0, 38.0),
-                              fontWeight: FontWeight.w800,
-                              color: _kTextColor,
-                              letterSpacing: -0.5,
+                            Transform.translate(
+                                  offset: const Offset(0, -45),
+                                  child: Column(
+                                  children: [
+                        // ================= TITLE =================
+                      
+                            Text(
+                                'Welcome!',
+                                style: TextStyle(
+                                fontSize: (34 * scale).clamp(26.0, 38.0),
+                                fontWeight: FontWeight.w800,
+                                color: _kTextColor,
+                                letterSpacing: -0.5,
                             ),
                           ),
 
-                          SizedBox(height: (8 * scale).clamp(5.0, 10.0)),
+                            SizedBox(height: (8 * scale).clamp(5.0, 10.0)),
 
-                          Text(
-                            'Log in to your existing account',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: (15 * scale).clamp(12.0, 16.0),
-                              color: const Color(0xFF6B7280),
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
+                            Text(
+                                  'Log in to your existing account',
+                                   textAlign: TextAlign.center,
+                                   style: TextStyle(
+                                   fontSize: (15 * scale).clamp(12.0, 16.0),
+                                   color: const Color(0xFF6B7280),
+                                   fontWeight: FontWeight.w400,
+                             ),
+                        ),
+                     ],
+                   ),
+                ),
 
                           SizedBox(height: sectionSpacing),
 
