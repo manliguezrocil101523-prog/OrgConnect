@@ -83,14 +83,7 @@ class _NotificationScreenState extends State<NotificationScreen>
               expandedHeight: MediaQuery.of(context).size.height * 0.18,
               backgroundColor: _primary,
               elevation: 0,
-              leading: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.pop(context),
-              ),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Notifications',
                 style: TextStyle(
@@ -716,11 +709,14 @@ class _SectionLabel extends StatelessWidget {
 // ─── Shared timestamp helper ───────────────────────────────────────────────
 String _formatTimestamp(DateTime timestamp) {
   final diff = DateTime.now().difference(timestamp);
-  if (diff.inDays > 0)
+  if (diff.inDays > 0) {
     return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
-  if (diff.inHours > 0)
+  }
+  if (diff.inHours > 0) {
     return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
-  if (diff.inMinutes > 0)
+  }
+  if (diff.inMinutes > 0) {
     return '${diff.inMinutes} minute${diff.inMinutes > 1 ? 's' : ''} ago';
+  }
   return 'Just now';
 }

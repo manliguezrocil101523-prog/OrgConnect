@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:video_player/video_player.dart';
 
 class OfficerOrgProfileScreen extends StatefulWidget {
   final String orgId;
@@ -40,7 +41,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
 
   // ── Officers & highlights lists (editable) ────────────────────────────────
   late List<String> _officers;
-  late List<String> _highlights;
+  late List<OrgMediaItem> _highlights;
 
   Uint8List? _pickedImageBytes;
   String? _pickedImageExt;
@@ -72,7 +73,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     _socialLinkCtrl = TextEditingController(text: _org.socialLink);
 
     _officers = List<String>.from(_org.officers);
-    _highlights = List<String>.from(_org.activitiesHighlights);
+    _highlights = List<OrgMediaItem>.from(_org.activitiesHighlights);
     _logoAsset = _org.logoAsset;
 
     // Check if logoAsset is already a network URL
@@ -400,13 +401,14 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                 const SizedBox(height: 24),
 
                 // ── Activities / Highlights list ────────────────────────────
-                _sectionLabel('Activities & Highlights'),
+                // ── Activities / Highlights media ───────────────────────────
+                _sectionLabel('Activities & Events'),
                 const SizedBox(height: 12),
-                _EditableListCard(
+                _MediaEditCard(
                   items: _highlights,
                   accentColor: _secondary,
-                  onAdd: () => _addListItem(_highlights, 'Activity'),
-                  onRemove: (i) => setState(() => _highlights.removeAt(i)),
+                  orgId: widget.orgId,
+                  onChanged: (updated) => setState(() => _highlights = updated),
                 ),
 
                 const SizedBox(height: 36),
@@ -753,6 +755,379 @@ class _EditableListCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _MediaEditCard — rich media editor for Activities & Events
+// =============================================================================
+class _MediaEditCard extends StatefulWidget {
+  final List<OrgMediaItem> items;
+  final Color accentColor;
+  final String orgId;
+  final ValueChanged<List<OrgMediaItem>> onChanged;
+
+  const _MediaEditCard({
+    required this.items,
+    required this.accentColor,
+    required this.orgId,
+    required this.onChanged,
+  });
+
+  @override
+  State<_MediaEditCard> createState() => _MediaEditCardState();
+}
+
+class _MediaEditCardState extends State<_MediaEditCard> {
+  bool _isUploading = false;
+
+  Future<String?> _uploadFile(Uint8List bytes, String ext, String mime) async {
+    try {
+      final fileName =
+          'org_activities/${widget.orgId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await Supabase.instance.client.storage.from('org-assets').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: FileOptions(contentType: mime, upsert: true),
+          );
+      return Supabase.instance.client.storage
+          .from('org-assets')
+          .getPublicUrl(fileName);
+    } catch (e) {
+      debugPrint('Media upload error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _addText() async {
+    final ctrl = TextEditingController();
+    final captionCtrl = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Add Text'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'Write something...',
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Add')),
+        ],
+      ),
+    );
+    if (result == true && ctrl.text.trim().isNotEmpty) {
+      final updated = [
+        ...widget.items,
+        OrgMediaItem(
+            type: 'text',
+            content: ctrl.text.trim(),
+            caption: captionCtrl.text.trim())
+      ];
+      widget.onChanged(updated);
+    }
+  }
+
+  Future<void> _addImage() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final newItems = <OrgMediaItem>[];
+      for (final f in result.files) {
+        if (f.bytes == null) continue;
+        final ext = f.extension ?? 'jpg';
+        final url = await _uploadFile(f.bytes!, ext, 'image/$ext');
+        if (url != null) {
+          // Ask for optional caption
+          String caption = '';
+          if (mounted) {
+            final captionCtrl = TextEditingController();
+            final cap = await showDialog<String>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
+                title: Text(f.name, style: const TextStyle(fontSize: 14)),
+                content: TextField(
+                  controller: captionCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Add a caption (optional)',
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(''),
+                      child: const Text('Skip')),
+                  FilledButton(
+                      onPressed: () =>
+                          Navigator.of(ctx).pop(captionCtrl.text.trim()),
+                      child: const Text('Done')),
+                ],
+              ),
+            );
+            caption = cap ?? '';
+          }
+          newItems
+              .add(OrgMediaItem(type: 'image', content: url, caption: caption));
+        }
+      }
+      widget.onChanged([...widget.items, ...newItems]);
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _addVideo() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      withData: true,
+    );
+    if (result == null || result.files.single.bytes == null) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final f = result.files.single;
+      final ext = f.extension ?? 'mp4';
+      final url = await _uploadFile(f.bytes!, ext, 'video/$ext');
+      if (url != null) {
+        String caption = '';
+        if (mounted) {
+          final captionCtrl = TextEditingController();
+          final cap = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
+              title: const Text('Video uploaded!'),
+              content: TextField(
+                controller: captionCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Add a caption (optional)',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(''),
+                    child: const Text('Skip')),
+                FilledButton(
+                    onPressed: () =>
+                        Navigator.of(ctx).pop(captionCtrl.text.trim()),
+                    child: const Text('Done')),
+              ],
+            ),
+          );
+          caption = cap ?? '';
+        }
+        widget.onChanged([
+          ...widget.items,
+          OrgMediaItem(type: 'video', content: url, caption: caption)
+        ]);
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_isUploading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (widget.items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('No items yet. Add text, images, or videos.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+            )
+          else
+            ...widget.items.asMap().entries.map((e) {
+              final item = e.value;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Preview
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: item.type == 'image'
+                          ? CachedNetworkImage(
+                              imageUrl: item.content,
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => Container(
+                                  width: 56,
+                                  height: 56,
+                                  color: Colors.grey.shade200),
+                              errorWidget: (_, __, ___) => Container(
+                                  width: 56,
+                                  height: 56,
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(Icons.broken_image)),
+                            )
+                          : item.type == 'video'
+                              ? Container(
+                                  width: 56,
+                                  height: 56,
+                                  color: Colors.black87,
+                                  child: const Icon(
+                                      Icons.play_circle_fill_rounded,
+                                      color: Colors.white,
+                                      size: 28),
+                                )
+                              : Container(
+                                  width: 56,
+                                  height: 56,
+                                  color: widget.accentColor.withOpacity(0.08),
+                                  child: Icon(Icons.text_snippet_rounded,
+                                      color: widget.accentColor, size: 26),
+                                ),
+                    ),
+                    const SizedBox(width: 10),
+                    // Content
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.type == 'text'
+                                ? item.content
+                                : item.type == 'image'
+                                    ? 'Image'
+                                    : 'Video',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                          if (item.caption.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(item.caption,
+                                style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: Colors.grey.shade500)),
+                          ],
+                        ],
+                      ),
+                    ),
+                    // Delete
+                    GestureDetector(
+                      onTap: () {
+                        final updated = [...widget.items]..removeAt(e.key);
+                        widget.onChanged(updated);
+                      },
+                      child: Icon(Icons.remove_circle_outline_rounded,
+                          size: 20, color: Colors.red.shade300),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+          const SizedBox(height: 6),
+
+          // Action buttons row
+          Row(
+            children: [
+              Expanded(
+                child: _addBtn(
+                  icon: Icons.text_fields_rounded,
+                  label: 'Text',
+                  onTap: _isUploading ? null : _addText,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _addBtn(
+                  icon: Icons.image_rounded,
+                  label: 'Image',
+                  onTap: _isUploading ? null : _addImage,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _addBtn(
+                  icon: Icons.videocam_rounded,
+                  label: 'Video',
+                  onTap: _isUploading ? null : _addVideo,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _addBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16, color: widget.accentColor),
+      label: Text(label,
+          style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: widget.accentColor)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: widget.accentColor.withOpacity(0.4)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.symmetric(vertical: 10),
       ),
     );
   }

@@ -62,9 +62,7 @@ class _SignUpPageState extends State<SignUpPage>
 
   Future<void> _signUp() async {
     FocusScope.of(context).unfocus();
-
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _loading = true);
 
     final name = "${_fName.text.trim()} ${_lName.text.trim()}";
@@ -73,18 +71,27 @@ class _SignUpPageState extends State<SignUpPage>
       final res = await Supabase.instance.client.auth.signUp(
         email: _email.text.trim(),
         password: _password.text,
+        data: {
+          // ← ADD THIS
+          'name': name, // ← trigger reads this
+          'student_id': _studId.text.trim(), // ← trigger reads this
+        },
       );
 
       final user = res.user;
 
-      if (user != null &&
-          (user.confirmedAt != null || user.emailConfirmedAt != null)) {
-        await Supabase.instance.client.from('profiles').upsert({
-          'id': user.id,
-          'name': name,
-          'student_id': _studId.text.trim(),
-          'email': _email.text.trim(),
-        }, onConflict: 'id');
+      if (user != null) {
+        // If session exists (auto-confirm ON), upsert directly
+        if (res.session != null) {
+          await Supabase.instance.client.from('profiles').upsert({
+            'id': user.id,
+            'name': name,
+            'student_id': _studId.text.trim(),
+            'email': _email.text.trim(),
+          }, onConflict: 'id');
+        }
+        // If no session (email confirmation required),
+        // the DB trigger above already created the profile row safely
 
         AppState.instance.setStudentProfile(
           StudentProfile(
@@ -100,27 +107,15 @@ class _SignUpPageState extends State<SignUpPage>
 
         if (!mounted) return;
 
+        final isConfirmed =
+            user.confirmedAt != null || user.emailConfirmedAt != null;
         _snack(
-          'Account created successfully!',
+          isConfirmed
+              ? 'Account created successfully!'
+              : 'Confirmation link sent to ${_email.text.trim()}',
           ok: true,
         );
-
-        Navigator.pushReplacementNamed(
-          context,
-          '/login',
-        );
-      } else {
-        if (!mounted) return;
-
-        _snack(
-          "Confirmation link sent to ${_email.text.trim()}",
-          ok: true,
-        );
-
-        Navigator.pushReplacementNamed(
-          context,
-          '/login',
-        );
+        Navigator.pushReplacementNamed(context, '/login');
       }
     } on AuthException catch (e) {
       _snack(e.message);
@@ -128,9 +123,7 @@ class _SignUpPageState extends State<SignUpPage>
       _snack(e.toString());
     }
 
-    if (mounted) {
-      setState(() => _loading = false);
-    }
+    if (mounted) setState(() => _loading = false);
   }
 
   void _snack(

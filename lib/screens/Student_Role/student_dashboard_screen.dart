@@ -25,9 +25,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   static const Color _profileAccent = Color(0xFF4F46E5);
   static const Color _orgAccent = Color(0xFF06B6D4);
   static const Color _notifAccent = Color(0xFF22C55E);
+  static const Color _eventsAccent = Color(0xFF6C63FF);
 
   // ─── Double-tap-to-exit state tracker ────────────────────────────────────
   DateTime? _lastBackPressed;
+  int _selectedIndex = 0;
 
   // ─── AppState listener so badge refreshes when notifications change ───────
   @override
@@ -102,107 +104,97 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       },
       child: Scaffold(
         backgroundColor: _background,
-        body: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            // ─── HERO SLIVER APP BAR ──────────────────────────────────────────
-            SliverAppBar(
-              expandedHeight: size.height * 0.40,
-              pinned: true,
-              stretch: true,
-              backgroundColor: _primary,
-              elevation: 0,
-              automaticallyImplyLeading: false,
-              centerTitle: true,
-              flexibleSpace: FlexibleSpaceBar(
-                stretchModes: const [StretchMode.blurBackground],
-                background: _HeroHeader(
-                  primary: _primary,
-                  secondary: _secondary,
-                ),
-              ),
-            ),
-
-            // ─── BODY CONTENT ─────────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 500),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ── SECTION: Quick Actions ─────────────────────────
-                        const _SectionLabel(text: 'Quick Actions'),
-                        const SizedBox(height: 16),
-
-                        // ── ROW 1: My Profile + Organizations (unchanged) ──
-                        // ── ROW 1: My Profile + Organizations ──────────────
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _ActionTile(
-                                label: 'My Profile',
-                                subtitle: 'View & update info',
-                                icon: Icons.person_rounded,
-                                accentColor: _profileAccent,
-                                onTap: () => Navigator.push(context,
-                                    _slideRoute(const ProfileScreen())),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _ActionTile(
-                                label: 'Organizations',
-                                subtitle: 'Browse & apply',
-                                icon: Icons.groups_rounded,
-                                accentColor: _orgAccent,
-                                onTap: () => Navigator.push(context,
-                                    _slideRoute(const OrgListScreen())),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // ── ROW 2: Notifications + Events ──────────────────
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _ActionTileWithBadge(
-                                label: 'Notifications',
-                                subtitle: 'App updates',
-                                icon: Icons.notifications_rounded,
-                                accentColor: _notifAccent,
-                                badgeCount: unreadCount,
-                                onTap: () => Navigator.push(context,
-                                    _slideRoute(const NotificationScreen())),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _ActionTile(
-                                label: 'Events',
-                                subtitle: 'View schedule',
-                                icon: Icons.calendar_month_rounded,
-                                accentColor: Color(0xFF4F46E5),
-                                onTap: () => Navigator.push(context,
-                                    _slideRoute(const StudentDashboard())),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: const [
+            _HomeTab(),
+            OrgListScreen(),
+            NotificationScreen(),
+            ProfileScreen(),
+            StudentDashboard(),
           ],
+        ),
+        bottomNavigationBar: _buildBottomNav(unreadCount),
+      ),
+    );
+  }
+
+  Widget _buildBottomNav(int unreadCount) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconSize = (screenWidth * 0.065).clamp(22.0, 30.0);
+    final fontSize = (screenWidth * 0.028).clamp(10.0, 13.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: (screenWidth * 0.18).clamp(56.0, 72.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _NavItem(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                index: 0,
+                selectedIndex: _selectedIndex,
+                iconSize: iconSize,
+                fontSize: fontSize,
+                primaryColor: _primary,
+                onTap: () => setState(() => _selectedIndex = 0),
+              ),
+              _NavItem(
+                icon: Icons.groups_rounded,
+                label: 'Orgs',
+                index: 1,
+                selectedIndex: _selectedIndex,
+                iconSize: iconSize,
+                fontSize: fontSize,
+                primaryColor: _orgAccent,
+                onTap: () => setState(() => _selectedIndex = 1),
+              ),
+              _NavItem(
+                icon: Icons.calendar_month_rounded,
+                label: 'Events',
+                index: 4,
+                selectedIndex: _selectedIndex,
+                iconSize: iconSize,
+                fontSize: fontSize,
+                primaryColor: _eventsAccent,
+                onTap: () => setState(() => _selectedIndex = 4),
+              ),
+              _NavBadgeItem(
+                icon: Icons.notifications_rounded,
+                label: 'Alerts',
+                index: 2,
+                selectedIndex: _selectedIndex,
+                iconSize: iconSize,
+                fontSize: fontSize,
+                primaryColor: _notifAccent,
+                badgeCount: unreadCount,
+                onTap: () => setState(() => _selectedIndex = 2),
+              ),
+              _NavItem(
+                icon: Icons.person_rounded,
+                label: 'Profile',
+                index: 3,
+                selectedIndex: _selectedIndex,
+                iconSize: iconSize,
+                fontSize: fontSize,
+                primaryColor: _profileAccent,
+                onTap: () => setState(() => _selectedIndex = 3),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -310,15 +302,28 @@ class _HeroHeader extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text(
-                                'Welcome Back 👋',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.1,
-                                  height: 1.15,
-                                ),
+                              ListenableBuilder(
+                                listenable: AppState.instance,
+                                builder: (context, _) {
+                                  final fullName =
+                                      AppState.instance.currentStudent?.name ??
+                                          '';
+                                  final firstName =
+                                      fullName.trim().split(' ').first;
+                                  final greeting = firstName.isNotEmpty
+                                      ? 'Welcome Back, $firstName 👋'
+                                      : 'Welcome Back 👋';
+                                  return Text(
+                                    greeting,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.1,
+                                      height: 1.15,
+                                    ),
+                                  );
+                                },
                               ),
                               const SizedBox(height: 5),
                               Text(
@@ -482,36 +487,49 @@ class _VerticalDividerChip extends StatelessWidget {
 }
 
 // =============================================================================
-// _SectionLabel  (UNCHANGED)
+// _HomeTab — shown when index == 0 (the hero header + welcome content)
 // =============================================================================
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel({required this.text});
+class _HomeTab extends StatelessWidget {
+  const _HomeTab();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 3,
-          height: 14,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+    final size = MediaQuery.of(context).size;
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        SliverAppBar(
+          expandedHeight: size.height * 0.40,
+          pinned: true,
+          stretch: true,
+          backgroundColor: const Color(0xFF4F46E5),
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          centerTitle: true,
+          flexibleSpace: FlexibleSpaceBar(
+            stretchModes: const [StretchMode.blurBackground],
+            background: _HeroHeader(
+              primary: const Color(0xFF4F46E5),
+              secondary: const Color(0xFF06B6D4),
             ),
-            borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(width: 10),
-        Text(
-          text.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.6,
-            color: Color(0xFF94A3B8),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: const Text(
+                  'Use the tabs below to navigate.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF94A3B8),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ],
@@ -520,99 +538,62 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // =============================================================================
-// _ActionTile — compact square tile for the 2-col grid row (UNCHANGED)
+// _NavItem — a single bottom nav tab button
 // =============================================================================
-class _ActionTile extends StatelessWidget {
-  final String label;
-  final String subtitle;
+class _NavItem extends StatelessWidget {
   final IconData icon;
-  final Color accentColor;
+  final String label;
+  final int index;
+  final int selectedIndex;
+  final double iconSize;
+  final double fontSize;
+  final Color primaryColor;
   final VoidCallback onTap;
 
-  const _ActionTile({
-    required this.label,
-    required this.subtitle,
+  const _NavItem({
     required this.icon,
-    required this.accentColor,
+    required this.label,
+    required this.index,
+    required this.selectedIndex,
+    required this.iconSize,
+    required this.fontSize,
+    required this.primaryColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      shadowColor: accentColor.withOpacity(0.12),
-      elevation: 3,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        splashColor: accentColor.withOpacity(0.07),
-        highlightColor: accentColor.withOpacity(0.04),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Icon badge
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: accentColor, size: 20),
+    final isSelected = index == selectedIndex;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color:
+              isSelected ? primaryColor.withOpacity(0.10) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: iconSize,
+              color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
               ),
-
-              const SizedBox(height: 14),
-
-              // Label
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF0F172A),
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 3),
-
-              // Subtitle
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  color: Color(0xFF94A3B8),
-                  height: 1.3,
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // Bottom affordance row
-              Row(
-                children: [
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 13,
-                    color: accentColor.withOpacity(0.70),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Open',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: accentColor.withOpacity(0.70),
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -620,301 +601,100 @@ class _ActionTile extends StatelessWidget {
 }
 
 // =============================================================================
-// _ActionTileWithBadge
-// Same visual as _ActionTile but adds an unread-count badge in the top-right
-// corner.  Replaces the old full-width _ActionCard for Notifications so the
-// card height/width matches My Profile and Organizations exactly.
+// _NavBadgeItem — nav tab with unread count badge (for Notifications)
 // =============================================================================
-class _ActionTileWithBadge extends StatelessWidget {
-  final String label;
-  final String subtitle;
+class _NavBadgeItem extends StatelessWidget {
   final IconData icon;
-  final Color accentColor;
-  final VoidCallback onTap;
+  final String label;
+  final int index;
+  final int selectedIndex;
+  final double iconSize;
+  final double fontSize;
+  final Color primaryColor;
   final int badgeCount;
+  final VoidCallback onTap;
 
-  const _ActionTileWithBadge({
-    required this.label,
-    required this.subtitle,
+  const _NavBadgeItem({
     required this.icon,
-    required this.accentColor,
-    required this.onTap,
+    required this.label,
+    required this.index,
+    required this.selectedIndex,
+    required this.iconSize,
+    required this.fontSize,
+    required this.primaryColor,
     required this.badgeCount,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isSelected = index == selectedIndex;
     final showBadge = badgeCount > 0;
     final badgeLabel = badgeCount > 9 ? '9+' : '$badgeCount';
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // ── Tile body — identical layout to _ActionTile ───────────────────
-        Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          shadowColor: accentColor.withOpacity(0.12),
-          elevation: 3,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            splashColor: accentColor.withOpacity(0.07),
-            highlightColor: accentColor.withOpacity(0.04),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Icon badge
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: accentColor.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: accentColor, size: 20),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF0F172A),
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF94A3B8),
-                      height: 1.3,
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 13,
-                        color: accentColor.withOpacity(0.70),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Open',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: accentColor.withOpacity(0.70),
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color:
+              isSelected ? primaryColor.withOpacity(0.10) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
         ),
-
-        // ── Unread badge — top-right corner of the tile ───────────────────
-        if (showBadge)
-          Positioned(
-            top: -8,
-            right: -6,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: iconSize,
+                  color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
                 ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white, width: 1.8),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF4F46E5).withOpacity(0.35),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
                   ),
-                ],
-              ),
-              child: Text(
-                badgeLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
+                ),
+              ],
+            ),
+            if (showBadge)
+              Positioned(
+                top: -6,
+                right: -10,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    badgeLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-      ],
+          ],
+        ),
+      ),
     );
   }
-}
-
-// =============================================================================
-// _ActionCard — KEPT for reference / future use but no longer used on screen
-// =============================================================================
-class _ActionCard extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final Color accentColor;
-  final VoidCallback onTap;
-  final int? badgeCount;
-
-  const _ActionCard({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.accentColor,
-    required this.onTap,
-    this.badgeCount,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final showBadge = badgeCount != null && badgeCount! > 0;
-    final badgeLabel =
-        (badgeCount != null && badgeCount! > 9) ? '9+' : '$badgeCount';
-
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          shadowColor: accentColor.withOpacity(0.12),
-          elevation: 3,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            splashColor: accentColor.withOpacity(0.07),
-            highlightColor: accentColor.withOpacity(0.04),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: accentColor.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: accentColor, size: 20),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          label,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF0F172A),
-                            height: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF94A3B8),
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Color(0xFFCBD5E1),
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (showBadge)
-          Positioned(
-            top: -10,
-            right: 14,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white, width: 1.8),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF4F46E5).withOpacity(0.35),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                badgeLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ─── Smooth slide-transition helper ──────────────────────────────────────────
-Route<T> _slideRoute<T>(Widget page) {
-  return PageRouteBuilder<T>(
-    pageBuilder: (context, animation, secondaryAnimation) => page,
-    transitionDuration: const Duration(milliseconds: 280),
-    reverseTransitionDuration: const Duration(milliseconds: 240),
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(1.0, 0.0),
-          end: Offset.zero,
-        ).animate(curved),
-        child: FadeTransition(
-          opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
-          child: child,
-        ),
-      );
-    },
-  );
 }

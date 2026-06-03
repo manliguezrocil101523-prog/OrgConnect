@@ -119,7 +119,7 @@ class OfficerMembersScreen extends StatelessWidget {
   void _dialog(BuildContext context, {Member? existing}) {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     // AFTER
-    const _validPositions = [
+    const validPositions = [
       'Member',
       'Officer',
       'President',
@@ -128,7 +128,7 @@ class OfficerMembersScreen extends StatelessWidget {
     ];
 
     String position =
-        (existing != null && _validPositions.contains(existing.position))
+        (existing != null && validPositions.contains(existing.position))
             ? existing.position
             : 'Member';
 
@@ -176,7 +176,7 @@ class OfficerMembersScreen extends StatelessWidget {
                         // Position dropdown — unchanged
                         _FieldLabel('Position'),
                         DropdownButtonFormField<String>(
-                          value: position,
+                          initialValue: position,
                           decoration: _fieldDeco(Icons.badge_rounded),
                           items: [
                             'Member',

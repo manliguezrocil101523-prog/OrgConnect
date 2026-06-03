@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
-import 'dart:typed_data';
 
 /// Roles supported by the app
 enum UserRole { student, officer, admin }
@@ -285,6 +284,38 @@ class User {
       );
 }
 
+/// Represents one item in the Activities & Events media list
+class OrgMediaItem {
+  final String type; // 'text' | 'image' | 'video'
+  final String content; // text string OR public URL
+  final String caption;
+
+  const OrgMediaItem({
+    required this.type,
+    required this.content,
+    this.caption = '',
+  });
+
+  factory OrgMediaItem.fromJson(dynamic raw) {
+    // Backward compat: old plain strings become text items
+    if (raw is String) return OrgMediaItem(type: 'text', content: raw);
+    if (raw is Map) {
+      return OrgMediaItem(
+        type: raw['type']?.toString() ?? 'text',
+        content: raw['content']?.toString() ?? '',
+        caption: raw['caption']?.toString() ?? '',
+      );
+    }
+    return const OrgMediaItem(type: 'text', content: '');
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'content': content,
+        'caption': caption,
+      };
+}
+
 /// Organization metadata
 class Organization {
   final String id;
@@ -300,7 +331,7 @@ class Organization {
   final String contactPhone;
   final String socialLink;
   final List<String> officers;
-  final List<String> activitiesHighlights;
+  final List<OrgMediaItem> activitiesHighlights;
   final String officerPassword;
 
   Organization({
@@ -317,7 +348,7 @@ class Organization {
     this.contactPhone = '',
     this.socialLink = '',
     this.officers = const [],
-    this.activitiesHighlights = const [],
+    this.activitiesHighlights = const <OrgMediaItem>[],
     this.officerPassword = 'officer123',
   });
 
@@ -335,7 +366,7 @@ class Organization {
     String? contactPhone,
     String? socialLink,
     List<String>? officers,
-    List<String>? activitiesHighlights,
+    List<OrgMediaItem>? activitiesHighlights,
     String? officerPassword,
   }) =>
       Organization(
@@ -437,7 +468,7 @@ class AppState extends ChangeNotifier {
       organizations.clear();
       for (var item in response) {
         List<String> officers = [];
-        List<String> activitiesHighlights = [];
+        List<OrgMediaItem> activitiesHighlights = [];
         try {
           final rawOfficers = item['officers'];
           if (rawOfficers != null) {
@@ -448,10 +479,9 @@ class AppState extends ChangeNotifier {
         } catch (_) {}
         try {
           final rawActivities = item['activities_highlights'];
-          if (rawActivities != null) {
-            if (rawActivities is List) {
-              activitiesHighlights = List<String>.from(rawActivities);
-            }
+          if (rawActivities != null && rawActivities is List) {
+            activitiesHighlights =
+                rawActivities.map((e) => OrgMediaItem.fromJson(e)).toList();
           }
         } catch (_) {}
 
@@ -1190,7 +1220,8 @@ class AppState extends ChangeNotifier {
         'contact_phone': org.contactPhone,
         'social_link': org.socialLink,
         'officers': org.officers,
-        'activities_highlights': org.activitiesHighlights,
+        'activities_highlights':
+            org.activitiesHighlights.map((e) => e.toJson()).toList(),
         'officer_password': org.officerPassword,
       }).eq('id', org.id);
       final idx = organizations.indexWhere((o) => o.id == org.id);

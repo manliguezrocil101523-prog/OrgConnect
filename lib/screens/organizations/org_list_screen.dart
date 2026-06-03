@@ -3,9 +3,6 @@ import 'org_profile_screen.dart';
 import '../../core/app_state.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-// ─────────────────────────────────────────────
-// Color palette & shared constants
-// ─────────────────────────────────────────────
 class _AppColors {
   static const background = Color(0xFFF0F7F4);
   static const cardBg = Color(0xFFFFFFFF);
@@ -35,17 +32,10 @@ class _OrgListScreenState extends State<OrgListScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
-    // Refresh from Supabase every time this screen opens
-    @override
-    void initState() {
-      super.initState();
-      _searchController.addListener(_onSearchChanged);
 
-      // ✅ Defer until after the first frame is fully built
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        AppState.instance.fetchOrganizations();
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppState.instance.fetchOrganizations();
+    });
   }
 
   void _onSearchChanged() {
@@ -76,7 +66,7 @@ class _OrgListScreenState extends State<OrgListScreen> {
           body: SafeArea(
             child: CustomScrollView(
               slivers: [
-                SliverToBoxAdapter(child: _HeaderSection(onBack: _goBack)),
+                const SliverToBoxAdapter(child: _HeaderSection()),
                 SliverToBoxAdapter(
                   child: _SearchBar(controller: _searchController),
                 ),
@@ -109,16 +99,13 @@ class _OrgListScreenState extends State<OrgListScreen> {
       },
     );
   }
-
-  void _goBack() => Navigator.pushReplacementNamed(context, '/home');
 }
 
 // ─────────────────────────────────────────────
 // Header: banner image + back button + title
 // ─────────────────────────────────────────────
 class _HeaderSection extends StatelessWidget {
-  final VoidCallback onBack;
-  const _HeaderSection({required this.onBack});
+  const _HeaderSection();
 
   @override
   Widget build(BuildContext context) {
@@ -160,13 +147,6 @@ class _HeaderSection extends StatelessWidget {
           ),
         ),
 
-        // Back button (top-left)
-        Positioned(
-          top: 10,
-          left: 12,
-          child: _BackButton(onTap: onBack),
-        ),
-
         // Title overlay (bottom-left)
         Positioned(
           bottom: 14,
@@ -201,48 +181,6 @@ class _HeaderSection extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Pill-shaped back button
-// ─────────────────────────────────────────────
-class _BackButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BackButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.88),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(
-                color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.arrow_back_ios_new_rounded,
-                size: 14, color: _AppColors.accentDark),
-            SizedBox(width: 4),
-            Text(
-              'Back',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: _AppColors.accentDark,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

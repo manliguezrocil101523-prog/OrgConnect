@@ -3,7 +3,6 @@ import '../../core/app_state.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui';
-import '../auth/unified_login_page.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 class _DT {
@@ -82,9 +81,8 @@ class _StudentDashboardState extends State<StudentDashboard>
     super.initState();
     _focusedDay = DateTime.now();
     _selectedDay = _focusedDay;
-    AppState.instance.fetchEvents(); // ← add this line
+    AppState.instance.fetchEvents();
     _loadEvents();
-    // ... rest stays exactly the same
 
     _entranceCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 650));
@@ -225,11 +223,7 @@ class _StudentDashboardState extends State<StudentDashboard>
             backgroundColor: _DT.bg.withOpacity(0.80),
             elevation: 0,
             centerTitle: true,
-            leading: IconButton(
-              icon: const Icon(Icons.chevron_left_rounded,
-                  color: _DT.primary, size: 28),
-              onPressed: () => Navigator.pushReplacementNamed(context, '/home'),
-            ),
+            automaticallyImplyLeading: false,
             title: const Text('Dashboard',
                 style: TextStyle(
                     fontSize: 15,
@@ -961,4 +955,539 @@ class _StatusCfg {
   final String label;
   final Color bg, fg, ring;
   const _StatusCfg(this.label, this.bg, this.fg, this.ring);
+}
+
+// ── Embeddable version for use inside StudentDashboardScreen ──────────────
+class StudentDashboardBody extends StatefulWidget {
+  const StudentDashboardBody({super.key});
+
+  @override
+  State<StudentDashboardBody> createState() => _StudentDashboardBodyState();
+}
+
+class _StudentDashboardBodyState extends State<StudentDashboardBody>
+    with TickerProviderStateMixin {
+  late DateTime _focusedDay;
+  DateTime? _selectedDay;
+  late Map<DateTime, List<Event>> _events;
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedDay = DateTime.now();
+    _selectedDay = _focusedDay;
+    AppState.instance.fetchEvents();
+    _loadEvents();
+    _pulseCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2800))
+      ..repeat(reverse: true);
+    _pulseAnim = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  void _loadEvents() {
+    _events = {};
+    for (var e in AppState.instance.eventsForCurrentStudent()) {
+      final day = DateTime(e.date.year, e.date.month, e.date.day);
+      (_events[day] ??= []).add(e);
+    }
+  }
+
+  void _showEventsForDay(DateTime day) {
+    final events = _events[day] ?? [];
+    if (events.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _DayEventsSheet(day: day, events: events),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final hPad = (mq.size.width * 0.055).clamp(16.0, 28.0);
+    final hp = EdgeInsets.symmetric(horizontal: hPad);
+
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        _loadEvents();
+        final events = AppState.instance.eventsForCurrentStudent();
+        final applications = AppState.instance.applications
+            .where((a) =>
+                a.studentId == AppState.instance.currentStudent?.studentId)
+            .toList();
+        final regularEvents = events
+            .where((e) => !e.title.toLowerCase().contains('interview'))
+            .toList();
+
+        // Reuse the existing state's _buildCalendarCard / helpers
+        // by delegating to a helper that accepts the events map
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: hp.copyWith(bottom: 12),
+              child: _sectionLabel('Calendar', 'Your schedule'),
+            ),
+            Padding(
+              padding: hp.copyWith(bottom: 28),
+              child: _buildCalendarCard(),
+            ),
+            if (applications.isNotEmpty) ...[
+              Padding(
+                padding: hp.copyWith(bottom: 14),
+                child: _sectionLabel(
+                    'My Applications', '${applications.length} total'),
+              ),
+              ...applications.map(
+                  (a) => Padding(padding: hp, child: _buildApplicationCard(a))),
+              const SizedBox(height: 28),
+            ],
+            if (regularEvents.isNotEmpty) ...[
+              Padding(
+                padding: hp.copyWith(bottom: 14),
+                child:
+                    _sectionLabel('Upcoming Events', 'Organization schedule'),
+              ),
+              ...regularEvents
+                  .map((e) => Padding(padding: hp, child: _buildEventCard(e))),
+            ],
+            if (events.isEmpty && applications.isEmpty)
+              Padding(padding: hp, child: _buildEmptyState()),
+            const SizedBox(height: 96),
+          ],
+        );
+      },
+    );
+  }
+
+  // ── All helpers copied from _StudentDashboardState ──────────────────
+
+  Widget _buildCalendarCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _DT.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _DT.border, width: 1.2),
+        boxShadow: _DT.cardShadow,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+          child: TableCalendar<Event>(
+            availableGestures: AvailableGestures.horizontalSwipe,
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2030, 12, 31),
+            focusedDay: _focusedDay,
+            selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
+            eventLoader: (d) => _events[d] ?? [],
+            onDaySelected: (selected, focused) {
+              setState(() {
+                _selectedDay = selected;
+                _focusedDay = focused;
+              });
+              _showEventsForDay(selected);
+            },
+            calendarBuilders: CalendarBuilders(
+              selectedBuilder: (ctx, day, _) =>
+                  LayoutBuilder(builder: (ctx, c) {
+                final sz = (c.maxWidth * 0.80).clamp(30.0, 40.0);
+                return Center(
+                    child: Container(
+                  width: sz,
+                  height: sz,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFF06B6D4),
+                      shape: BoxShape.circle,
+                      boxShadow: _DT.glowShadow),
+                  alignment: Alignment.center,
+                  child: Text('${day.day}',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14)),
+                ));
+              }),
+              todayBuilder: (ctx, day, _) => LayoutBuilder(builder: (ctx, c) {
+                final sz = (c.maxWidth * 0.80).clamp(30.0, 40.0);
+                return Center(
+                    child: Container(
+                  width: sz,
+                  height: sz,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFEEF2FF),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFF4F46E5), width: 1.8)),
+                  alignment: Alignment.center,
+                  child: Text('${day.day}',
+                      style: const TextStyle(
+                          color: Color(0xFF4F46E5),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14)),
+                ));
+              }),
+              markerBuilder: (ctx, day, events) => events.isEmpty
+                  ? const SizedBox.shrink()
+                  : Positioned(
+                      bottom: 5,
+                      child: Container(
+                          width: 5,
+                          height: 5,
+                          decoration: const BoxDecoration(
+                              color: _DT.primary, shape: BoxShape.circle))),
+            ),
+            calendarStyle: CalendarStyle(
+              defaultTextStyle: const TextStyle(
+                  color: _DT.ink, fontWeight: FontWeight.w500, fontSize: 13),
+              weekendTextStyle: TextStyle(
+                  color: _DT.ink.withOpacity(0.55),
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13),
+              outsideTextStyle:
+                  const TextStyle(color: _DT.inkMuted, fontSize: 13),
+              selectedDecoration: const BoxDecoration(
+                  color: Colors.transparent, shape: BoxShape.circle),
+              todayDecoration: const BoxDecoration(
+                  color: Colors.transparent, shape: BoxShape.circle),
+              markerDecoration: const BoxDecoration(
+                  color: Colors.transparent, shape: BoxShape.circle),
+              cellMargin: const EdgeInsets.all(4),
+              markersMaxCount: 1,
+            ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(
+                  color: _DT.inkSecond.withOpacity(0.70),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5),
+              weekendStyle: TextStyle(
+                  color: _DT.inkSecond.withOpacity(0.50),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5),
+            ),
+            headerStyle: HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+              titleTextStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _DT.ink,
+                  letterSpacing: -0.3),
+              leftChevronIcon: _chevronBtn(Icons.chevron_left_rounded),
+              rightChevronIcon: _chevronBtn(Icons.chevron_right_rounded),
+              leftChevronPadding: EdgeInsets.zero,
+              rightChevronPadding: EdgeInsets.zero,
+              leftChevronMargin: const EdgeInsets.only(left: 8),
+              rightChevronMargin: const EdgeInsets.only(right: 8),
+              headerPadding: const EdgeInsets.only(bottom: 12),
+              decoration: const BoxDecoration(color: Colors.transparent),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chevronBtn(IconData icon) => Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: const Color(0xFFEEF2FF),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.25)),
+        ),
+        child: Icon(icon, color: const Color(0xFF4F46E5), size: 18),
+      );
+
+  Widget _buildApplicationCard(Application app) {
+    final cfg = _statusConfig(app.status);
+    return _PressableScale(
+      onTap: () {},
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+            color: _DT.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _DT.border),
+            boxShadow: _DT.cardShadow),
+        clipBehavior: Clip.hardEdge,
+        child: IntrinsicHeight(
+          child: Row(children: [
+            Container(
+                width: 4,
+                decoration: BoxDecoration(
+                    color: cfg.fg,
+                    borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        bottomLeft: Radius.circular(20)))),
+            Expanded(
+                child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+              child: Row(children: [
+                Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                        color: _DT.primaryLight,
+                        borderRadius: BorderRadius.circular(13)),
+                    child: const Icon(Icons.business_center_rounded,
+                        color: _DT.primary, size: 21)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                      Text(app.orgName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: _DT.ink,
+                              letterSpacing: -0.3)),
+                      const SizedBox(height: 3),
+                      Text(_getStatusText(app.status),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                              color: _DT.inkSecond)),
+                    ])),
+                const SizedBox(width: 10),
+                _buildStatusPill(app.status),
+              ]),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventCard(Event event) {
+    final isUpcoming = event.date.isAfter(DateTime.now());
+    return _PressableScale(
+      onTap: () {},
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: _DT.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: isUpcoming ? _DT.primary.withOpacity(0.18) : _DT.border),
+          boxShadow: _DT.cardShadow,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 52,
+              height: 58,
+              decoration: BoxDecoration(
+                gradient: isUpcoming
+                    ? const LinearGradient(
+                        colors: [_DT.primaryLight, Color(0xFFE4E2FF)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight)
+                    : null,
+                color: isUpcoming ? null : _DT.surfaceAlt,
+                borderRadius: BorderRadius.circular(14),
+                border: isUpcoming
+                    ? Border.all(color: _DT.primary.withOpacity(0.20))
+                    : Border.all(color: _DT.border),
+              ),
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(DateFormat('d').format(event.date),
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: isUpcoming ? _DT.primary : _DT.inkMuted,
+                            height: 1)),
+                    const SizedBox(height: 3),
+                    Text(DateFormat('MMM').format(event.date).toUpperCase(),
+                        style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                            color: isUpcoming ? _DT.primaryMid : _DT.inkMuted)),
+                  ]),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(event.title,
+                      style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: _DT.ink,
+                          letterSpacing: -0.3)),
+                  const SizedBox(height: 5),
+                  Text(event.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12, color: _DT.inkSecond, height: 1.55)),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: isUpcoming ? _DT.primaryLight : _DT.surfaceAlt,
+                        borderRadius: BorderRadius.circular(7)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.access_time_rounded,
+                          size: 10,
+                          color: isUpcoming ? _DT.primary : _DT.inkSecond),
+                      const SizedBox(width: 4),
+                      Text(_formatTime(event.date),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.2,
+                              color: isUpcoming ? _DT.primary : _DT.inkSecond)),
+                    ]),
+                  ),
+                ])),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded,
+                size: 18, color: isUpcoming ? _DT.primaryMid : _DT.inkMuted),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(ApplicationStatus status) {
+    final s = _statusConfig(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+          color: s.bg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: s.ring, width: 1)),
+      child: Text(s.label,
+          style: TextStyle(
+              color: s.fg,
+              fontWeight: FontWeight.w700,
+              fontSize: 10.5,
+              letterSpacing: 0.1)),
+    );
+  }
+
+  _StatusCfg _statusConfig(ApplicationStatus status) {
+    switch (status) {
+      case ApplicationStatus.pending:
+        return const _StatusCfg(
+            'Pending', _DT.amberBg, _DT.amberFg, _DT.amberRing);
+      case ApplicationStatus.for_approval:
+        return const _StatusCfg(
+            'Approval', _DT.amberBg, _DT.amberFg, _DT.amberRing);
+      case ApplicationStatus.accepted:
+        return const _StatusCfg(
+            'Accepted', _DT.emeraldBg, _DT.emeraldFg, _DT.emeraldRing);
+      case ApplicationStatus.interview_scheduled:
+        return const _StatusCfg(
+            'Interview', _DT.indigoBg, _DT.indigoFg, _DT.indigoRing);
+      case ApplicationStatus.declined:
+        return const _StatusCfg(
+            'Declined', _DT.roseBg, _DT.roseFg, _DT.roseRing);
+    }
+  }
+
+  Widget _sectionLabel(String title, String sub) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Container(
+          width: 4,
+          height: 22,
+          decoration: BoxDecoration(
+              color: const Color(0xFF06B6D4),
+              borderRadius: BorderRadius.circular(2))),
+      const SizedBox(width: 10),
+      Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title,
+            style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _DT.ink,
+                letterSpacing: -0.4)),
+        Text(sub,
+            style: const TextStyle(
+                fontSize: 11.5,
+                color: _DT.inkSecond,
+                fontWeight: FontWeight.w400)),
+      ])),
+    ]);
+  }
+
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 60),
+      child: Column(children: [
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+              color: const Color(0xFF06B6D4),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: _DT.heroShadow),
+          child: const Icon(Icons.calendar_month_rounded,
+              size: 32, color: Colors.white),
+        ),
+        const SizedBox(height: 22),
+        const Text('All clear!',
+            style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: _DT.ink,
+                letterSpacing: -0.6)),
+        const SizedBox(height: 8),
+        const Text(
+            'No events or applications yet.\nOrganization updates will show here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: _DT.inkSecond, height: 1.6)),
+      ]),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final h = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+    final m = dt.minute.toString().padLeft(2, '0');
+    final per = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m $per';
+  }
+
+  String _getStatusText(ApplicationStatus status) {
+    switch (status) {
+      case ApplicationStatus.pending:
+        return 'Pending Review';
+      case ApplicationStatus.for_approval:
+        return 'For Approval';
+      case ApplicationStatus.accepted:
+        return 'Accepted';
+      case ApplicationStatus.interview_scheduled:
+        return 'Interview Scheduled';
+      case ApplicationStatus.declined:
+        return 'Declined';
+    }
+  }
 }

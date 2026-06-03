@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 import 'org_form_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 
 // =============================================================================
 // DESIGN SYSTEM TOKENS
@@ -342,9 +345,7 @@ class _ProfileTabState extends State<_ProfileTab>
                   accentColor: _AppColors.primary,
                 ),
               if (widget.org.activitiesHighlights.isNotEmpty)
-                _ListCard(
-                  icon: Icons.event_note_rounded,
-                  label: 'Activities & Events',
+                _MediaGalleryCard(
                   items: widget.org.activitiesHighlights,
                   accentColor: _AppColors.secondary,
                 ),
@@ -700,5 +701,290 @@ class _LazyOrgFormState extends State<_LazyOrgForm> {
       _form = OrgFormContent(title: widget.title, logoAsset: widget.logoAsset);
     }
     return _form!;
+  }
+}
+
+// =============================================================================
+// _MediaGalleryCard — rich display for Activities & Events
+// =============================================================================
+class _MediaGalleryCard extends StatelessWidget {
+  final List<OrgMediaItem> items;
+  final Color accentColor;
+
+  const _MediaGalleryCard({
+    required this.items,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: accentColor.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 5)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ────────────────────────────────────────────────────────
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.event_note_rounded,
+                    color: accentColor, size: 18),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'ACTIVITIES & EVENTS',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: _AppColors.textMuted,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── Media items ───────────────────────────────────────────────────
+          ...items.map((item) => _buildItem(context, item)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItem(BuildContext context, OrgMediaItem item) {
+    switch (item.type) {
+      case 'image':
+        return _ImageItem(item: item, accentColor: accentColor);
+      case 'video':
+        return _VideoItem(item: item);
+      case 'text':
+      default:
+        return _TextItem(item: item, accentColor: accentColor);
+    }
+  }
+}
+
+// ── Text item ──────────────────────────────────────────────────────────────
+class _TextItem extends StatelessWidget {
+  final OrgMediaItem item;
+  final Color accentColor;
+  const _TextItem({required this.item, required this.accentColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(top: 6, right: 10),
+            decoration: BoxDecoration(
+              color: accentColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              item.content,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: _AppColors.textDark,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Image item ─────────────────────────────────────────────────────────────
+class _ImageItem extends StatelessWidget {
+  final OrgMediaItem item;
+  final Color accentColor;
+  const _ImageItem({required this.item, required this.accentColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () => _openFullscreen(context),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: CachedNetworkImage(
+                imageUrl: item.content,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                placeholder: (_, __) => Container(
+                  height: 180,
+                  color: Colors.grey.shade100,
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  height: 100,
+                  color: Colors.grey.shade100,
+                  child: const Icon(Icons.broken_image_rounded,
+                      color: Colors.grey),
+                ),
+              ),
+            ),
+          ),
+          if (item.caption.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              item.caption,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade500,
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _openFullscreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: item.caption.isNotEmpty
+                ? Text(item.caption,
+                    style: const TextStyle(color: Colors.white, fontSize: 14))
+                : null,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: CachedNetworkImage(
+                imageUrl: item.content,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Video item ─────────────────────────────────────────────────────────────
+class _VideoItem extends StatefulWidget {
+  final OrgMediaItem item;
+  const _VideoItem({required this.item});
+
+  @override
+  State<_VideoItem> createState() => _VideoItemState();
+}
+
+class _VideoItemState extends State<_VideoItem> {
+  late VideoPlayerController _ctrl;
+  ChewieController? _chewieCtrl;
+  bool _initialized = false;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.item.content))
+      ..initialize().then((_) {
+        if (mounted) {
+          _chewieCtrl = ChewieController(
+            videoPlayerController: _ctrl,
+            autoPlay: false,
+            looping: false,
+            allowFullScreen: true,
+            aspectRatio: _ctrl.value.aspectRatio,
+            placeholder: Container(color: Colors.black12),
+          );
+          setState(() => _initialized = true);
+        }
+      }).catchError((_) {
+        if (mounted) setState(() => _error = true);
+      });
+  }
+
+  @override
+  void dispose() {
+    _chewieCtrl?.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: _error
+                ? Container(
+                    height: 120,
+                    color: Colors.grey.shade100,
+                    child: const Center(
+                        child: Icon(Icons.videocam_off_rounded,
+                            color: Colors.grey, size: 36)),
+                  )
+                : !_initialized
+                    ? Container(
+                        height: 180,
+                        color: Colors.black12,
+                        child: const Center(child: CircularProgressIndicator()),
+                      )
+                    : AspectRatio(
+                        aspectRatio: _ctrl.value.aspectRatio,
+                        child: Chewie(controller: _chewieCtrl!),
+                      ),
+          ),
+          if (widget.item.caption.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              widget.item.caption,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade500,
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

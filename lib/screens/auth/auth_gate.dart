@@ -3,12 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import '../../core/app_state.dart';
 import '../Student_Role/student_dashboard_screen.dart';
-import '../Student_Role/student_dashboard_events.dart';
 import '../Officer_Role/officer_rule_screen.dart';
 import '../Admin_Role/admin_dashboard_screen.dart';
 import 'unified_login_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'get_started_screen.dart';
+import 'forgot_password_page.dart';
 
 /// AuthGate — initial checkpoint of the app.
 ///
@@ -42,10 +42,19 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _checkSession() async {
     final session = Supabase.instance.client.auth.currentSession;
 
-    // Scenario A — No active session → go to login
-    // Scenario A — No active session → show calendar as guest
-    // ✅ Correct
-    // After
+// ✅ Intercept password recovery sessions BEFORE anything else
+    if (session != null) {
+      final type = Uri.base.queryParameters['type'];
+      if (type == 'recovery') {
+        _goTo(const ForgotPasswordPage());
+        return;
+      }
+    }
+
+// Scenario A — No active session → go to login
+// Scenario A — No active session → show calendar as guest
+// ✅ Correct
+// After
     if (session == null) {
       final prefs = await SharedPreferences.getInstance();
       final isFirstLaunch = prefs.getBool('is_first_launch') ?? true;

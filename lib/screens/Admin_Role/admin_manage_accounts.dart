@@ -27,7 +27,6 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
     try {
       final response =
           await supabase.Supabase.instance.client.from('profiles').select('*');
-
       setState(() {
         dbUsers = List<Map<String, dynamic>>.from(response as List);
         isLoading = false;
@@ -161,10 +160,12 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                                           : const Color(0xFF0F172A),
                                     ),
                                   ),
-                                  Text('ID: ${org.id}',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade500)),
+                                  Text(
+                                    'ID: ${org.id}',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade500),
+                                  ),
                                 ],
                               ),
                             ),
@@ -193,7 +194,6 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                           Navigator.pop(ctx);
                           final userId = user['id'].toString();
                           final orgId = selectedOrg!.id;
-
                           try {
                             await supabase.Supabase.instance.client
                                 .from('profiles')
@@ -267,208 +267,284 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : dbUsers.isEmpty
               ? const Center(child: Text('No users found'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: dbUsers.length,
-                  itemBuilder: (context, index) {
-                    final u = dbUsers[index];
-                    final role = u['role']?.toString() ?? 'student';
-                    final isActive = u['active'] ?? true;
-                    final assignedOrgId = u['assigned_org_id']?.toString();
+              : Builder(
+                  builder: (context) {
+                    // ── Group users by role ──────────────────────────────
+                    final students = dbUsers
+                        .where((u) =>
+                            (u['role']?.toString() ?? 'student') == 'student')
+                        .toList();
+                    final officers = dbUsers
+                        .where((u) => u['role']?.toString() == 'officer')
+                        .toList();
+                    final admins = dbUsers
+                        .where((u) => u['role']?.toString() == 'admin')
+                        .toList();
 
-                    // Find org name to display on the card
-                    String? assignedOrgName;
-                    if (assignedOrgId != null) {
-                      try {
-                        assignedOrgName = AppState.instance.organizations
-                            .firstWhere((o) => o.id == assignedOrgId)
-                            .name;
-                      } catch (_) {
-                        assignedOrgName = assignedOrgId;
-                      }
+                    // ── Build flat list: [header, user, user, header, ...] ──
+                    final List<dynamic> items = [];
+
+                    if (students.isNotEmpty) {
+                      items.add({'_header': 'Students'});
+                      items.addAll(students);
+                    }
+                    if (officers.isNotEmpty) {
+                      items.add({'_header': 'Officers'});
+                      items.addAll(officers);
+                    }
+                    if (admins.isNotEmpty) {
+                      items.add({'_header': 'Admins'});
+                      items.addAll(admins);
                     }
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                Colors.black.withOpacity(isDark ? 0.3 : 0.05),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Avatar
-                          CircleAvatar(
-                            radius: 24,
-                            backgroundColor: accent,
-                            child: Text(
-                              (u['name']?.toString().isNotEmpty == true)
-                                  ? u['name'].toString()[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final item = items[index];
 
-                          // Info
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        // ── Render section header ──
+                        if (item is Map && item.containsKey('_header')) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 10),
+                            child: Row(
                               children: [
                                 Text(
-                                  u['name']?.toString() ?? 'No Name',
+                                  item['_header'],
                                   style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: textMain),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: accent,
+                                    letterSpacing: 0.8,
+                                  ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  u['email']?.toString() ?? '',
-                                  style:
-                                      TextStyle(color: textSub, fontSize: 13),
-                                ),
-                                if (u['student_id'] != null)
-                                  Text(
-                                    'ID: ${u['student_id']}',
-                                    style: TextStyle(
-                                        color: textSub2, fontSize: 12),
-                                  ),
-
-                                // ── Assigned org badge (shows if officer) ──
-                                if (role == 'officer' &&
-                                    assignedOrgName != null) ...[
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF6366F1)
-                                          .withOpacity(0.10),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: const Color(0xFF6366F1)
-                                            .withOpacity(0.30),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.shield_rounded,
-                                            color: Color(0xFF6366F1), size: 12),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          assignedOrgName,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Color(0xFF6366F1),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-
-                                const SizedBox(height: 10),
-
-                                // Role Dropdown
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10),
-                                  decoration: BoxDecoration(
-                                    color: dropdownBg,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: DropdownButton<String>(
-                                    value: role,
-                                    underline: const SizedBox(),
-                                    dropdownColor: dropdownBg,
-                                    style: TextStyle(color: textMain),
-                                    icon: Icon(Icons.keyboard_arrow_down,
-                                        color: dropdownIcon),
-                                    items: const [
-                                      DropdownMenuItem(
-                                          value: 'student',
-                                          child: Text('Student')),
-                                      DropdownMenuItem(
-                                          value: 'officer',
-                                          child: Text('Officer')),
-                                      DropdownMenuItem(
-                                          value: 'admin', child: Text('Admin')),
-                                    ],
-                                    onChanged: (val) async {
-                                      if (val == null) return;
-
-                                      if (val == 'officer') {
-                                        // Show org picker
-                                        await _showOrgPickerDialog(u);
-                                      } else {
-                                        // Remove officer privileges
-                                        await supabase.Supabase.instance.client
-                                            .from('profiles')
-                                            .update({
-                                          'role': val,
-                                          'assigned_org_id': null,
-                                        }).eq('id', u['id'].toString());
-
-                                        setState(() {
-                                          dbUsers[index]['role'] = val;
-                                          dbUsers[index]['assigned_org_id'] =
-                                              null;
-                                        });
-                                        _showSnack('Role updated to $val');
-                                      }
-                                    },
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Divider(
+                                    color: accent.withOpacity(0.25),
+                                    thickness: 1,
                                   ),
                                 ),
                               ],
                             ),
-                          ),
+                          );
+                        }
 
-                          // Active Switch
-                          Column(
-                            children: [
-                              Text(
-                                isActive ? 'Active' : 'Inactive',
-                                style: TextStyle(
-                                  color: isActive ? success : danger,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Switch(
-                                value: isActive,
-                                activeColor: success,
-                                onChanged: (value) async {
-                                  await _updateActiveInDatabase(
-                                      u['id'].toString(), value);
-                                  setState(
-                                      () => dbUsers[index]['active'] = value);
-                                  _showSnack(value
-                                      ? 'User activated'
-                                      : 'User disabled');
-                                },
+                        // ── Render user card ──
+                        final u = item as Map<String, dynamic>;
+                        final role = u['role']?.toString() ?? 'student';
+                        final isActive = u['active'] ?? true;
+                        final assignedOrgId = u['assigned_org_id']?.toString();
+
+                        // Find org name to display on the card
+                        String? assignedOrgName;
+                        if (assignedOrgId != null) {
+                          try {
+                            assignedOrgName = AppState.instance.organizations
+                                .firstWhere((o) => o.id == assignedOrgId)
+                                .name;
+                          } catch (_) {
+                            assignedOrgName = assignedOrgId;
+                          }
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black
+                                    .withOpacity(isDark ? 0.3 : 0.05),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-    );
-  }
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Avatar
+                              CircleAvatar(
+                                radius: 24,
+                                backgroundColor: accent,
+                                child: Text(
+                                  (u['name']?.toString().isNotEmpty == true)
+                                      ? u['name'].toString()[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+
+                              // Info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      u['name']?.toString() ?? 'No Name',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: textMain),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      u['email']?.toString() ?? '',
+                                      style: TextStyle(
+                                          color: textSub, fontSize: 13),
+                                    ),
+                                    if (u['student_id'] != null)
+                                      Text(
+                                        'ID: ${u['student_id']}',
+                                        style: TextStyle(
+                                            color: textSub2, fontSize: 12),
+                                      ),
+
+                                    // ── Assigned org badge ──
+                                    if (role == 'officer' &&
+                                        assignedOrgName != null) ...[
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF6366F1)
+                                              .withOpacity(0.10),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: const Color(0xFF6366F1)
+                                                .withOpacity(0.30),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.shield_rounded,
+                                                color: Color(0xFF6366F1),
+                                                size: 12),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              assignedOrgName,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF6366F1),
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+
+                                    const SizedBox(height: 10),
+
+                                    // Role Dropdown
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        color: dropdownBg,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: DropdownButton<String>(
+                                        value: role,
+                                        underline: const SizedBox(),
+                                        dropdownColor: dropdownBg,
+                                        style: TextStyle(color: textMain),
+                                        icon: Icon(Icons.keyboard_arrow_down,
+                                            color: dropdownIcon),
+                                        items: const [
+                                          DropdownMenuItem(
+                                              value: 'student',
+                                              child: Text('Student')),
+                                          DropdownMenuItem(
+                                              value: 'officer',
+                                              child: Text('Officer')),
+                                          DropdownMenuItem(
+                                              value: 'admin',
+                                              child: Text('Admin')),
+                                        ],
+                                        onChanged: (val) async {
+                                          if (val == null) return;
+
+                                          if (val == 'officer') {
+                                            // Show org picker
+                                            await _showOrgPickerDialog(u);
+                                          } else {
+                                            // Remove officer privileges
+                                            await supabase
+                                                .Supabase.instance.client
+                                                .from('profiles')
+                                                .update({
+                                              'role': val,
+                                              'assigned_org_id': null,
+                                            }).eq('id', u['id'].toString());
+
+                                            setState(() {
+                                              final realIdx =
+                                                  dbUsers.indexWhere((d) =>
+                                                      d['id'] == u['id']);
+                                              if (realIdx != -1) {
+                                                dbUsers[realIdx]['role'] = val;
+                                                dbUsers[realIdx]
+                                                    ['assigned_org_id'] = null;
+                                              }
+                                            });
+                                            _showSnack('Role updated to $val');
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Active Switch
+                              Column(
+                                children: [
+                                  Text(
+                                    isActive ? 'Active' : 'Inactive',
+                                    style: TextStyle(
+                                      color: isActive ? success : danger,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: isActive,
+                                    activeThumbColor: success,
+                                    onChanged: (value) async {
+                                      await _updateActiveInDatabase(
+                                          u['id'].toString(), value);
+                                      setState(() {
+                                        final realIdx = dbUsers.indexWhere(
+                                            (d) => d['id'] == u['id']);
+                                        if (realIdx != -1) {
+                                          dbUsers[realIdx]['active'] = value;
+                                        }
+                                      });
+                                      _showSnack(value
+                                          ? 'User activated'
+                                          : 'User disabled');
+                                    },
+                                  ),
+                                ],
+                              ), // Column (active switch)
+                            ],
+                          ), // Row
+                        ); // Container (card)
+                      }, // itemBuilder
+                    ); // ListView.builder
+                  }, // Builder callback
+                ), // Builder
+    ); // Scaffold
+  } // build()
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(

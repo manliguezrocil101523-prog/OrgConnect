@@ -442,11 +442,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 expandedHeight: MediaQuery.of(context).size.height * 0.38,
                 backgroundColor: _kPrimary,
                 elevation: 0,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                ),
                 title: const Text('Profile',
                     style: TextStyle(
                         color: Colors.white,
@@ -1254,7 +1249,6 @@ class _FormField extends StatefulWidget {
   final TextInputType? keyboardType;
 
   const _FormField({
-    super.key,
     required this.label,
     required this.controller,
     required this.hint,
