@@ -33,7 +33,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
   late final AnimationController _animationController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 700),
+    duration: const Duration(milliseconds: 600),
   )..forward();
 
   late final Animation<double> _fadeAnimation = CurvedAnimation(
@@ -42,14 +42,12 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
   );
 
   late final Animation<Offset> _slideAnimation = Tween<Offset>(
-    begin: const Offset(0, 0.05),
+    begin: const Offset(0, 0.04),
     end: Offset.zero,
-  ).animate(
-    CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOut,
-    ),
-  );
+  ).animate(CurvedAnimation(
+    parent: _animationController,
+    curve: Curves.easeOut,
+  ));
 
   @override
   void initState() {
@@ -61,30 +59,23 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
   @override
   void dispose() {
     _animationController.dispose();
-
     _emailCtrl
       ..removeListener(_validate)
       ..dispose();
-
     _passCtrl
       ..removeListener(_validate)
       ..dispose();
-
     super.dispose();
   }
 
   void _validate() {
     final valid =
         _emailCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
-
-    if (valid != _isFormValid) {
-      setState(() => _isFormValid = valid);
-    }
+    if (valid != _isFormValid) setState(() => _isFormValid = valid);
   }
 
   Future<void> _signIn() async {
     if (!_isFormValid || _isLoading) return;
-
     setState(() => _isLoading = true);
 
     final email = _emailCtrl.text.trim();
@@ -113,12 +104,8 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
       if (!isActive) {
         await Supabase.instance.client.auth.signOut();
-
-        _snack(
-          'Your account has been deactivated. Contact admin.',
-          isError: true,
-        );
-
+        _snack('Your account has been deactivated. Contact admin.',
+            isError: true);
         return;
       }
 
@@ -126,45 +113,29 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
       if (!mounted) return;
 
-      // ================= ADMIN =================
       if (role == 'admin') {
         AppState.instance.setRole(UserRole.admin);
-
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const AdminDashboard(),
-          ),
+          MaterialPageRoute(builder: (_) => const AdminDashboard()),
         );
-      }
-
-      // ================= OFFICER =================
-      else if (role == 'officer') {
+      } else if (role == 'officer') {
         final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
 
         if (assignedOrgId.isEmpty) {
           await Supabase.instance.client.auth.signOut();
-
-          _snack(
-            'You have not been assigned to an organization yet.',
-            isError: true,
-          );
-
+          _snack('You have not been assigned to an organization yet.',
+              isError: true);
           return;
         }
 
         final orgs = AppState.instance.organizations;
-
         final orgIndex = orgs.indexWhere((o) => o.id == assignedOrgId);
 
         if (orgIndex == -1) {
           await Supabase.instance.client.auth.signOut();
-
-          _snack(
-            'Assigned organization not found. Contact admin.',
-            isError: true,
-          );
-
+          _snack('Assigned organization not found. Contact admin.',
+              isError: true);
           return;
         }
 
@@ -185,12 +156,8 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
             ),
           ),
         );
-      }
-
-      // ================= STUDENT =================
-      else {
+      } else {
         final rawJoined = profileData['joined_org_ids'];
-
         final joinedOrgIds = switch (rawJoined) {
           null => <String>[],
           String s => List<String>.from(jsonDecode(s) as List),
@@ -210,15 +177,12 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
         );
 
         AppState.instance.setRole(UserRole.student);
-
         await AppState.instance.setStudentProfile(profile);
         await AppState.instance.fetchNotifications();
 
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const StudentDashboardScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
         );
       }
     } on AuthException catch (e) {
@@ -228,28 +192,20 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
         _snack(e.message, isError: true);
       }
     } catch (e) {
-      _snack(
-        'Something went wrong. Please try again.',
-        isError: true,
-      );
+      _snack('Something went wrong. Please try again.', isError: true);
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _snack(String msg, {bool isError = false}) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
         backgroundColor: isError ? _kError : const Color(0xFF059669),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
@@ -258,9 +214,8 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-        ),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: const Text('Email Not Confirmed'),
         content: Text(
           'Your email ($email) has not been confirmed yet. '
@@ -278,16 +233,11 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                   type: OtpType.signup,
                   email: email,
                 );
-
                 if (!ctx.mounted) return;
-
                 _snack('Confirmation email sent!');
                 Navigator.of(ctx).pop();
               } catch (e) {
-                _snack(
-                  'Failed to resend: $e',
-                  isError: true,
-                );
+                _snack('Failed to resend: $e', isError: true);
               }
             },
             child: const Text('Resend Email'),
@@ -299,9 +249,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
   void _showForgotPasswordDialog() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const ForgotPasswordPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
     );
   }
 
@@ -311,30 +259,44 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
     final screenW = mq.size.width;
     final screenH = mq.size.height;
 
-    // Responsive scale factor — clamps between small (320dp) and large (428dp) phones
-    final scale = (screenW / 390).clamp(0.82, 1.18);
+    // ── Unified scale: 390 pt is baseline, clamp for very small/large screens
+    final scale = (screenW / 390).clamp(0.80, 1.20);
 
-    // Responsive spacing helpers
-    final hPad = (screenW * 0.062).clamp(16.0, 32.0);
-    final cardHPad = (screenW * 0.062).clamp(16.0, 28.0);
-    final cardVPad = (screenH * 0.032).clamp(20.0, 36.0);
-    final logoHeight = (screenH * 0.28).clamp(200.0, 360.0);
-    final btnHeight = (screenH * 0.072).clamp(50.0, 62.0);
-    final fieldSpacing = (screenH * 0.022).clamp(12.0, 22.0);
-    final sectionSpacing = (screenH * 0.020).clamp(10.0, 20.0);
+    // ── Adaptive spacing – proportional to screen height, tightly clamped
+    final hPad = (screenW * 0.055).clamp(14.0, 28.0);
+
+    // Logo takes up a fixed proportion of height; kept smaller to reduce total height
+    final logoSize = (screenH * 0.16).clamp(110.0, 180.0);
+
+    // Field gap and section gap shrink on short screens
+    final fieldSpacing = (screenH * 0.018).clamp(10.0, 18.0);
+    final sectionSpacing = (screenH * 0.015).clamp(8.0, 16.0);
+
+    // Button height: consistent, not bloated
+    final btnHeight = (screenH * 0.064).clamp(48.0, 58.0);
+
+    // Card padding – horizontal = generous, vertical = compact
+    final cardHPad = (screenW * 0.055).clamp(14.0, 26.0);
+    final cardVPad = (screenH * 0.030).clamp(20.0, 32.0);
+
+    // Border radius scales slightly with screen width
+    final cardRadius = (screenW * 0.075).clamp(20.0, 32.0);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {},
       child: Scaffold(
+        // Resize when keyboard appears so content doesn't overflow
+        resizeToAvoidBottomInset: true,
         backgroundColor: _kBackground,
         body: SafeArea(
-          child: Align(
-            alignment: Alignment.topCenter,
+          child: Center(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               padding: EdgeInsets.symmetric(
                 horizontal: hPad,
-                vertical: (screenH * 0.025).clamp(12.0, 24.0),
+                // Top/bottom: shrinks proportionally on short screens
+                vertical: (screenH * 0.025).clamp(12.0, 28.0),
               ),
               child: FadeTransition(
                 opacity: _fadeAnimation,
@@ -350,67 +312,56 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                       ),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(
-                          (screenW * 0.085).clamp(24.0, 36.0),
-                        ),
+                        borderRadius: BorderRadius.circular(cardRadius),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 24,
-                            offset: const Offset(0, 6),
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 20,
+                            offset: const Offset(0, 4),
                           ),
                         ],
                       ),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min, // ← shrink-wraps content
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // ================= LOGO =================
+                          // ── LOGO ──────────────────────────────────────────
+                          // Fixed height from the responsive formula above;
+                          // no Transform.translate hacks that cause overflow.
+                          Image.asset(
+                            'assets/OrgConnectLogo.png',
+                            height: logoSize,
+                            fit: BoxFit.contain,
+                          ),
 
-                          Transform.translate(
-                            offset: const Offset(0, 35),
-                            child: Center(
-                              child: Image.asset(
-                                'assets/OrgConnectLogo.png',
-                                height: logoHeight * 1.75,
-                                fit: BoxFit.contain,
-                              ),
+                          SizedBox(height: sectionSpacing * 0.5),
+
+                          // ── TITLE ─────────────────────────────────────────
+                          Text(
+                            'Welcome!',
+                            style: TextStyle(
+                              fontSize: (30 * scale).clamp(24.0, 34.0),
+                              fontWeight: FontWeight.w800,
+                              color: _kTextColor,
+                              letterSpacing: -0.5,
                             ),
                           ),
 
-                          Transform.translate(
-                            offset: const Offset(0, -45),
-                            child: Column(
-                              children: [
-                                // ================= TITLE =================
+                          SizedBox(height: (6 * scale).clamp(4.0, 8.0)),
 
-                                Text(
-                                  'Welcome!',
-                                  style: TextStyle(
-                                    fontSize: (34 * scale).clamp(26.0, 38.0),
-                                    fontWeight: FontWeight.w800,
-                                    color: _kTextColor,
-                                    letterSpacing: -0.5,
-                                  ),
-                                ),
-
-                                SizedBox(height: (8 * scale).clamp(5.0, 10.0)),
-
-                                Text(
-                                  'Log in to your existing account',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: (15 * scale).clamp(12.0, 16.0),
-                                    color: const Color(0xFF6B7280),
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ],
+                          Text(
+                            'Log in to your existing account',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: (14 * scale).clamp(11.0, 15.0),
+                              color: const Color(0xFF6B7280),
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
 
                           SizedBox(height: sectionSpacing),
 
-                          // ================= EMAIL FIELD =================
+                          // ── EMAIL ─────────────────────────────────────────
                           _ModernField(
                             controller: _emailCtrl,
                             hint: 'Email',
@@ -421,34 +372,28 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
                           SizedBox(height: fieldSpacing),
 
-                          // ================= PASSWORD FIELD =================
+                          // ── PASSWORD ──────────────────────────────────────
                           _ModernField(
                             controller: _passCtrl,
                             hint: 'Password',
                             icon: Icons.lock_outline_rounded,
                             obscure: _obscure,
                             scale: scale,
-                            onToggle: () {
-                              setState(() {
-                                _obscure = !_obscure;
-                              });
-                            },
+                            onToggle: () => setState(() => _obscure = !_obscure),
                             onSubmitted: (_) => _signIn(),
                           ),
 
-                          SizedBox(
-                            height: (fieldSpacing * 0.75).clamp(8.0, 16.0),
-                          ),
+                          SizedBox(height: (fieldSpacing * 0.7).clamp(6.0, 14.0)),
 
-                          // ================= FORGOT PASSWORD =================
+                          // ── FORGOT PASSWORD ───────────────────────────────
                           Align(
                             alignment: Alignment.centerRight,
                             child: GestureDetector(
-                              onTap: () => _showForgotPasswordDialog(),
+                              onTap: _showForgotPasswordDialog,
                               child: Text(
                                 'Forgot Password?',
                                 style: TextStyle(
-                                  fontSize: (14 * scale).clamp(11.0, 15.0),
+                                  fontSize: (13 * scale).clamp(10.0, 14.0),
                                   fontWeight: FontWeight.w500,
                                   color: _kTextColor,
                                 ),
@@ -458,7 +403,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
                           SizedBox(height: sectionSpacing),
 
-                          // ================= LOGIN BUTTON =================
+                          // ── LOGIN BUTTON ──────────────────────────────────
                           SizedBox(
                             width: double.infinity,
                             height: btnHeight,
@@ -468,7 +413,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _kPrimaryBlue,
                                 disabledBackgroundColor:
-                                    _kPrimaryBlue.withOpacity(0.45),
+                                    _kPrimaryBlue.withOpacity(0.4),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(40),
@@ -476,8 +421,8 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                               ),
                               child: _isLoading
                                   ? SizedBox(
-                                      width: (24 * scale).clamp(18.0, 26.0),
-                                      height: (24 * scale).clamp(18.0, 26.0),
+                                      width: (22 * scale).clamp(16.0, 24.0),
+                                      height: (22 * scale).clamp(16.0, 24.0),
                                       child: const CircularProgressIndicator(
                                         strokeWidth: 2.5,
                                         color: Colors.white,
@@ -486,10 +431,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                                   : Text(
                                       'LOG IN',
                                       style: TextStyle(
-                                        fontSize: (17 * scale).clamp(
-                                          14.0,
-                                          19.0,
-                                        ),
+                                        fontSize: (16 * scale).clamp(13.0, 18.0),
                                         fontWeight: FontWeight.w700,
                                         color: Colors.white,
                                         letterSpacing: 0.5,
@@ -500,7 +442,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
 
                           SizedBox(height: fieldSpacing),
 
-                          // ================= SIGNUP =================
+                          // ── SIGN UP ───────────────────────────────────────
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -508,27 +450,26 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                                 "Don't have an account? ",
                                 style: TextStyle(
                                   color: const Color(0xFF6B7280),
-                                  fontSize: (14 * scale).clamp(11.0, 15.0),
+                                  fontSize: (13 * scale).clamp(10.0, 14.0),
                                 ),
                               ),
                               GestureDetector(
-                                onTap: () {
-                                  Navigator.pushNamed(
-                                    context,
-                                    '/signup',
-                                  );
-                                },
+                                onTap: () =>
+                                    Navigator.pushNamed(context, '/signup'),
                                 child: Text(
                                   'Sign Up',
                                   style: TextStyle(
                                     color: _kPrimaryBlue,
                                     fontWeight: FontWeight.w700,
-                                    fontSize: (14 * scale).clamp(11.0, 15.0),
+                                    fontSize: (13 * scale).clamp(10.0, 14.0),
                                   ),
                                 ),
                               ),
                             ],
                           ),
+
+                          // Extra bottom padding so card clears the keyboard
+                          SizedBox(height: (sectionSpacing * 0.5).clamp(4.0, 10.0)),
                         ],
                       ),
                     ),
@@ -543,6 +484,9 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// _ModernField – unchanged behaviour, slightly tighter vertical padding
+// ─────────────────────────────────────────────────────────────────────────────
 class _ModernField extends StatefulWidget {
   const _ModernField({
     required this.controller,
@@ -570,18 +514,12 @@ class _ModernField extends StatefulWidget {
 
 class _ModernFieldState extends State<_ModernField> {
   final FocusNode _focusNode = FocusNode();
-
   bool _focused = false;
 
   @override
   void initState() {
     super.initState();
-
-    _focusNode.addListener(() {
-      setState(() {
-        _focused = _focusNode.hasFocus;
-      });
-    });
+    _focusNode.addListener(() => setState(() => _focused = _focusNode.hasFocus));
   }
 
   @override
@@ -593,13 +531,15 @@ class _ModernFieldState extends State<_ModernField> {
   @override
   Widget build(BuildContext context) {
     final s = widget.scale;
-    final vertPad = (20 * s).clamp(14.0, 22.0);
-    final horzPad = (22 * s).clamp(16.0, 24.0);
-    final fontSize = (15 * s).clamp(12.0, 16.0);
-    final iconSize = (22 * s).clamp(18.0, 24.0);
+
+    // Tighter vertical padding → shorter field height on all screens
+    final vertPad = (14 * s).clamp(12.0, 18.0);
+    final horzPad = (18 * s).clamp(14.0, 22.0);
+    final fontSize = (14 * s).clamp(12.0, 15.0);
+    final iconSize = (20 * s).clamp(17.0, 22.0);
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
+      duration: const Duration(milliseconds: 160),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(40),
         border: Border.all(
@@ -626,10 +566,7 @@ class _ModernFieldState extends State<_ModernField> {
             vertical: vertPad,
           ),
           hintText: widget.hint,
-          hintStyle: TextStyle(
-            color: _kHintColor,
-            fontSize: fontSize,
-          ),
+          hintStyle: TextStyle(color: _kHintColor, fontSize: fontSize),
           prefixIcon: Icon(
             widget.icon,
             color: _focused ? _kPrimaryBlue : _kHintColor,
