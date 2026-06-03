@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'unified_login_page.dart';
 
 class GetStartedScreen extends StatelessWidget {
-  const GetStartedScreen({Key? key}) : super(key: key);
+  const GetStartedScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

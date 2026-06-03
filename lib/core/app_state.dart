@@ -214,6 +214,7 @@ class Member {
 }
 
 /// Organization event
+/// Organization event
 class Event {
   final String id;
   final String title;
@@ -221,6 +222,8 @@ class Event {
   final String description;
   final String orgName;
   final String? orgId;
+  final String? imageUrl; // ← keep for backward compat
+  final List<String> imageUrls; // ← NEW: multiple images
 
   Event({
     required this.id,
@@ -229,6 +232,8 @@ class Event {
     required this.description,
     required this.orgName,
     this.orgId,
+    this.imageUrl,
+    this.imageUrls = const [], // ← NEW
   });
 
   Event copyWith({
@@ -238,6 +243,8 @@ class Event {
     String? description,
     String? orgName,
     String? orgId,
+    String? imageUrl,
+    List<String>? imageUrls, // ← NEW
   }) =>
       Event(
         id: id ?? this.id,
@@ -246,6 +253,8 @@ class Event {
         description: description ?? this.description,
         orgName: orgName ?? this.orgName,
         orgId: orgId ?? this.orgId,
+        imageUrl: imageUrl ?? this.imageUrl,
+        imageUrls: imageUrls ?? this.imageUrls, // ← NEW
       );
 }
 
@@ -921,6 +930,21 @@ class AppState extends ChangeNotifier {
 
       events.clear();
       for (var item in response) {
+        // Parse image_urls array
+        List<String> imageUrls = [];
+        try {
+          final raw = item['image_urls'];
+          if (raw != null && raw is List) {
+            imageUrls = List<String>.from(raw);
+          }
+        } catch (_) {}
+
+        // Fallback: if imageUrls empty but image_url exists, use it
+        final singleUrl = item['image_url'] as String?;
+        if (imageUrls.isEmpty && singleUrl != null && singleUrl.isNotEmpty) {
+          imageUrls = [singleUrl];
+        }
+
         events.add(Event(
           id: item['id'],
           title: item['title'],
@@ -928,6 +952,8 @@ class AppState extends ChangeNotifier {
           description: item['description'] ?? '',
           orgName: item['org_name'] ?? '',
           orgId: item['org_id'],
+          imageUrl: singleUrl,
+          imageUrls: imageUrls,
         ));
       }
       notifyListeners();
@@ -942,8 +968,13 @@ class AppState extends ChangeNotifier {
     required String description,
     required String orgName,
     String? orgId,
+    String? imageUrl,
+    List<String> imageUrls = const [], // ← NEW
   }) async {
     String newId = _genId();
+
+    // Use first image as imageUrl for backward compat
+    final firstUrl = imageUrls.isNotEmpty ? imageUrls.first : imageUrl;
 
     try {
       final response = await supabase.Supabase.instance.client
@@ -954,6 +985,8 @@ class AppState extends ChangeNotifier {
             'description': description,
             'org_name': orgName,
             'org_id': orgId,
+            'image_url': firstUrl,
+            'image_urls': imageUrls, // ← NEW
           })
           .select()
           .single();
@@ -970,6 +1003,8 @@ class AppState extends ChangeNotifier {
       description: description,
       orgName: orgName,
       orgId: orgId,
+      imageUrl: firstUrl,
+      imageUrls: imageUrls,
     );
 
     events.add(e);
@@ -981,6 +1016,9 @@ class AppState extends ChangeNotifier {
     final idx = events.indexWhere((e) => e.id == event.id);
     if (idx == -1) return false;
 
+    final firstUrl =
+        event.imageUrls.isNotEmpty ? event.imageUrls.first : event.imageUrl;
+
     try {
       await supabase.Supabase.instance.client.from('events').update({
         'title': event.title,
@@ -988,6 +1026,8 @@ class AppState extends ChangeNotifier {
         'description': event.description,
         'org_name': event.orgName,
         'org_id': event.orgId,
+        'image_url': firstUrl,
+        'image_urls': event.imageUrls, // ← NEW
       }).eq('id', event.id);
     } catch (e) {
       print('Error updating event in Supabase: $e');
@@ -1436,6 +1476,31 @@ class AppState extends ChangeNotifier {
       }
     } else {
       await _prefs!.remove('student_profile');
+    }
+  }
+
+  Future<String?> uploadEventImage(Uint8List bytes, String eventId) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final path = '$eventId/$timestamp.jpg';
+
+      await supabase.Supabase.instance.client.storage
+          .from('event_images')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const supabase.FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
+          );
+
+      return supabase.Supabase.instance.client.storage
+          .from('event_images')
+          .getPublicUrl(path);
+    } catch (e) {
+      print('Error uploading event image: $e');
+      return null;
     }
   }
 }

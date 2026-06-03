@@ -1,15 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/app_state.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:photo_view/photo_view.dart';
 
-class OfficerEventsScreen extends StatelessWidget {
+class OfficerEventsScreen extends StatefulWidget {
   final String orgId, orgName;
   const OfficerEventsScreen(
       {super.key, required this.orgId, required this.orgName});
 
+  @override
+  State<OfficerEventsScreen> createState() => _OfficerEventsScreenState();
+}
+
+class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   static const _p = Color(0xFF4F46E5);
   static const _s = Color(0xFF06B6D4);
   static const _bg = Color(0xFFF8FAFC);
   static const _ok = Color(0xFF22C55E);
+
+  // ── Dialog image state ───────────────────────────────────────
+  List<Uint8List> _pickedImageBytes = [];
+  List<String> _existingImageUrls = [];
+
+  void _resetImageState({List<String> existingUrls = const []}) {
+    _pickedImageBytes = [];
+    _existingImageUrls = List.from(existingUrls);
+  }
 
   String _dateLabel(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -36,7 +54,6 @@ class OfficerEventsScreen extends StatelessWidget {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ── Header ──────────────────────────────────────────────────
           SliverAppBar(
             pinned: true,
             expandedHeight: MediaQuery.of(context).size.height * 0.20,
@@ -48,16 +65,15 @@ class OfficerEventsScreen extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
             ),
             centerTitle: true,
-            flexibleSpace:
-                FlexibleSpaceBar(background: _GradientHero(orgName: orgName)),
+            flexibleSpace: FlexibleSpaceBar(
+                background: _GradientHero(orgName: widget.orgName)),
           ),
-
-          // ── List ────────────────────────────────────────────────────
           AnimatedBuilder(
             animation: AppState.instance,
             builder: (ctx, _) {
               final events = AppState.instance.events
-                  .where((e) => e.orgId == orgId || e.orgName == orgName)
+                  .where((e) =>
+                      e.orgId == widget.orgId || e.orgName == widget.orgName)
                   .toList();
 
               if (events.isEmpty) {
@@ -87,9 +103,6 @@ class OfficerEventsScreen extends StatelessWidget {
                                 index: e.key,
                                 months: _months,
                                 onEdit: () => _dialog(ctx, existing: e.value),
-                                // ════════════════════════════════════════
-                                // CHANGED: onDelete is now async
-                                // ════════════════════════════════════════
                                 onDelete: () async {
                                   await AppState.instance
                                       .removeEvent(e.value.id);
@@ -113,16 +126,13 @@ class OfficerEventsScreen extends StatelessWidget {
     );
   }
 
-  // ════════════════════════════════════════════════════════════
-  // CHANGED: _dialog's Save button onTap is now async so it can
-  //          await addEvent() and updateEvent()
-  // ════════════════════════════════════════════════════════════
   void _dialog(BuildContext context, {Event? existing}) {
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
     final dateCtrl = TextEditingController(
         text: existing != null ? _dateLabel(existing.date) : '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
     DateTime? selected = existing?.date;
+    _resetImageState(existingUrls: existing?.imageUrls ?? []);
 
     showDialog(
       context: context,
@@ -171,11 +181,12 @@ class OfficerEventsScreen extends StatelessWidget {
                                 child: child!,
                               ),
                             );
-                            if (p != null)
+                            if (p != null) {
                               ss(() {
                                 selected = p;
                                 dateCtrl.text = _dateLabel(p);
                               });
+                            }
                           },
                           decoration: _fieldDeco(Icons.calendar_today_rounded,
                                   hint: 'Select a date')
@@ -191,6 +202,77 @@ class OfficerEventsScreen extends StatelessWidget {
                             hint: 'Enter event description',
                             icon: Icons.description_rounded,
                             maxLines: 3),
+                        const SizedBox(height: 14),
+
+                        // ── Multi-image picker section ─────────────────
+                        _FieldLabel('Event Images (up to 10)'),
+                        const SizedBox(height: 6),
+
+                        // Existing network images
+                        if (_existingImageUrls.isNotEmpty) ...[
+                          SizedBox(
+                            height: 90,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _existingImageUrls.length,
+                              itemBuilder: (_, i) => _ExistingImageThumb(
+                                url: _existingImageUrls[i],
+                                onRemove: () => ss(() => setState(() {
+                                      _existingImageUrls.removeAt(i);
+                                    })),
+                                onTap: () => _openZoom(
+                                    context, _existingImageUrls[i],
+                                    isNetwork: true),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        // Newly picked images
+                        if (_pickedImageBytes.isNotEmpty) ...[
+                          SizedBox(
+                            height: 90,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _pickedImageBytes.length,
+                              itemBuilder: (_, i) => _NewImageThumb(
+                                bytes: _pickedImageBytes[i],
+                                onRemove: () => ss(() => setState(() {
+                                      _pickedImageBytes.removeAt(i);
+                                    })),
+                                onTap: () => _openZoomBytes(
+                                    context, _pickedImageBytes[i]),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        // Add more button
+                        if (_existingImageUrls.length +
+                                _pickedImageBytes.length <
+                            10)
+                          _ImagePickerPlaceholder(
+                            onPick: () async {
+                              final picker = ImagePicker();
+                              final remaining = 10 -
+                                  _existingImageUrls.length -
+                                  _pickedImageBytes.length;
+                              final picked = await picker.pickMultiImage(
+                                imageQuality: 80,
+                                limit: remaining,
+                              );
+                              if (picked.isNotEmpty) {
+                                final bytesList = await Future.wait(
+                                    picked.map((f) => f.readAsBytes()));
+                                ss(() => setState(() {
+                                      _pickedImageBytes.addAll(bytesList);
+                                    }));
+                              }
+                            },
+                          ),
+
                         const SizedBox(height: 22),
                         Row(children: [
                           Expanded(
@@ -198,38 +280,52 @@ class OfficerEventsScreen extends StatelessWidget {
                                   _CancelBtn(onTap: () => Navigator.pop(ctx))),
                           const SizedBox(width: 12),
                           Expanded(
-                            // ════════════════════════════════════════
-                            // CHANGED: onTap is now async so we can
-                            //          await addEvent / updateEvent
-                            // ════════════════════════════════════════
                             child: _SaveBtn(onTap: () async {
                               final title = titleCtrl.text.trim();
                               final desc = descCtrl.text.trim();
                               final date = selected ?? DateTime.now();
                               if (title.isEmpty) return;
 
+                              // Upload all new images
+                              List<String> uploadedUrls = [];
+                              for (final bytes in _pickedImageBytes) {
+                                final tempId = DateTime.now()
+                                    .millisecondsSinceEpoch
+                                    .toString();
+                                final url = await AppState.instance
+                                    .uploadEventImage(bytes, tempId);
+                                if (url != null) uploadedUrls.add(url);
+                              }
+
+                              // Combine existing + newly uploaded
+                              final allImageUrls = [
+                                ..._existingImageUrls,
+                                ...uploadedUrls,
+                              ];
+
                               if (existing == null) {
-                                // ADD — await so Supabase insert finishes
                                 await AppState.instance.addEvent(
                                     title: title,
                                     date: date,
                                     description: desc,
-                                    orgName: orgName,
-                                    orgId: orgId);
+                                    orgName: widget.orgName,
+                                    orgId: widget.orgId,
+                                    imageUrls: allImageUrls);
                                 _snack(context, 'Added $title', _ok);
                               } else {
-                                // EDIT — await so Supabase update finishes
                                 await AppState.instance
                                     .updateEvent(existing.copyWith(
                                   title: title,
                                   date: date,
                                   description: desc,
-                                  orgName: orgName,
-                                  orgId: orgId,
+                                  orgName: widget.orgName,
+                                  orgId: widget.orgId,
+                                  imageUrls: allImageUrls,
                                 ));
                                 _snack(context, 'Updated $title', _ok);
                               }
 
+                              await AppState.instance.fetchEvents();
                               Navigator.pop(ctx);
                             }),
                           ),
@@ -237,6 +333,39 @@ class OfficerEventsScreen extends StatelessWidget {
                       ],
                     ))),
               )),
+    );
+  }
+
+  // ── Zoom viewers ─────────────────────────────────────────────
+  void _openZoom(BuildContext context, String url, {bool isNetwork = true}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ZoomScreen(
+          child: PhotoView(
+            imageProvider: CachedNetworkImageProvider(url),
+            minScale: PhotoViewComputedScale.contained,
+            maxScale: PhotoViewComputedScale.covered * 2.5,
+            backgroundDecoration: const BoxDecoration(color: Colors.black),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openZoomBytes(BuildContext context, Uint8List bytes) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ZoomScreen(
+          child: PhotoView(
+            imageProvider: MemoryImage(bytes),
+            minScale: PhotoViewComputedScale.contained,
+            maxScale: PhotoViewComputedScale.covered * 2.5,
+            backgroundDecoration: const BoxDecoration(color: Colors.black),
+          ),
+        ),
+      ),
     );
   }
 
@@ -249,17 +378,83 @@ class OfficerEventsScreen extends StatelessWidget {
       ));
 }
 
-// ── Event card ───────────────────────────────────────────────────────────────
+// ── Zoom screen ───────────────────────────────────────────────────────────────
+class _ZoomScreen extends StatelessWidget {
+  final Widget child;
+  const _ZoomScreen({required this.child});
 
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          iconTheme: const IconThemeData(color: Colors.white),
+          elevation: 0,
+        ),
+        body: child,
+      );
+}
+
+// ── Existing image thumbnail ──────────────────────────────────────────────────
+class _ExistingImageThumb extends StatelessWidget {
+  final String url;
+  final VoidCallback onRemove;
+  final VoidCallback onTap;
+  const _ExistingImageThumb(
+      {required this.url, required this.onRemove, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 80,
+          height: 80,
+          margin: const EdgeInsets.only(right: 8),
+          child: Stack(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: CachedNetworkImage(
+                  imageUrl: url, width: 80, height: 80, fit: BoxFit.cover),
+            ),
+            Positioned(top: 2, right: 2, child: _RemoveBtn(onTap: onRemove)),
+          ]),
+        ),
+      );
+}
+
+// ── New image thumbnail (bytes) ───────────────────────────────────────────────
+class _NewImageThumb extends StatelessWidget {
+  final Uint8List bytes;
+  final VoidCallback onRemove;
+  final VoidCallback onTap;
+  const _NewImageThumb(
+      {required this.bytes, required this.onRemove, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 80,
+          height: 80,
+          margin: const EdgeInsets.only(right: 8),
+          child: Stack(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child:
+                  Image.memory(bytes, width: 80, height: 80, fit: BoxFit.cover),
+            ),
+            Positioned(top: 2, right: 2, child: _RemoveBtn(onTap: onRemove)),
+          ]),
+        ),
+      );
+}
+
+// ── Event card ────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Event event;
   final int index;
   final List<String> months;
   final VoidCallback onEdit;
-  // ════════════════════════════════════════════════════════════
-  // CHANGED: onDelete is now AsyncCallback (Future<void> Function())
-  //          to allow await inside the callback
-  // ════════════════════════════════════════════════════════════
   final Future<void> Function() onDelete;
 
   const _EventCard({
@@ -305,7 +500,6 @@ class _EventCard extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child:
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Date badge
                 Container(
                   width: 50,
                   height: 56,
@@ -364,6 +558,21 @@ class _EventCard extends StatelessWidget {
                                 color: Color(0xFF64748B),
                                 height: 1.4)),
                       ],
+                      // Show image count badge
+                      if (event.imageUrls.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(children: [
+                          const Icon(Icons.photo_library_rounded,
+                              size: 12, color: Color(0xFF4F46E5)),
+                          const SizedBox(width: 4),
+                          Text(
+                              '${event.imageUrls.length} image${event.imageUrls.length == 1 ? '' : 's'}',
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF4F46E5),
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      ],
                       const SizedBox(height: 7),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -391,9 +600,6 @@ class _EventCard extends StatelessWidget {
                   _IconBtn(
                       icon: Icons.delete_rounded,
                       color: const Color(0xFFEF4444),
-                      // ════════════════════════════════════════
-                      // CHANGED: call async onDelete properly
-                      // ════════════════════════════════════════
                       onTap: () => onDelete(),
                       tip: 'Remove'),
                 ]),
@@ -405,7 +611,6 @@ class _EventCard extends StatelessWidget {
 }
 
 // ── Shared widgets ────────────────────────────────────────────────────────────
-
 class _GradientHero extends StatelessWidget {
   final String orgName;
   const _GradientHero({required this.orgName});
@@ -696,9 +901,6 @@ class _CancelBtn extends StatelessWidget {
 }
 
 class _SaveBtn extends StatelessWidget {
-  // ════════════════════════════════════════════════════════════
-  // CHANGED: onTap is now Future<void> Function() (async-capable)
-  // ════════════════════════════════════════════════════════════
   final Future<void> Function() onTap;
   const _SaveBtn({required this.onTap});
 
@@ -731,5 +933,63 @@ class _SaveBtn extends StatelessWidget {
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14)))))),
+      );
+}
+
+class _ImagePickerPlaceholder extends StatelessWidget {
+  final VoidCallback onPick;
+  const _ImagePickerPlaceholder({required this.onPick});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onPick,
+        child: Container(
+          height: 80,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: const Color(0xFF4F46E5).withOpacity(0.30),
+                width: 1.5,
+                style: BorderStyle.solid),
+          ),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.add_photo_alternate_rounded,
+                  color: Color(0xFF4F46E5), size: 20),
+            ),
+            const SizedBox(height: 6),
+            const Text('Tap to add images',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF4F46E5))),
+          ]),
+        ),
+      );
+}
+
+class _RemoveBtn extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RemoveBtn({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.55),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.close_rounded, color: Colors.white, size: 13),
+        ),
       );
 }

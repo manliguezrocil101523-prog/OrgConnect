@@ -6,6 +6,7 @@ import '../../core/app_state.dart';
 import '../Student_Role/student_dashboard_screen.dart';
 import '../Officer_Role/officer_rule_screen.dart';
 import '../Admin_Role/admin_dashboard_screen.dart';
+import '../auth/forgot_password_page.dart';
 
 const _kPrimaryBlue = Color(0xFF0D5BD7);
 const _kBorderColor = Color(0xFFE5E7EB);
@@ -297,111 +298,10 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
   }
 
   void _showForgotPasswordDialog() {
-    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
-    bool isSending = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: !isSending,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22),
-              ),
-              title: const Text(
-                'Reset Password',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Enter your email address and we\'ll send you a link to reset your password.',
-                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: 'Email address',
-                      prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSending ? null : () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _kPrimaryBlue,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: isSending
-                      ? null
-                      : () async {
-                          final email = emailCtrl.text.trim();
-                          if (email.isEmpty || !email.contains('@')) {
-                            _snack('Please enter a valid email.',
-                                isError: true);
-                            return;
-                          }
-
-                          setDialogState(() => isSending = true);
-
-                          try {
-                            await Supabase.instance.client.auth
-                                .resetPasswordForEmail(
-                              email,
-                              // No redirectTo needed — Supabase handles it
-                            );
-
-                            if (!ctx.mounted) return;
-                            Navigator.of(ctx).pop();
-
-                            // Always show success — never confirm if email exists (security)
-                            _snack(
-                              'If that email is registered, a reset link has been sent.',
-                            );
-                          } catch (e) {
-                            setDialogState(() => isSending = false);
-                            _snack(
-                              'Something went wrong. Please try again.',
-                              isError: true,
-                            );
-                          }
-                        },
-                  child: isSending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Send Link',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const ForgotPasswordPage(),
+      ),
     );
   }
 
@@ -465,48 +365,48 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           // ================= LOGO =================
-                              
-                               Transform.translate(
-                                    offset: const Offset(0, 35),
-                                    child: Center(
-                                    child: Image.asset(
-                                    'assets/OrgConnectLogo.png',
-                                    height: logoHeight * 1.75,
-                                    fit: BoxFit.contain,
-                           ),
-                    ),
-                  ),
 
-                            Transform.translate(
-                                  offset: const Offset(0, -45),
-                                  child: Column(
-                                  children: [
-                        // ================= TITLE =================
-                      
-                            Text(
-                                'Welcome!',
-                                style: TextStyle(
-                                fontSize: (34 * scale).clamp(26.0, 38.0),
-                                fontWeight: FontWeight.w800,
-                                color: _kTextColor,
-                                letterSpacing: -0.5,
+                          Transform.translate(
+                            offset: const Offset(0, 35),
+                            child: Center(
+                              child: Image.asset(
+                                'assets/OrgConnectLogo.png',
+                                height: logoHeight * 1.75,
+                                fit: BoxFit.contain,
+                              ),
                             ),
                           ),
 
-                            SizedBox(height: (8 * scale).clamp(5.0, 10.0)),
+                          Transform.translate(
+                            offset: const Offset(0, -45),
+                            child: Column(
+                              children: [
+                                // ================= TITLE =================
 
-                            Text(
+                                Text(
+                                  'Welcome!',
+                                  style: TextStyle(
+                                    fontSize: (34 * scale).clamp(26.0, 38.0),
+                                    fontWeight: FontWeight.w800,
+                                    color: _kTextColor,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+
+                                SizedBox(height: (8 * scale).clamp(5.0, 10.0)),
+
+                                Text(
                                   'Log in to your existing account',
-                                   textAlign: TextAlign.center,
-                                   style: TextStyle(
-                                   fontSize: (15 * scale).clamp(12.0, 16.0),
-                                   color: const Color(0xFF6B7280),
-                                   fontWeight: FontWeight.w400,
-                             ),
-                        ),
-                     ],
-                   ),
-                ),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: (15 * scale).clamp(12.0, 16.0),
+                                    color: const Color(0xFF6B7280),
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
                           SizedBox(height: sectionSpacing),
 

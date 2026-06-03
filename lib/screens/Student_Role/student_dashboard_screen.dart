@@ -8,6 +8,9 @@ import '/screens/profile/profile_screen.dart';
 import '/screens/organizations/org_list_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:photo_view/photo_view.dart';
+
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
 
@@ -489,50 +492,149 @@ class _VerticalDividerChip extends StatelessWidget {
 // =============================================================================
 // _HomeTab — shown when index == 0 (the hero header + welcome content)
 // =============================================================================
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   const _HomeTab();
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  static const Color _primary = Color(0xFF4F46E5);
+  static const Color _secondary = Color(0xFF06B6D4);
+
+  @override
+  void initState() {
+    super.initState();
+    AppState.instance.fetchEvents();
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        SliverAppBar(
-          expandedHeight: size.height * 0.40,
-          pinned: true,
-          stretch: true,
-          backgroundColor: const Color(0xFF4F46E5),
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          centerTitle: true,
-          flexibleSpace: FlexibleSpaceBar(
-            stretchModes: const [StretchMode.blurBackground],
-            background: _HeroHeader(
-              primary: const Color(0xFF4F46E5),
-              secondary: const Color(0xFF06B6D4),
-            ),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 500),
-                child: const Text(
-                  'Use the tabs below to navigate.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF94A3B8),
-                    fontWeight: FontWeight.w500,
-                  ),
+
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        final events = AppState.instance.eventsForCurrentStudent();
+
+        return CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // ── Hero header ────────────────────────────────────────
+            SliverAppBar(
+              expandedHeight: size.height * 0.40,
+              pinned: true,
+              stretch: true,
+              backgroundColor: _primary,
+              elevation: 0,
+              automaticallyImplyLeading: false,
+              centerTitle: true,
+              flexibleSpace: FlexibleSpaceBar(
+                stretchModes: const [StretchMode.blurBackground],
+                background: _HeroHeader(
+                  primary: _primary,
+                  secondary: _secondary,
                 ),
               ),
             ),
-          ),
-        ),
-      ],
+
+            // ── Section label ──────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: _secondary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Latest Events',
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0F0D2E),
+                                  letterSpacing: -0.4)),
+                          Text('From your organizations',
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF6B6B8E),
+                                  fontWeight: FontWeight.w400)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Events feed or empty state ─────────────────────────
+            if (events.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [_primary, _secondary],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Icon(Icons.event_note_rounded,
+                              color: Colors.white, size: 32),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('No events yet',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F0D2E))),
+                        const SizedBox(height: 6),
+                        const Text(
+                            'Events from your organizations\nwill appear here.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 13.5,
+                                color: Color(0xFF6B6B8E),
+                                height: 1.55)),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) => _EventFeedCard(event: events[i]),
+                    childCount: events.length,
+                  ),
+                ),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 96)),
+          ],
+        );
+      },
     );
   }
 }
@@ -696,5 +798,354 @@ class _NavBadgeItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// =============================================================================
+// _EventFeedCard — rich card shown in the student home feed
+// =============================================================================
+// =============================================================================
+// _EventFeedCard — rich card with multi-image carousel
+// =============================================================================
+class _EventFeedCard extends StatefulWidget {
+  final Event event;
+  const _EventFeedCard({required this.event});
+
+  @override
+  State<_EventFeedCard> createState() => _EventFeedCardState();
+}
+
+class _EventFeedCardState extends State<_EventFeedCard> {
+  int _currentImageIndex = 0;
+
+  // Build the final list of image URLs to show
+  List<String> get _imageUrls {
+    if (widget.event.imageUrls.isNotEmpty) return widget.event.imageUrls;
+    if (widget.event.imageUrl != null && widget.event.imageUrl!.isNotEmpty) {
+      return [widget.event.imageUrl!];
+    }
+    return [];
+  }
+
+  void _openZoom(BuildContext context, String url) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            elevation: 0,
+          ),
+          body: PhotoView(
+            imageProvider: CachedNetworkImageProvider(url),
+            minScale: PhotoViewComputedScale.contained,
+            maxScale: PhotoViewComputedScale.covered * 2.5,
+            backgroundDecoration: const BoxDecoration(color: Colors.black),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isUpcoming = widget.event.date.isAfter(DateTime.now());
+    final urls = _imageUrls;
+    final hasImages = urls.isNotEmpty;
+    final hasMultiple = urls.length > 1;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isUpcoming
+              ? const Color(0xFF4F46E5).withOpacity(0.18)
+              : const Color(0xFFE8E9F3),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4F46E5).withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Image / Carousel ─────────────────────────────────────
+          if (hasImages)
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+              child: Stack(
+                children: [
+                  // ── Carousel or single image ──────────────────────
+                  if (hasMultiple)
+                    CarouselSlider(
+                      options: CarouselOptions(
+                        height: 200,
+                        viewportFraction: 1.0,
+                        enableInfiniteScroll: urls.length > 1,
+                        autoPlay: false,
+                        onPageChanged: (index, _) =>
+                            setState(() => _currentImageIndex = index),
+                      ),
+                      items: urls.map((url) {
+                        return GestureDetector(
+                          onTap: () => _openZoom(context, url),
+                          child: CachedNetworkImage(
+                            imageUrl: url,
+                            width: double.infinity,
+                            height: 200,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(
+                              height: 200,
+                              color: const Color(0xFFEEF2FF),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF4F46E5),
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              height: 200,
+                              color: const Color(0xFFEEF2FF),
+                              child: const Icon(Icons.broken_image_rounded,
+                                  color: Color(0xFF4F46E5), size: 36),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    )
+                  else
+                    // Single image — no carousel needed
+                    GestureDetector(
+                      onTap: () => _openZoom(context, urls.first),
+                      child: CachedNetworkImage(
+                        imageUrl: urls.first,
+                        width: double.infinity,
+                        height: 200,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          height: 200,
+                          color: const Color(0xFFEEF2FF),
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF4F46E5),
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          height: 200,
+                          color: const Color(0xFFEEF2FF),
+                          child: const Icon(Icons.broken_image_rounded,
+                              color: Color(0xFF4F46E5), size: 36),
+                        ),
+                      ),
+                    ),
+
+                  // ── Dot indicators (only for multiple images) ─────
+                  if (hasMultiple)
+                    Positioned(
+                      bottom: 10,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: urls.asMap().entries.map((entry) {
+                          final isActive = entry.key == _currentImageIndex;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isActive ? 18 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? Colors.white
+                                  : Colors.white.withOpacity(0.45),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                  // ── Image counter badge (top-right) ───────────────
+                  if (hasMultiple)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_currentImageIndex + 1} / ${urls.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+          // ── Content ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Org name + status pill
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.event.orgName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF06B6D4),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isUpcoming
+                            ? const Color(0xFFEEF2FF)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        isUpcoming ? 'Upcoming' : 'Past',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: isUpcoming
+                              ? const Color(0xFF4F46E5)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Title
+                Text(
+                  widget.event.title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F0D2E),
+                    letterSpacing: -0.3,
+                    height: 1.2,
+                  ),
+                ),
+
+                // Description
+                if (widget.event.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.event.description,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B6B8E),
+                      height: 1.55,
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+
+                // Date row
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isUpcoming
+                            ? const Color(0xFFEEF2FF)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 11,
+                            color: isUpcoming
+                                ? const Color(0xFF4F46E5)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            _formatDate(widget.event.date),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: isUpcoming
+                                  ? const Color(0xFF4F46E5)
+                                  : const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime dt) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 }

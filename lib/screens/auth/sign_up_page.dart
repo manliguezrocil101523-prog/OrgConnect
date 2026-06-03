@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
+import 'email_verification_page.dart';
 
 const _kBlue = Color(0xFF2563EB);
 const _kBg = Color(0xFFF8FAFF);
@@ -60,44 +61,38 @@ class _SignUpPageState extends State<SignUpPage>
     super.dispose();
   }
 
+// ============================================================
+// PATCH for sign_up_page.dart
+// Only ONE method changes — _signUp()
+// Replace the entire _signUp() method with this:
+// ============================================================
+
   Future<void> _signUp() async {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
 
     final name = "${_fName.text.trim()} ${_lName.text.trim()}";
+    final email = _email.text.trim();
 
     try {
       final res = await Supabase.instance.client.auth.signUp(
-        email: _email.text.trim(),
+        email: email,
         password: _password.text,
         data: {
-          // ← ADD THIS
-          'name': name, // ← trigger reads this
-          'student_id': _studId.text.trim(), // ← trigger reads this
+          'name': name,
+          'student_id': _studId.text.trim(),
         },
       );
 
       final user = res.user;
 
       if (user != null) {
-        // If session exists (auto-confirm ON), upsert directly
-        if (res.session != null) {
-          await Supabase.instance.client.from('profiles').upsert({
-            'id': user.id,
-            'name': name,
-            'student_id': _studId.text.trim(),
-            'email': _email.text.trim(),
-          }, onConflict: 'id');
-        }
-        // If no session (email confirmation required),
-        // the DB trigger above already created the profile row safely
-
         AppState.instance.setStudentProfile(
           StudentProfile(
             id: user.id,
             name: name,
-            email: _email.text.trim(),
+            email: email,
             studentId: _studId.text.trim(),
             contact: '',
             facebook: '',
@@ -107,15 +102,19 @@ class _SignUpPageState extends State<SignUpPage>
 
         if (!mounted) return;
 
-        final isConfirmed =
-            user.confirmedAt != null || user.emailConfirmedAt != null;
-        _snack(
-          isConfirmed
-              ? 'Account created successfully!'
-              : 'Confirmation link sent to ${_email.text.trim()}',
-          ok: true,
-        );
-        Navigator.pushReplacementNamed(context, '/login');
+        // If email confirmation is required → go to OTP verification page
+        if (res.session == null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EmailVerificationPage(email: email),
+            ),
+          );
+        } else {
+          // Auto-confirmed (email confirm is OFF) → go straight to login
+          _snack('Account created successfully!', ok: true);
+          Navigator.pushReplacementNamed(context, '/login');
+        }
       }
     } on AuthException catch (e) {
       _snack(e.message);
@@ -125,6 +124,12 @@ class _SignUpPageState extends State<SignUpPage>
 
     if (mounted) setState(() => _loading = false);
   }
+
+// ============================================================
+// Also add this import at the TOP of sign_up_page.dart
+// (with the other imports):
+// ============================================================
+// import 'email_verification_page.dart';
 
   void _snack(
     String msg, {
