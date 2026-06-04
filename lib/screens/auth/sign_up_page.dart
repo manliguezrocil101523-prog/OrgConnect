@@ -100,6 +100,23 @@ class _SignUpPageState extends State<SignUpPage>
           ),
         );
 
+        // ── Save to Supabase profiles table + local SharedPreferences ──
+        try {
+          await Supabase.instance.client.from('profiles').upsert({
+            'id': user.id,
+            'name': name, // "FirstName LastName"
+            'email': email,
+            'student_id': _studId.text.trim(),
+            'contact': '',
+            'facebook': '',
+            'avatar_url': '',
+            'joined_org_ids': [],
+          });
+        } catch (e) {
+          debugPrint('Profile insert error: $e');
+        }
+        // ──────────────────────────────────────────────────────────────
+
         if (!mounted) return;
 
         // If email confirmation is required → go to OTP verification page

@@ -177,7 +177,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               ),
               _NavBadgeItem(
                 icon: Icons.notifications_rounded,
-                label: 'Alerts',
+                label: 'Notifs',
                 index: 2,
                 selectedIndex: _selectedIndex,
                 iconSize: iconSize,
@@ -265,123 +265,79 @@ class _HeroHeader extends StatelessWidget {
           ),
 
           SafeArea(
-            child: Column(
-              children: [
-                // TOP ZONE: Identity row
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 56, 24, 16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Avatar ring
-                        Container(
-                          width: avatarSize + 10,
-                          height: avatarSize + 10,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.18),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(3),
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.white,
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(3),
-                                child: _buildAvatar(avatarSize),
-                              ),
-                            ),
-                          ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Avatar ring
+                  Container(
+                    width: avatarSize + 10,
+                    height: avatarSize + 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.18),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
                         ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(3),
+                          child: _buildAvatar(avatarSize),
+                        ),
+                      ),
+                    ),
+                  ),
 
-                        const SizedBox(width: 16),
+                  const SizedBox(width: 16),
 
-                        // Name + subtitle
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ListenableBuilder(
-                                listenable: AppState.instance,
-                                builder: (context, _) {
-                                  final fullName =
-                                      AppState.instance.currentStudent?.name ??
-                                          '';
-                                  final firstName =
-                                      fullName.trim().split(' ').first;
-                                  final greeting = firstName.isNotEmpty
-                                      ? 'Welcome Back, $firstName 👋'
-                                      : 'Welcome Back 👋';
-                                  return Text(
-                                    greeting,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.1,
-                                      height: 1.15,
-                                    ),
-                                  );
-                                },
+                  // Name + subtitle
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ListenableBuilder(
+                          listenable: AppState.instance,
+                          builder: (context, _) {
+                            final fullName =
+                                AppState.instance.currentStudent?.name ?? '';
+                            final firstName = fullName.trim().split(' ').first;
+                            final greeting = firstName.isNotEmpty
+                                ? 'Welcome Back, $firstName 👋'
+                                : 'Welcome Back 👋';
+                            return Text(
+                              greeting,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.1,
+                                height: 1.15,
                               ),
-                              const SizedBox(height: 5),
-                              Text(
-                                'Manage your applications\n& organizations',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.75),
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w400,
-                                  letterSpacing: 0.1,
-                                  height: 1.45,
-                                ),
-                              ),
-                            ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Manage your applications\n& organizations',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.75),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.1,
+                            height: 1.45,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-
-                // BOTTOM ZONE: Frosted summary strip
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.12),
-                    border: Border(
-                      top: BorderSide(
-                        color: Colors.white.withOpacity(0.18),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _HeroStatChip(
-                        label: 'Applications',
-                        icon: Icons.assignment_rounded,
-                      ),
-                      _VerticalDividerChip(),
-                      _HeroStatChip(
-                        label: 'Orgs Joined',
-                        icon: Icons.groups_rounded,
-                      ),
-                      _VerticalDividerChip(),
-                      _HeroStatChip(
-                        label: 'Notifications',
-                        icon: Icons.notifications_rounded,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
@@ -431,6 +387,53 @@ class _HeroHeader extends StatelessWidget {
     );
   }
 } // ← this is the original closing brace of _HeroHeader
+
+// =============================================================================
+// _HeroBottomStrip — scrolls away with the page (NOT inside SliverAppBar)
+// =============================================================================
+class _HeroBottomStrip extends StatelessWidget {
+  final Color primary;
+  final Color secondary;
+
+  const _HeroBottomStrip({
+    required this.primary,
+    required this.secondary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [primary, secondary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: const [
+          _HeroStatChip(
+            label: 'Applications',
+            icon: Icons.assignment_rounded,
+          ),
+          _VerticalDividerChip(),
+          _HeroStatChip(
+            label: 'Orgs Joined',
+            icon: Icons.groups_rounded,
+          ),
+          _VerticalDividerChip(),
+          _HeroStatChip(
+            label: 'Notifications',
+            icon: Icons.notifications_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 // =============================================================================
 // _HeroStatChip  (UNCHANGED)
@@ -517,19 +520,19 @@ class _HomeTabState extends State<_HomeTab> {
       animation: AppState.instance,
       builder: (context, _) {
         final events = AppState.instance.eventsForCurrentStudent();
+        events.sort((a, b) => b.date.compareTo(a.date));
 
         return CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // ── Hero header ────────────────────────────────────────
+            // ── Hero header (identity only) ──────────────────────────
             SliverAppBar(
-              expandedHeight: size.height * 0.40,
-              pinned: true,
+              expandedHeight: size.height * 0.32,
+              pinned: false, // ← MUST be false
               stretch: true,
               backgroundColor: _primary,
               elevation: 0,
               automaticallyImplyLeading: false,
-              centerTitle: true,
               flexibleSpace: FlexibleSpaceBar(
                 stretchModes: const [StretchMode.blurBackground],
                 background: _HeroHeader(
@@ -539,7 +542,15 @@ class _HomeTabState extends State<_HomeTab> {
               ),
             ),
 
-            // ── Section label ──────────────────────────────────────
+            // ── Bottom strip — separate, scrolls away cleanly ────────
+            SliverToBoxAdapter(
+              child: _HeroBottomStrip(
+                primary: _primary,
+                secondary: _secondary,
+              ),
+            ),
+
+            // ── Section label ────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),

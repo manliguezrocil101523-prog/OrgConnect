@@ -35,6 +35,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
 
   // ── Double-tap-to-exit state ───────────────────────────────────────────────
   DateTime? _lastBackPressed;
+  int _selectedIndex = 0;
 
   // ── End drawer key ─────────────────────────────────────────────────────────
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -78,7 +79,6 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
         setState(() {
           _statusCounts = counts;
           _pendingCount = counts['pending'] ?? 0;
-          // ← _badgeDismissed = false is REMOVED
         });
       }
     } catch (_) {}
@@ -91,7 +91,11 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   }
 
   bool get _showBadge =>
-      _lastDismissedCount >= 0 && _pendingCount > _lastDismissedCount;
+      _lastDismissedCount >= 0 &&
+      (_statusCounts['pending'] ?? 0) +
+              (_statusCounts['interviewed'] ?? 0) +
+              (_statusCounts['for_approval'] ?? 0) >
+          _lastDismissedCount;
 
   // ── Logout confirmation dialog ─────────────────────────────────────────────
   Future<void> _showLogoutDialog() async {
@@ -253,6 +257,75 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
             key: _scaffoldKey,
             backgroundColor: _background,
 
+            // ── Bottom Navigation Bar ──────────────────────────────────────────
+            bottomNavigationBar: BottomNavigationBar(
+              currentIndex: _selectedIndex,
+              onTap: (index) {
+                if (index == 1) {
+                  _showApplicationFilters(context, _statusCounts);
+                  return;
+                }
+                if (index == 2) {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const OfficerMembersScreen()));
+                  return;
+                }
+                if (index == 3) {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => OfficerEventsScreen(
+                              orgId: widget.orgId, orgName: widget.orgName)));
+                  return;
+                }
+                if (index == 4) {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => OfficerOrgProfileScreen(
+                              orgId: AppState.instance.currentOfficerOrgId!)));
+                  return;
+                }
+                setState(() => _selectedIndex = index);
+              },
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.white,
+              selectedItemColor: _primary,
+              unselectedItemColor: _textMuted,
+              selectedFontSize: 10,
+              unselectedFontSize: 10,
+              elevation: 12,
+              items: [
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.home_rounded),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Badge(
+                    isLabelVisible: _showBadge,
+                    backgroundColor: const Color(0xFFEF4444),
+                    label: Text(_pendingCount > 9 ? '9+' : '$_pendingCount'),
+                    child: const Icon(Icons.list_alt_rounded),
+                  ),
+                  label: 'Applications',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.groups_rounded),
+                  label: 'Members',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.event_available_rounded),
+                  label: 'Events',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.edit_note_rounded),
+                  label: 'Edit Profile',
+                ),
+              ],
+            ),
+
             // ── End Drawer (slides from right) ─────────────────────────────────
             endDrawer: _ProfileEndDrawer(
               onLogoutTap: () {
@@ -260,7 +333,6 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
                 _showLogoutDialog();
               },
             ),
-
             body: CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
@@ -270,12 +342,9 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
                   expandedHeight: size.height * 0.22,
                   backgroundColor: _primary,
                   elevation: 0,
-                  // Objective 1: No leading back button
                   automaticallyImplyLeading: false,
                   leading: const SizedBox.shrink(),
-
                   centerTitle: true,
-                  // Objective 2: Top-right profile icon
                   actions: [
                     Padding(
                       padding: const EdgeInsets.only(right: 12),
@@ -301,88 +370,48 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
                 ),
 
                 // ── Body ─────────────────────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 48),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 500),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ── Section Label ──────────────────────────────────
-                            const _SectionLabel(text: 'Manage'),
-                            const SizedBox(height: 16),
+                SliverFillRemaining(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final w = constraints.maxWidth;
+                      final iconSize = (w * 0.18).clamp(56.0, 96.0);
+                      final fontSize = (w * 0.042).clamp(13.0, 18.0);
+                      final subSize = (w * 0.032).clamp(11.0, 14.0);
 
-                            // ── Manage Applications ────────────────────────────
-                            _ApplicationsCard(
-                              color: _primary,
-                              pendingCount: _showBadge ? _pendingCount : 0,
-                              onTap: () => _showApplicationFilters(
-                                  context, _statusCounts),
-                            ),
-
-                            const SizedBox(height: 14),
-
-                            // ── Members & Events Grid ──────────────────────────
-                            IntrinsicHeight(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(
-                                    child: _GridActionCard(
-                                      icon: Icons.groups_rounded,
-                                      title: 'Members',
-                                      subtitle: 'View & update',
-                                      color: _secondary,
-                                      onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const OfficerMembersScreen(),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: _GridActionCard(
-                                      icon: Icons.event_available_rounded,
-                                      title: 'Events',
-                                      subtitle: 'Create & manage',
-                                      color: _green,
-                                      onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => OfficerEventsScreen(
-                                            orgId: widget.orgId,
-                                            orgName: widget.orgName,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            const SizedBox(height: 32),
-
-                            // ── Footer hint ────────────────────────────────────
-                            Center(
-                              child: Text(
-                                'Tap any card to get started',
+                      return Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: w * 0.1),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Officer Portal',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
+                                  fontSize: fontSize + 4,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF0F172A),
                                   letterSpacing: 0.2,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                            ),
-                          ],
+                              SizedBox(height: w * 0.02),
+                              Text(
+                                'Manage and oversee your organization with ease.',
+                                style: TextStyle(
+                                  fontSize: subSize,
+                                  color: const Color(0xFF94A3B8),
+                                  height: 1.6,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              SizedBox(height: w * 0.06),
+                              // ── Applications Overview Card ──────────────────────
+                              _OfficerOverviewCard(orgId: widget.orgId),
+                            ],
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -391,7 +420,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
         );
       },
     );
-  }
+  } // ← closes build()
 
   void _showApplicationFilters(BuildContext context, Map<String, int> counts) {
     showModalBottomSheet(
@@ -428,20 +457,27 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
                   setSheetState(() {});
                 },
                 filters: [
-                  _FilterDef('All', Icons.list_alt_rounded, null,
-                      const Color(0xFF4F46E5), 0),
                   _FilterDef(
-                      'Pending',
-                      Icons.hourglass_top_rounded,
-                      'pending',
-                      const Color(0xFFF59E0B),
-                      _showBadge ? (counts['pending'] ?? 0) : 0),
+                    'All',
+                    Icons.list_alt_rounded,
+                    null,
+                    const Color(0xFF4F46E5),
+                    0,
+                  ),
                   _FilterDef(
-                      'For Approval',
-                      Icons.approval_rounded,
-                      'forApproval',
-                      const Color(0xFF06B6D4),
-                      _showBadge ? (counts['for_approval'] ?? 0) : 0),
+                    'Pending',
+                    Icons.hourglass_top_rounded,
+                    'pending',
+                    const Color(0xFFF59E0B),
+                    _showBadge ? (counts['pending'] ?? 0) : 0,
+                  ),
+                  _FilterDef(
+                    'Interviewees',
+                    Icons.people_alt_rounded,
+                    'interviewed',
+                    const Color(0xFF8B5CF6),
+                    _showBadge ? (counts['interviewed'] ?? 0) : 0,
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -452,12 +488,27 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
                   setSheetState(() {});
                 },
                 filters: [
-                  _FilterDef('Interviewees', Icons.people_alt_rounded,
-                      'interviewed', const Color(0xFF8B5CF6), 0),
-                  _FilterDef('Approved', Icons.check_circle_rounded, 'approved',
-                      const Color(0xFF22C55E), 0),
-                  _FilterDef('Declined', Icons.cancel_rounded, 'declined',
-                      const Color(0xFFEF4444), 0),
+                  _FilterDef(
+                    'For Approval',
+                    Icons.approval_rounded,
+                    'forApproval',
+                    const Color(0xFF06B6D4),
+                    _showBadge ? (counts['for_approval'] ?? 0) : 0,
+                  ),
+                  _FilterDef(
+                    'Approved',
+                    Icons.check_circle_rounded,
+                    'approved',
+                    const Color(0xFF22C55E),
+                    0,
+                  ),
+                  _FilterDef(
+                    'Declined',
+                    Icons.cancel_rounded,
+                    'declined',
+                    const Color(0xFFEF4444),
+                    0,
+                  ),
                 ],
               ),
             ],
@@ -483,7 +534,7 @@ class _ProfileEndDrawer extends StatelessWidget {
     final topPadding = MediaQuery.of(context).padding.top;
 
     return Drawer(
-      width: MediaQuery.of(context).size.width * 0.50,
+      width: MediaQuery.of(context).size.width * 0.72,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
@@ -600,86 +651,19 @@ class _ProfileEndDrawer extends StatelessWidget {
               ],
             ),
           ),
-
-          const SizedBox(height: 12),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-            child: Text(
-              'ACCOUNT',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.6,
-                color: Colors.grey[400],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              leading: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.edit_note_rounded,
-                  color: Color(0xFF4F46E5),
-                  size: 20,
-                ),
-              ),
-              title: const Text(
-                'Edit Org Profile',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              subtitle: const Text(
-                'Update logo & info',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF94A3B8),
-                ),
-              ),
-              onTap: () {
-                Navigator.of(context).pop(); // close drawer first
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => OfficerOrgProfileScreen(
-                      orgId: AppState.instance.currentOfficerOrgId!,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-
           const Spacer(),
-          const Divider(
-            height: 1,
-            indent: 24,
-            endIndent: 24,
-            color: Color(0xFFE2E8F0),
-          ),
-          const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
+              dense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
               leading: Container(
-                width: 38,
-                height: 38,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: const Color(0xFFEF4444).withOpacity(0.10),
                   borderRadius: BorderRadius.circular(10),
@@ -687,7 +671,7 @@ class _ProfileEndDrawer extends StatelessWidget {
                 child: const Icon(
                   Icons.logout_rounded,
                   color: Color(0xFFEF4444),
-                  size: 20,
+                  size: 18,
                 ),
               ),
               title: const Text(
@@ -1339,4 +1323,298 @@ class _SectionLabel extends StatelessWidget {
       ],
     );
   }
+}
+
+// =============================================================================
+// _OfficerOverviewCard — live application counts for this org only
+// =============================================================================
+class _OfficerOverviewCard extends StatefulWidget {
+  final String orgId;
+  const _OfficerOverviewCard({required this.orgId});
+
+  @override
+  State<_OfficerOverviewCard> createState() => _OfficerOverviewCardState();
+}
+
+class _OfficerOverviewCardState extends State<_OfficerOverviewCard> {
+  bool _loading = true;
+  int _total = 0,
+      _pending = 0,
+      _forApproval = 0,
+      _accepted = 0,
+      _declined = 0,
+      _interview = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('applications')
+          .select('status')
+          .eq('org_id', widget.orgId);
+
+      final list = response as List;
+      int pending = 0,
+          forApproval = 0,
+          accepted = 0,
+          declined = 0,
+          interview = 0;
+
+      for (final row in list) {
+        final s = row['status'] as String? ?? '';
+        if (s == 'pending')
+          pending++;
+        else if (s == 'for_approval')
+          forApproval++;
+        else if (s == 'accepted' || s == 'approved')
+          accepted++;
+        else if (s == 'declined')
+          declined++;
+        else if (s == 'interviewed' || s == 'interview_scheduled') interview++;
+      }
+
+      if (mounted) {
+        setState(() {
+          _total = list.length;
+          _pending = pending;
+          _forApproval = forApproval;
+          _accepted = accepted;
+          _declined = declined;
+          _interview = interview;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        height: 60,
+        child: Center(
+            child: CircularProgressIndicator(
+          color: Color(0xFF4F46E5),
+          strokeWidth: 2,
+        )),
+      );
+    }
+
+    final statuses = [
+      ('Pending', _pending, const Color(0xFFF59E0B)),
+      ('For Approval', _forApproval, const Color(0xFF6366F1)),
+      ('Accepted', _accepted, const Color(0xFF10B981)),
+      ('Declined', _declined, const Color(0xFFEF4444)),
+      ('Interview', _interview, const Color(0xFF06B6D4)),
+    ];
+    final safeTotal = _total == 0 ? 1 : _total;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4F46E5).withOpacity(0.07),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Applications Overview',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$_total Total',
+                  style:
+                      const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          // ── Donut + Bars ───────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Donut
+              SizedBox(
+                width: 80,
+                height: 80,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      size: const Size(80, 80),
+                      painter: _DashDonutPainter(
+                        statuses: statuses.map((s) => (s.$2, s.$3)).toList(),
+                        total: safeTotal,
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$_total',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        const Text(
+                          'apps',
+                          style:
+                              TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 20),
+
+              // Status bars
+              Expanded(
+                child: Column(
+                  children: statuses.map((s) {
+                    final pct = s.$2 / safeTotal;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(s.$1,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Color(0xFF64748B))),
+                              Text('${s.$2}',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: s.$3)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: pct,
+                              minHeight: 5,
+                              backgroundColor: const Color(0xFFF1F5F9),
+                              valueColor: AlwaysStoppedAnimation(s.$3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+
+          // ── Refresh button ─────────────────────────────────
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () {
+              setState(() => _loading = true);
+              _load();
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: const [
+                Icon(Icons.refresh_rounded, size: 13, color: Color(0xFF94A3B8)),
+                SizedBox(width: 4),
+                Text(
+                  'Refresh',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _DashDonutPainter
+// =============================================================================
+class _DashDonutPainter extends CustomPainter {
+  final List<(int, Color)> statuses;
+  final int total;
+  const _DashDonutPainter({required this.statuses, required this.total});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    const strokeW = 11.0;
+    final radius = (size.width - strokeW) / 2;
+
+    canvas.drawCircle(
+      Offset(cx, cy),
+      radius,
+      Paint()
+        ..color = const Color(0xFFF1F5F9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeW,
+    );
+
+    double startAngle = -3.14159265 / 2;
+    for (final (count, color) in statuses) {
+      if (count == 0) continue;
+      final sweep = (count / total) * 2 * 3.14159265;
+      canvas.drawArc(
+        Rect.fromCircle(center: Offset(cx, cy), radius: radius),
+        startAngle,
+        sweep - 0.08,
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeW
+          ..strokeCap = StrokeCap.round,
+      );
+      startAngle += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => true;
 }

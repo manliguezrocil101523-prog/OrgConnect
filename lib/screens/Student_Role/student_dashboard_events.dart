@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../../core/app_state.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:photo_view/photo_view.dart';
+import '../../core/app_state.dart';
 
-// ── Design tokens ─────────────────────────────────────────────────────────
+// ── Design tokens ──────────────────────────────────────────────────────────
 class _DT {
   static const bg = Color(0xFFF6F7FB);
   static const surface = Color(0xFFFFFFFF);
@@ -14,19 +18,6 @@ class _DT {
   static const primaryMid = Color(0xFF9C96FF);
   static const gradStart = Color(0xFF7C74FF);
   static const gradEnd = Color(0xFF9F6EFF);
-  static const emerald = Color(0xFF10B981);
-  static const emeraldBg = Color(0xFFECFDF5);
-  static const emeraldFg = Color(0xFF065F46);
-  static const emeraldRing = Color(0xFFA7F3D0);
-  static const amberBg = Color(0xFFFFFBEB);
-  static const amberFg = Color(0xFF92400E);
-  static const amberRing = Color(0xFFFDE68A);
-  static const roseBg = Color(0xFFFFF1F2);
-  static const roseFg = Color(0xFF9F1239);
-  static const roseRing = Color(0xFFFFCDD3);
-  static const indigoBg = Color(0xFFEEF2FF);
-  static const indigoFg = Color(0xFF3730A3);
-  static const indigoRing = Color(0xFFC7D2FE);
   static const ink = Color(0xFF0F0D2E);
   static const inkSecond = Color(0xFF6B6B8E);
   static const inkMuted = Color(0xFFB8B9CC);
@@ -56,13 +47,10 @@ class _DT {
       ];
 }
 
-// Legacy constants preserved so nothing else breaks.
+// ── Main widget ────────────────────────────────────────────────────────────
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
-  static const Color mintBg = Color(0xFFF6F7FB);
-  static const Color tealHeader = Color(0xFF6C63FF);
-  static const Color accent = Color(0xFF6C63FF);
-  static const Color cardColor = Colors.white;
+
   @override
   State<StudentDashboard> createState() => _StudentDashboardState();
 }
@@ -71,7 +59,6 @@ class _StudentDashboardState extends State<StudentDashboard>
     with TickerProviderStateMixin {
   late DateTime _focusedDay;
   DateTime? _selectedDay;
-  late Map<DateTime, List<Event>> _events;
   late final AnimationController _entranceCtrl, _pulseCtrl;
   late final Animation<double> _entranceFade, _pulseAnim;
   late final Animation<Offset> _entranceSlide;
@@ -80,9 +67,7 @@ class _StudentDashboardState extends State<StudentDashboard>
   void initState() {
     super.initState();
     _focusedDay = DateTime.now();
-    _selectedDay = _focusedDay;
-    AppState.instance.fetchEvents();
-    _loadEvents();
+    _selectedDay = DateTime.now();
 
     _entranceCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 650));
@@ -98,6 +83,9 @@ class _StudentDashboardState extends State<StudentDashboard>
     _pulseAnim = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
 
     _entranceCtrl.forward();
+
+    // Ensure events are loaded
+    AppState.instance.fetchEvents();
   }
 
   @override
@@ -107,24 +95,21 @@ class _StudentDashboardState extends State<StudentDashboard>
     super.dispose();
   }
 
-  void _loadEvents() {
-    _events = {};
-    for (var e in AppState.instance.eventsForCurrentStudent()) {
-      final day = DateTime(e.date.year, e.date.month, e.date.day);
-      (_events[day] ??= []).add(e);
-    }
+  // ── Helpers: real data from AppState ──────────────────────────────────
+
+  /// All events from AppState
+  List<Event> get _allEvents => AppState.instance.eventsForCurrentStudent();
+
+  /// Events that fall on a given day (date-only comparison)
+  List<Event> _eventsForDay(DateTime day) {
+    return _allEvents.where((e) => isSameDay(e.date, day)).toList();
   }
 
-  void _showEventsForDay(DateTime day) {
-    final events = _events[day] ?? [];
-    if (events.isEmpty) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _DayEventsSheet(day: day, events: events),
-    );
-  }
+  /// Events on the currently selected day
+  List<Event> get _selectedDayEvents =>
+      _selectedDay != null ? _eventsForDay(_selectedDay!) : [];
+
+  /// Real applications for the current student
 
   @override
   Widget build(BuildContext context) {
@@ -135,19 +120,13 @@ class _StudentDashboardState extends State<StudentDashboard>
     return Scaffold(
       backgroundColor: _DT.bg,
       extendBodyBehindAppBar: true,
-      appBar: _buildGhostAppBar(context),
+      appBar: _buildAppBar(),
       body: AnimatedBuilder(
+        // Rebuild whenever AppState changes (new events, applications, etc.)
         animation: AppState.instance,
         builder: (context, _) {
-          _loadEvents();
-          final events = AppState.instance.eventsForCurrentStudent();
-          final applications = AppState.instance.applications
-              .where((a) =>
-                  a.studentId == AppState.instance.currentStudent?.studentId)
-              .toList();
-          final regularEvents = events
-              .where((e) => !e.title.toLowerCase().contains('interview'))
-              .toList();
+          final allEvents = _allEvents;
+          final selectedEvents = _selectedDayEvents;
 
           return FadeTransition(
             opacity: _entranceFade,
@@ -159,50 +138,35 @@ class _StudentDashboardState extends State<StudentDashboard>
                   SliverToBoxAdapter(
                       child: SizedBox(
                           height: mq.padding.top + kToolbarHeight + 4)),
+
+                  // ── Hero card ──────────────────────────────────────
                   SliverToBoxAdapter(
                       child: Padding(
                           padding: hp.copyWith(top: 4, bottom: 24),
                           child: _buildHeroCard(mq))),
+
+                  // ── Calendar section label ─────────────────────────
                   SliverToBoxAdapter(
                       child: Padding(
                           padding: hp.copyWith(bottom: 12),
                           child: _sectionLabel('Calendar', 'Your schedule'))),
+
+                  // ── Calendar card ──────────────────────────────────
                   SliverToBoxAdapter(
                       child: Padding(
-                          padding: hp.copyWith(bottom: 32),
-                          child: _buildCalendarCard())),
-                  if (applications.isNotEmpty) ...[
-                    SliverToBoxAdapter(
-                        child: Padding(
-                            padding: hp.copyWith(bottom: 14),
-                            child: _sectionLabel('My Applications',
-                                '${applications.length} total'))),
-                    SliverPadding(
-                      padding: hp,
-                      sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                              (_, i) => _buildApplicationCard(applications[i]),
-                              childCount: applications.length)),
+                          padding: hp.copyWith(bottom: 0),
+                          child: _buildCalendarCard(allEvents))),
+
+                  // ── Selected day events (appears right below calendar)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: hp.copyWith(top: 16, bottom: 8),
+                      child: _buildSelectedDaySection(selectedEvents),
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 28)),
-                  ],
-                  if (regularEvents.isNotEmpty) ...[
-                    SliverToBoxAdapter(
-                        child: Padding(
-                            padding: hp.copyWith(bottom: 14),
-                            child: _sectionLabel(
-                                'Upcoming Events', 'Organization schedule'))),
-                    SliverPadding(
-                      padding: hp,
-                      sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                              (_, i) => _buildEventCard(regularEvents[i]),
-                              childCount: regularEvents.length)),
-                    ),
-                  ],
-                  if (events.isEmpty && applications.isEmpty)
-                    SliverToBoxAdapter(
-                        child: Padding(padding: hp, child: _buildEmptyState())),
+                  ),
+
+                  // ── Applications section ───────────────────────────
+
                   const SliverToBoxAdapter(child: SizedBox(height: 96)),
                 ],
               ),
@@ -213,7 +177,116 @@ class _StudentDashboardState extends State<StudentDashboard>
     );
   }
 
-  PreferredSizeWidget _buildGhostAppBar(BuildContext context) {
+  // ── Selected day section ───────────────────────────────────────────────
+  Widget _buildSelectedDaySection(List<Event> events) {
+    final day = _selectedDay;
+    if (day == null) return const SizedBox.shrink();
+
+    final label = isSameDay(day, DateTime.now())
+        ? 'Today\'s Events'
+        : DateFormat('MMMM d, yyyy').format(day);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header with selected date
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 4,
+              height: 22,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4F46E5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: _DT.ink,
+                        letterSpacing: -0.4),
+                  ),
+                  Text(
+                    events.isEmpty
+                        ? 'No events scheduled'
+                        : '${events.length} event${events.length == 1 ? '' : 's'}',
+                    style: const TextStyle(
+                        fontSize: 11.5,
+                        color: _DT.inkSecond,
+                        fontWeight: FontWeight.w400),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 14),
+
+        // Events for selected day OR empty state
+        if (events.isEmpty)
+          _buildEmptyEventsState(
+            'Nothing on this day',
+            'No events are scheduled\nfor ${DateFormat('MMMM d').format(day)}.',
+          )
+        else
+          ...events.map((e) => _EventFeedCard(event: e)),
+      ],
+    );
+  }
+
+  // ── Empty state widget ─────────────────────────────────────────────────
+  Widget _buildEmptyEventsState(String title, String subtitle) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+      decoration: BoxDecoration(
+        color: _DT.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _DT.border),
+        boxShadow: _DT.cardShadow,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.event_note_rounded,
+                color: Colors.white, size: 26),
+          ),
+          const SizedBox(height: 12),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w700, color: _DT.ink)),
+          const SizedBox(height: 5),
+          Text(subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 12.5, color: _DT.inkSecond, height: 1.55)),
+        ],
+      ),
+    );
+  }
+
+  // ── App bar ──────────────────────────────────────────────────────────
+  PreferredSizeWidget _buildAppBar() {
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight),
       child: ClipRect(
@@ -236,6 +309,7 @@ class _StudentDashboardState extends State<StudentDashboard>
     );
   }
 
+  // ── Hero card ────────────────────────────────────────────────────────
   Widget _buildHeroCard(MediaQueryData mq) {
     final hour = DateTime.now().hour;
     final greeting = hour < 12
@@ -309,40 +383,59 @@ class _StudentDashboardState extends State<StudentDashboard>
               ]),
             ),
             const Spacer(),
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.25),
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: Colors.white.withOpacity(0.50), width: 1.5),
-              ),
-              child: const Icon(Icons.person_rounded,
-                  color: Colors.white, size: 22),
+            // Show student name initial in avatar
+            ListenableBuilder(
+              listenable: AppState.instance,
+              builder: (context, _) {
+                final name = AppState.instance.currentStudent?.name ?? '';
+                final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                return Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.25),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Colors.white.withOpacity(0.50), width: 1.5),
+                  ),
+                  child: Center(
+                    child: Text(initial,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800)),
+                  ),
+                );
+              },
             ),
           ]),
           const SizedBox(height: 18),
-          const Text('Welcome Back',
-              style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  height: 1.08,
-                  letterSpacing: -1.0)),
+          ListenableBuilder(
+            listenable: AppState.instance,
+            builder: (context, _) {
+              final fullName = AppState.instance.currentStudent?.name ?? '';
+              final firstName = fullName.trim().split(' ').first;
+              return Text(
+                firstName.isNotEmpty
+                    ? 'Welcome Back, $firstName'
+                    : 'Welcome Back',
+                style: const TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.08,
+                    letterSpacing: -1.0),
+              );
+            },
+          ),
           const SizedBox(height: 6),
-          Row(children: [
-            Flexible(
-                child: Text(
-              DateFormat('EEEE, MMMM d').format(DateTime.now()),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withOpacity(0.78)),
-            )),
-          ]),
+          Text(
+            DateFormat('EEEE, MMMM d').format(DateTime.now()),
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.white.withOpacity(0.78)),
+          ),
           const SizedBox(height: 22),
           Container(height: 1, color: Colors.white.withOpacity(0.20)),
           const SizedBox(height: 16),
@@ -350,22 +443,22 @@ class _StudentDashboardState extends State<StudentDashboard>
             const Icon(Icons.rocket_launch_rounded,
                 color: Colors.white, size: 14),
             const SizedBox(width: 6),
-            Flexible(
-                child: Text(
+            const Text(
               'Your path to great organizations starts here.',
               style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w500,
-                  color: Colors.white.withOpacity(0.82),
+                  color: Colors.white,
                   letterSpacing: 0.1),
-            )),
+            ),
           ]),
         ]),
       ),
     );
   }
 
-  Widget _buildCalendarCard() {
+  // ── Calendar card ────────────────────────────────────────────────────
+  Widget _buildCalendarCard(List<Event> allEvents) {
     return Container(
       decoration: BoxDecoration(
         color: _DT.surface,
@@ -377,21 +470,22 @@ class _StudentDashboardState extends State<StudentDashboard>
         borderRadius: BorderRadius.circular(24),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-          child: TableCalendar<Event>(
+          child: TableCalendar(
             availableGestures: AvailableGestures.horizontalSwipe,
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
-            eventLoader: (d) => _events[d] ?? [],
             onDaySelected: (selected, focused) {
               setState(() {
                 _selectedDay = selected;
                 _focusedDay = focused;
               });
-              _showEventsForDay(selected);
             },
+            // ── Event dot markers ──────────────────────────────────
+            eventLoader: (day) => _eventsForDay(day),
             calendarBuilders: CalendarBuilders(
+              // Selected day circle
               selectedBuilder: (ctx, day, _) =>
                   LayoutBuilder(builder: (ctx, c) {
                 final size = (c.maxWidth * 0.80).clamp(30.0, 40.0);
@@ -411,6 +505,7 @@ class _StudentDashboardState extends State<StudentDashboard>
                           fontSize: 14)),
                 ));
               }),
+              // Today circle
               todayBuilder: (ctx, day, _) => LayoutBuilder(builder: (ctx, c) {
                 final size = (c.maxWidth * 0.80).clamp(30.0, 40.0);
                 return Center(
@@ -430,15 +525,28 @@ class _StudentDashboardState extends State<StudentDashboard>
                           fontSize: 14)),
                 ));
               }),
-              markerBuilder: (ctx, day, events) => events.isEmpty
-                  ? const SizedBox.shrink()
-                  : Positioned(
-                      bottom: 5,
-                      child: Container(
-                          width: 5,
-                          height: 5,
-                          decoration: const BoxDecoration(
-                              color: _DT.primary, shape: BoxShape.circle))),
+              // Custom dot marker below days with events
+              markerBuilder: (ctx, day, events) {
+                if (events.isEmpty) return const SizedBox.shrink();
+                return Positioned(
+                  bottom: 4,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: events
+                        .take(3)
+                        .map((_) => Container(
+                              width: 5,
+                              height: 5,
+                              margin: const EdgeInsets.symmetric(horizontal: 1),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF4F46E5),
+                                shape: BoxShape.circle,
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                );
+              },
             ),
             calendarStyle: CalendarStyle(
               defaultTextStyle: const TextStyle(
@@ -453,10 +561,13 @@ class _StudentDashboardState extends State<StudentDashboard>
                   color: Colors.transparent, shape: BoxShape.circle),
               todayDecoration: const BoxDecoration(
                   color: Colors.transparent, shape: BoxShape.circle),
-              markerDecoration: const BoxDecoration(
-                  color: Colors.transparent, shape: BoxShape.circle),
               cellMargin: const EdgeInsets.all(4),
-              markersMaxCount: 1,
+              // Markers config
+              markersMaxCount: 3,
+              markerDecoration: const BoxDecoration(
+                  color: Color(0xFF4F46E5), shape: BoxShape.circle),
+              markerSize: 5,
+              markerMargin: const EdgeInsets.symmetric(horizontal: 1),
             ),
             daysOfWeekStyle: DaysOfWeekStyle(
               weekdayStyle: TextStyle(
@@ -504,206 +615,9 @@ class _StudentDashboardState extends State<StudentDashboard>
         child: Icon(icon, color: const Color(0xFF4F46E5), size: 18),
       );
 
-  Widget _buildApplicationCard(Application app) {
-    final cfg = _statusConfig(app.status);
-    return _PressableScale(
-      onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-            color: _DT.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _DT.border),
-            boxShadow: _DT.cardShadow),
-        clipBehavior: Clip.hardEdge,
-        child: IntrinsicHeight(
-          child: Row(children: [
-            Container(
-                width: 4,
-                decoration: BoxDecoration(
-                    color: cfg.fg,
-                    borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        bottomLeft: Radius.circular(20)))),
-            Expanded(
-                child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
-              child: Row(children: [
-                Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                        color: _DT.primaryLight,
-                        borderRadius: BorderRadius.circular(13)),
-                    child: const Icon(Icons.business_center_rounded,
-                        color: _DT.primary, size: 21)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                      Text(app.orgName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: _DT.ink,
-                              letterSpacing: -0.3)),
-                      const SizedBox(height: 3),
-                      Text(_getStatusText(app.status),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              color: _DT.inkSecond)),
-                    ])),
-                const SizedBox(width: 10),
-                _buildStatusPill(app.status),
-              ]),
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
+  // ── Application card ─────────────────────────────────────────────────
 
-  Widget _buildEventCard(Event event) {
-    final isUpcoming = event.date.isAfter(DateTime.now());
-    return _PressableScale(
-      onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: _DT.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-              color: isUpcoming ? _DT.primary.withOpacity(0.18) : _DT.border),
-          boxShadow: _DT.cardShadow,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 52,
-              height: 58,
-              decoration: BoxDecoration(
-                gradient: isUpcoming
-                    ? const LinearGradient(
-                        colors: [_DT.primaryLight, Color(0xFFE4E2FF)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight)
-                    : null,
-                color: isUpcoming ? null : _DT.surfaceAlt,
-                borderRadius: BorderRadius.circular(14),
-                border: isUpcoming
-                    ? Border.all(color: _DT.primary.withOpacity(0.20))
-                    : Border.all(color: _DT.border),
-              ),
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(DateFormat('d').format(event.date),
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: isUpcoming ? _DT.primary : _DT.inkMuted,
-                            height: 1)),
-                    const SizedBox(height: 3),
-                    Text(DateFormat('MMM').format(event.date).toUpperCase(),
-                        style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
-                            color: isUpcoming ? _DT.primaryMid : _DT.inkMuted)),
-                  ]),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(event.title,
-                      style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: _DT.ink,
-                          letterSpacing: -0.3)),
-                  const SizedBox(height: 5),
-                  Text(event.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 12, color: _DT.inkSecond, height: 1.55)),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: isUpcoming ? _DT.primaryLight : _DT.surfaceAlt,
-                        borderRadius: BorderRadius.circular(7)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.access_time_rounded,
-                          size: 10,
-                          color: isUpcoming ? _DT.primary : _DT.inkSecond),
-                      const SizedBox(width: 4),
-                      Text(_formatTime(event.date),
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                              color: isUpcoming ? _DT.primary : _DT.inkSecond)),
-                    ]),
-                  ),
-                ])),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded,
-                size: 18, color: isUpcoming ? _DT.primaryMid : _DT.inkMuted),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusPill(ApplicationStatus status) {
-    final s = _statusConfig(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-          color: s.bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: s.ring, width: 1)),
-      child: Text(s.label,
-          style: TextStyle(
-              color: s.fg,
-              fontWeight: FontWeight.w700,
-              fontSize: 10.5,
-              letterSpacing: 0.1)),
-    );
-  }
-
-  _StatusCfg _statusConfig(ApplicationStatus status) {
-    switch (status) {
-      case ApplicationStatus.pending:
-        return const _StatusCfg(
-            'Pending', _DT.amberBg, _DT.amberFg, _DT.amberRing);
-      case ApplicationStatus.for_approval:
-        return const _StatusCfg(
-            'Approval', _DT.amberBg, _DT.amberFg, _DT.amberRing);
-      case ApplicationStatus.accepted:
-        return const _StatusCfg(
-            'Accepted', _DT.emeraldBg, _DT.emeraldFg, _DT.emeraldRing);
-      case ApplicationStatus.interview_scheduled:
-        return const _StatusCfg(
-            'Interview', _DT.indigoBg, _DT.indigoFg, _DT.indigoRing);
-      case ApplicationStatus.declined:
-        return const _StatusCfg(
-            'Declined', _DT.roseBg, _DT.roseFg, _DT.roseRing);
-    }
-  }
-
+  // ── Section label ────────────────────────────────────────────────────
   Widget _sectionLabel(String title, String sub) {
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       Container(
@@ -730,764 +644,361 @@ class _StudentDashboardState extends State<StudentDashboard>
       ])),
     ]);
   }
-
-  Widget _buildEmptyState() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 60),
-      child: Column(children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-              color: const Color(0xFF06B6D4),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: _DT.heroShadow),
-          child: const Icon(Icons.calendar_month_rounded,
-              size: 32, color: Colors.white),
-        ),
-        const SizedBox(height: 22),
-        const Text('All clear!',
-            style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: _DT.ink,
-                letterSpacing: -0.6)),
-        const SizedBox(height: 8),
-        const Text(
-            'No events or applications yet.\nOrganization updates will show here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: _DT.inkSecond, height: 1.6)),
-      ]),
-    );
-  }
-
-  String _formatTime(DateTime dt) {
-    final h = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-    final m = dt.minute.toString().padLeft(2, '0');
-    final per = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$h:$m $per';
-  }
-
-  String _getStatusText(ApplicationStatus status) {
-    switch (status) {
-      case ApplicationStatus.pending:
-        return 'Pending Review';
-      case ApplicationStatus.for_approval:
-        return 'For Approval';
-      case ApplicationStatus.accepted:
-        return 'Accepted';
-      case ApplicationStatus.interview_scheduled:
-        return 'Interview Scheduled';
-      case ApplicationStatus.declined:
-        return 'Declined';
-    }
-  }
 }
 
-// ── Day Events Bottom Sheet ───────────────────────────────────────────────
-class _DayEventsSheet extends StatelessWidget {
-  final DateTime day;
-  final List<Event> events;
-  const _DayEventsSheet({required this.day, required this.events});
+// ── Status config value object ─────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    final sidePad =
-        (MediaQuery.of(context).size.width * 0.06).clamp(16.0, 28.0);
-    return Container(
-      decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-      padding: EdgeInsets.fromLTRB(
-          sidePad, 12, sidePad, MediaQuery.of(context).viewInsets.bottom + 36),
-      child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: _DT.inkMuted,
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 22),
-            Row(children: [
-              Container(
-                  width: 4,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                        colors: [_DT.gradStart, _DT.gradEnd],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter),
-                    borderRadius: BorderRadius.circular(2),
-                  )),
-              const SizedBox(width: 12),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(DateFormat('EEEE').format(day),
-                    style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: _DT.ink,
-                        letterSpacing: -0.6)),
-                Text(DateFormat('MMMM d, yyyy').format(day),
-                    style: const TextStyle(fontSize: 13, color: _DT.inkSecond)),
-              ]),
-            ]),
-            const SizedBox(height: 20),
-            Container(height: 1, color: _DT.border),
-            const SizedBox(height: 16),
-            ...events.map((e) => _SheetRow(event: e)),
-          ]),
-    );
-  }
-}
-
-// ── Sheet Row ─────────────────────────────────────────────────────────────
-class _SheetRow extends StatelessWidget {
+// =============================================================================
+// _EventFeedCard — rich card with multi-image carousel + zoom
+// Ported from student_dashboard_screen.dart and adapted for Event model
+// =============================================================================
+class _EventFeedCard extends StatefulWidget {
   final Event event;
-  const _SheetRow({required this.event});
+  const _EventFeedCard({required this.event});
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-                colors: [_DT.gradStart, _DT.gradEnd],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: const Icon(Icons.event_rounded, color: Colors.white, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(event.title,
-              style: const TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w700, color: _DT.ink)),
-          Text(event.description,
-              style: const TextStyle(fontSize: 12, color: _DT.inkSecond),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-        ])),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-              color: _DT.primaryLight, borderRadius: BorderRadius.circular(7)),
-          child: Text(_fmt(event.date),
-              style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: _DT.primary)),
-        ),
-      ]),
-    );
-  }
-
-  String _fmt(DateTime dt) {
-    final h = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-    final m = dt.minute.toString().padLeft(2, '0');
-    final per = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$h:$m $per';
-  }
+  State<_EventFeedCard> createState() => _EventFeedCardState();
 }
 
-// ── Pressable Scale ───────────────────────────────────────────────────────
-class _PressableScale extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  const _PressableScale({required this.child, required this.onTap});
-  @override
-  State<_PressableScale> createState() => _PressableScaleState();
-}
+class _EventFeedCardState extends State<_EventFeedCard> {
+  int _currentImageIndex = 0;
 
-class _PressableScaleState extends State<_PressableScale>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 80),
-        lowerBound: 0,
-        upperBound: 1);
-    _scale = Tween<double>(begin: 1.0, end: 0.97)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTapDown: (_) => _ctrl.forward(),
-        onTapUp: (_) {
-          _ctrl.reverse();
-          widget.onTap();
-        },
-        onTapCancel: () => _ctrl.reverse(),
-        child: AnimatedBuilder(
-          animation: _scale,
-          builder: (_, child) =>
-              Transform.scale(scale: _scale.value, child: child),
-          child: widget.child,
-        ),
-      );
-}
-
-// ── Status config value object ────────────────────────────────────────────
-class _StatusCfg {
-  final String label;
-  final Color bg, fg, ring;
-  const _StatusCfg(this.label, this.bg, this.fg, this.ring);
-}
-
-// ── Embeddable version for use inside StudentDashboardScreen ──────────────
-class StudentDashboardBody extends StatefulWidget {
-  const StudentDashboardBody({super.key});
-
-  @override
-  State<StudentDashboardBody> createState() => _StudentDashboardBodyState();
-}
-
-class _StudentDashboardBodyState extends State<StudentDashboardBody>
-    with TickerProviderStateMixin {
-  late DateTime _focusedDay;
-  DateTime? _selectedDay;
-  late Map<DateTime, List<Event>> _events;
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulseAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusedDay = DateTime.now();
-    _selectedDay = _focusedDay;
-    AppState.instance.fetchEvents();
-    _loadEvents();
-    _pulseCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 2800))
-      ..repeat(reverse: true);
-    _pulseAnim = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
-  }
-
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
-
-  void _loadEvents() {
-    _events = {};
-    for (var e in AppState.instance.eventsForCurrentStudent()) {
-      final day = DateTime(e.date.year, e.date.month, e.date.day);
-      (_events[day] ??= []).add(e);
+  /// Resolve final list of image URLs (multi > single > empty)
+  List<String> get _imageUrls {
+    if (widget.event.imageUrls.isNotEmpty) return widget.event.imageUrls;
+    if (widget.event.imageUrl != null && widget.event.imageUrl!.isNotEmpty) {
+      return [widget.event.imageUrl!];
     }
+    return [];
   }
 
-  void _showEventsForDay(DateTime day) {
-    final events = _events[day] ?? [];
-    if (events.isEmpty) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _DayEventsSheet(day: day, events: events),
-    );
+  /// Build the right ImageProvider — handles base64 data URIs and network URLs
+  ImageProvider _imageProvider(String url) {
+    if (url.startsWith('data:')) {
+      try {
+        final base64Str = url.substring(url.indexOf(',') + 1);
+        return MemoryImage(base64Decode(base64Str));
+      } catch (_) {}
+    }
+    return CachedNetworkImageProvider(url);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final hPad = (mq.size.width * 0.055).clamp(16.0, 28.0);
-    final hp = EdgeInsets.symmetric(horizontal: hPad);
-
-    return AnimatedBuilder(
-      animation: AppState.instance,
-      builder: (context, _) {
-        _loadEvents();
-        final events = AppState.instance.eventsForCurrentStudent();
-        final applications = AppState.instance.applications
-            .where((a) =>
-                a.studentId == AppState.instance.currentStudent?.studentId)
-            .toList();
-        final regularEvents = events
-            .where((e) => !e.title.toLowerCase().contains('interview'))
-            .toList();
-
-        // Reuse the existing state's _buildCalendarCard / helpers
-        // by delegating to a helper that accepts the events map
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: hp.copyWith(bottom: 12),
-              child: _sectionLabel('Calendar', 'Your schedule'),
-            ),
-            Padding(
-              padding: hp.copyWith(bottom: 28),
-              child: _buildCalendarCard(),
-            ),
-            if (applications.isNotEmpty) ...[
-              Padding(
-                padding: hp.copyWith(bottom: 14),
-                child: _sectionLabel(
-                    'My Applications', '${applications.length} total'),
-              ),
-              ...applications.map(
-                  (a) => Padding(padding: hp, child: _buildApplicationCard(a))),
-              const SizedBox(height: 28),
-            ],
-            if (regularEvents.isNotEmpty) ...[
-              Padding(
-                padding: hp.copyWith(bottom: 14),
-                child:
-                    _sectionLabel('Upcoming Events', 'Organization schedule'),
-              ),
-              ...regularEvents
-                  .map((e) => Padding(padding: hp, child: _buildEventCard(e))),
-            ],
-            if (events.isEmpty && applications.isEmpty)
-              Padding(padding: hp, child: _buildEmptyState()),
-            const SizedBox(height: 96),
-          ],
-        );
-      },
-    );
-  }
-
-  // ── All helpers copied from _StudentDashboardState ──────────────────
-
-  Widget _buildCalendarCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: _DT.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _DT.border, width: 1.2),
-        boxShadow: _DT.cardShadow,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-          child: TableCalendar<Event>(
-            availableGestures: AvailableGestures.horizontalSwipe,
-            firstDay: DateTime.utc(2020, 1, 1),
-            lastDay: DateTime.utc(2030, 12, 31),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
-            eventLoader: (d) => _events[d] ?? [],
-            onDaySelected: (selected, focused) {
-              setState(() {
-                _selectedDay = selected;
-                _focusedDay = focused;
-              });
-              _showEventsForDay(selected);
-            },
-            calendarBuilders: CalendarBuilders(
-              selectedBuilder: (ctx, day, _) =>
-                  LayoutBuilder(builder: (ctx, c) {
-                final sz = (c.maxWidth * 0.80).clamp(30.0, 40.0);
-                return Center(
-                    child: Container(
-                  width: sz,
-                  height: sz,
-                  decoration: BoxDecoration(
-                      color: const Color(0xFF06B6D4),
-                      shape: BoxShape.circle,
-                      boxShadow: _DT.glowShadow),
-                  alignment: Alignment.center,
-                  child: Text('${day.day}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14)),
-                ));
-              }),
-              todayBuilder: (ctx, day, _) => LayoutBuilder(builder: (ctx, c) {
-                final sz = (c.maxWidth * 0.80).clamp(30.0, 40.0);
-                return Center(
-                    child: Container(
-                  width: sz,
-                  height: sz,
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2FF),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: const Color(0xFF4F46E5), width: 1.8)),
-                  alignment: Alignment.center,
-                  child: Text('${day.day}',
-                      style: const TextStyle(
-                          color: Color(0xFF4F46E5),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14)),
-                ));
-              }),
-              markerBuilder: (ctx, day, events) => events.isEmpty
-                  ? const SizedBox.shrink()
-                  : Positioned(
-                      bottom: 5,
-                      child: Container(
-                          width: 5,
-                          height: 5,
-                          decoration: const BoxDecoration(
-                              color: _DT.primary, shape: BoxShape.circle))),
-            ),
-            calendarStyle: CalendarStyle(
-              defaultTextStyle: const TextStyle(
-                  color: _DT.ink, fontWeight: FontWeight.w500, fontSize: 13),
-              weekendTextStyle: TextStyle(
-                  color: _DT.ink.withOpacity(0.55),
-                  fontWeight: FontWeight.w500,
-                  fontSize: 13),
-              outsideTextStyle:
-                  const TextStyle(color: _DT.inkMuted, fontSize: 13),
-              selectedDecoration: const BoxDecoration(
-                  color: Colors.transparent, shape: BoxShape.circle),
-              todayDecoration: const BoxDecoration(
-                  color: Colors.transparent, shape: BoxShape.circle),
-              markerDecoration: const BoxDecoration(
-                  color: Colors.transparent, shape: BoxShape.circle),
-              cellMargin: const EdgeInsets.all(4),
-              markersMaxCount: 1,
-            ),
-            daysOfWeekStyle: DaysOfWeekStyle(
-              weekdayStyle: TextStyle(
-                  color: _DT.inkSecond.withOpacity(0.70),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5),
-              weekendStyle: TextStyle(
-                  color: _DT.inkSecond.withOpacity(0.50),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5),
-            ),
-            headerStyle: HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true,
-              titleTextStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _DT.ink,
-                  letterSpacing: -0.3),
-              leftChevronIcon: _chevronBtn(Icons.chevron_left_rounded),
-              rightChevronIcon: _chevronBtn(Icons.chevron_right_rounded),
-              leftChevronPadding: EdgeInsets.zero,
-              rightChevronPadding: EdgeInsets.zero,
-              leftChevronMargin: const EdgeInsets.only(left: 8),
-              rightChevronMargin: const EdgeInsets.only(right: 8),
-              headerPadding: const EdgeInsets.only(bottom: 12),
-              decoration: const BoxDecoration(color: Colors.transparent),
-            ),
+  void _openZoom(BuildContext context, String url) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            elevation: 0,
+          ),
+          body: PhotoView(
+            imageProvider: _imageProvider(url),
+            minScale: PhotoViewComputedScale.contained,
+            maxScale: PhotoViewComputedScale.covered * 2.5,
+            backgroundDecoration: const BoxDecoration(color: Colors.black),
           ),
         ),
       ),
     );
   }
 
-  Widget _chevronBtn(IconData icon) => Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: const Color(0xFFEEF2FF),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.25)),
-        ),
-        child: Icon(icon, color: const Color(0xFF4F46E5), size: 18),
-      );
+  @override
+  Widget build(BuildContext context) {
+    final isUpcoming = widget.event.date.isAfter(DateTime.now());
+    final urls = _imageUrls;
+    final hasImages = urls.isNotEmpty;
+    final hasMultiple = urls.length > 1;
 
-  Widget _buildApplicationCard(Application app) {
-    final cfg = _statusConfig(app.status);
-    return _PressableScale(
-      onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-            color: _DT.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _DT.border),
-            boxShadow: _DT.cardShadow),
-        clipBehavior: Clip.hardEdge,
-        child: IntrinsicHeight(
-          child: Row(children: [
-            Container(
-                width: 4,
-                decoration: BoxDecoration(
-                    color: cfg.fg,
-                    borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        bottomLeft: Radius.circular(20)))),
-            Expanded(
-                child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
-              child: Row(children: [
-                Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                        color: _DT.primaryLight,
-                        borderRadius: BorderRadius.circular(13)),
-                    child: const Icon(Icons.business_center_rounded,
-                        color: _DT.primary, size: 21)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                      Text(app.orgName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: _DT.ink,
-                              letterSpacing: -0.3)),
-                      const SizedBox(height: 3),
-                      Text(_getStatusText(app.status),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              color: _DT.inkSecond)),
-                    ])),
-                const SizedBox(width: 10),
-                _buildStatusPill(app.status),
-              ]),
-            )),
-          ]),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isUpcoming
+              ? const Color(0xFF4F46E5).withOpacity(0.18)
+              : const Color(0xFFE8E9F3),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4F46E5).withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-    );
-  }
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Image / Carousel ──────────────────────────────────
+          if (hasImages)
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+              child: Stack(
+                children: [
+                  // Multi-image carousel
+                  if (hasMultiple)
+                    CarouselSlider(
+                      options: CarouselOptions(
+                        height: 200,
+                        viewportFraction: 1.0,
+                        enableInfiniteScroll: urls.length > 1,
+                        autoPlay: false,
+                        onPageChanged: (index, _) =>
+                            setState(() => _currentImageIndex = index),
+                      ),
+                      items: urls.map((url) {
+                        return GestureDetector(
+                          onTap: () => _openZoom(context, url),
+                          child: _buildImage(url, 200),
+                        );
+                      }).toList(),
+                    )
+                  else
+                    // Single image
+                    GestureDetector(
+                      onTap: () => _openZoom(context, urls.first),
+                      child: _buildImage(urls.first, 200),
+                    ),
 
-  Widget _buildEventCard(Event event) {
-    final isUpcoming = event.date.isAfter(DateTime.now());
-    return _PressableScale(
-      onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: _DT.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-              color: isUpcoming ? _DT.primary.withOpacity(0.18) : _DT.border),
-          boxShadow: _DT.cardShadow,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 52,
-              height: 58,
-              decoration: BoxDecoration(
-                gradient: isUpcoming
-                    ? const LinearGradient(
-                        colors: [_DT.primaryLight, Color(0xFFE4E2FF)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight)
-                    : null,
-                color: isUpcoming ? null : _DT.surfaceAlt,
-                borderRadius: BorderRadius.circular(14),
-                border: isUpcoming
-                    ? Border.all(color: _DT.primary.withOpacity(0.20))
-                    : Border.all(color: _DT.border),
-              ),
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(DateFormat('d').format(event.date),
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: isUpcoming ? _DT.primary : _DT.inkMuted,
-                            height: 1)),
-                    const SizedBox(height: 3),
-                    Text(DateFormat('MMM').format(event.date).toUpperCase(),
-                        style: TextStyle(
-                            fontSize: 9,
+                  // Dot indicators (multi only)
+                  if (hasMultiple)
+                    Positioned(
+                      bottom: 10,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: urls.asMap().entries.map((entry) {
+                          final isActive = entry.key == _currentImageIndex;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isActive ? 18 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? Colors.white
+                                  : Colors.white.withOpacity(0.45),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                  // Image counter badge (multi only)
+                  if (hasMultiple)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_currentImageIndex + 1} / ${urls.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
-                            color: isUpcoming ? _DT.primaryMid : _DT.inkMuted)),
-                  ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(event.title,
-                      style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: _DT.ink,
-                          letterSpacing: -0.3)),
-                  const SizedBox(height: 5),
-                  Text(event.description,
-                      maxLines: 2,
+
+          // ── Text content ──────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Org name + status pill
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                      widget.event.orgName,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 12, color: _DT.inkSecond, height: 1.55)),
-                  const SizedBox(height: 10),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF06B6D4),
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
-                        color: isUpcoming ? _DT.primaryLight : _DT.surfaceAlt,
-                        borderRadius: BorderRadius.circular(7)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.access_time_rounded,
-                          size: 10,
-                          color: isUpcoming ? _DT.primary : _DT.inkSecond),
-                      const SizedBox(width: 4),
-                      Text(_formatTime(event.date),
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                              color: isUpcoming ? _DT.primary : _DT.inkSecond)),
-                    ]),
+                      color: isUpcoming
+                          ? const Color(0xFFEEF2FF)
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      isUpcoming ? 'Upcoming' : 'Past',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: isUpcoming
+                            ? const Color(0xFF4F46E5)
+                            : const Color(0xFF94A3B8),
+                      ),
+                    ),
                   ),
-                ])),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded,
-                size: 18, color: isUpcoming ? _DT.primaryMid : _DT.inkMuted),
-          ]),
-        ),
+                ]),
+
+                const SizedBox(height: 8),
+
+                // Title
+                Text(
+                  widget.event.title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F0D2E),
+                    letterSpacing: -0.3,
+                    height: 1.2,
+                  ),
+                ),
+
+                // Description
+                if (widget.event.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.event.description,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B6B8E),
+                      height: 1.55,
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+
+                // Date chip
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isUpcoming
+                        ? const Color(0xFFEEF2FF)
+                        : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.calendar_today_rounded,
+                        size: 11,
+                        color: isUpcoming
+                            ? const Color(0xFF4F46E5)
+                            : const Color(0xFF94A3B8),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _formatDate(widget.event.date),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: isUpcoming
+                              ? const Color(0xFF4F46E5)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildStatusPill(ApplicationStatus status) {
-    final s = _statusConfig(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-          color: s.bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: s.ring, width: 1)),
-      child: Text(s.label,
-          style: TextStyle(
-              color: s.fg,
-              fontWeight: FontWeight.w700,
-              fontSize: 10.5,
-              letterSpacing: 0.1)),
-    );
-  }
-
-  _StatusCfg _statusConfig(ApplicationStatus status) {
-    switch (status) {
-      case ApplicationStatus.pending:
-        return const _StatusCfg(
-            'Pending', _DT.amberBg, _DT.amberFg, _DT.amberRing);
-      case ApplicationStatus.for_approval:
-        return const _StatusCfg(
-            'Approval', _DT.amberBg, _DT.amberFg, _DT.amberRing);
-      case ApplicationStatus.accepted:
-        return const _StatusCfg(
-            'Accepted', _DT.emeraldBg, _DT.emeraldFg, _DT.emeraldRing);
-      case ApplicationStatus.interview_scheduled:
-        return const _StatusCfg(
-            'Interview', _DT.indigoBg, _DT.indigoFg, _DT.indigoRing);
-      case ApplicationStatus.declined:
-        return const _StatusCfg(
-            'Declined', _DT.roseBg, _DT.roseFg, _DT.roseRing);
+  /// Shared image widget with placeholder + error fallback
+  Widget _buildImage(String url, double height) {
+    // base64 data URI
+    if (url.startsWith('data:')) {
+      try {
+        final base64Str = url.substring(url.indexOf(',') + 1);
+        return Image.memory(
+          base64Decode(base64Str),
+          width: double.infinity,
+          height: height,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _imageFallback(height),
+        );
+      } catch (_) {
+        return _imageFallback(height);
+      }
     }
-  }
 
-  Widget _sectionLabel(String title, String sub) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-      Container(
-          width: 4,
-          height: 22,
-          decoration: BoxDecoration(
-              color: const Color(0xFF06B6D4),
-              borderRadius: BorderRadius.circular(2))),
-      const SizedBox(width: 10),
-      Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _DT.ink,
-                letterSpacing: -0.4)),
-        Text(sub,
-            style: const TextStyle(
-                fontSize: 11.5,
-                color: _DT.inkSecond,
-                fontWeight: FontWeight.w400)),
-      ])),
-    ]);
-  }
-
-  Widget _buildEmptyState() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 60),
-      child: Column(children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-              color: const Color(0xFF06B6D4),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: _DT.heroShadow),
-          child: const Icon(Icons.calendar_month_rounded,
-              size: 32, color: Colors.white),
+    // Network URL
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: double.infinity,
+      height: height,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => Container(
+        height: height,
+        color: const Color(0xFFEEF2FF),
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFF4F46E5),
+            strokeWidth: 2,
+          ),
         ),
-        const SizedBox(height: 22),
-        const Text('All clear!',
-            style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: _DT.ink,
-                letterSpacing: -0.6)),
-        const SizedBox(height: 8),
-        const Text(
-            'No events or applications yet.\nOrganization updates will show here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: _DT.inkSecond, height: 1.6)),
-      ]),
+      ),
+      errorWidget: (_, __, ___) => _imageFallback(height),
     );
   }
 
-  String _formatTime(DateTime dt) {
-    final h = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-    final m = dt.minute.toString().padLeft(2, '0');
-    final per = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$h:$m $per';
-  }
+  Widget _imageFallback(double height) => Container(
+        height: height,
+        color: const Color(0xFFEEF2FF),
+        child: const Icon(Icons.broken_image_rounded,
+            color: Color(0xFF4F46E5), size: 36),
+      );
 
-  String _getStatusText(ApplicationStatus status) {
-    switch (status) {
-      case ApplicationStatus.pending:
-        return 'Pending Review';
-      case ApplicationStatus.for_approval:
-        return 'For Approval';
-      case ApplicationStatus.accepted:
-        return 'Accepted';
-      case ApplicationStatus.interview_scheduled:
-        return 'Interview Scheduled';
-      case ApplicationStatus.declined:
-        return 'Declined';
-    }
+  String _formatDate(DateTime dt) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 }

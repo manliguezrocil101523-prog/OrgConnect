@@ -10,7 +10,9 @@ enum UserRole { student, officer, admin }
 /// Application status lifecycle
 enum ApplicationStatus {
   pending,
+  interviewed,
   for_approval,
+  approved,
   accepted,
   interview_scheduled,
   declined
@@ -548,8 +550,12 @@ class AppState extends ChangeNotifier {
   /// Falls back to [ApplicationStatus.pending] for any unrecognised value.
   ApplicationStatus _parseStatus(String? status) {
     switch (status) {
+      case 'interviewed':
+        return ApplicationStatus.interviewed;
       case 'for_approval':
         return ApplicationStatus.for_approval;
+      case 'approved':
+        return ApplicationStatus.approved;
       case 'accepted':
         return ApplicationStatus.accepted;
       case 'interview_scheduled':
@@ -769,7 +775,7 @@ class AppState extends ChangeNotifier {
     final app = applications[idx];
 
     applications[idx] = app.copyWith(
-      status: ApplicationStatus.interview_scheduled, // ✅ correct
+      status: ApplicationStatus.interviewed,
       interviewAt: interviewAt,
     );
 
@@ -787,7 +793,7 @@ class AppState extends ChangeNotifier {
     ));
     try {
       await supabase.Supabase.instance.client.from('applications').update({
-        'status': 'interview_scheduled',
+        'status': 'interviewed',
         'interview_at': interviewAt.toIso8601String(),
       }).eq('id', app.id);
     } catch (e) {
@@ -948,7 +954,7 @@ class AppState extends ChangeNotifier {
         events.add(Event(
           id: item['id'],
           title: item['title'],
-          date: DateTime.parse(item['date']),
+          date: DateTime.parse(item['date']).toLocal(),
           description: item['description'] ?? '',
           orgName: item['org_name'] ?? '',
           orgId: item['org_id'],

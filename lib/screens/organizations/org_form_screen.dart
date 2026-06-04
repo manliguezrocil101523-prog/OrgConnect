@@ -1,12 +1,10 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/app_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:typed_data';
 
 class OrgFormScreen extends StatefulWidget {
   final String title;
@@ -631,29 +629,6 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     ),
 
                     const SizedBox(height: 12),
-
-                    // Status badge
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF6B5B95).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'Status: Pending',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF6B5B95),
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
 
                     _applyButton(context),
                   ],

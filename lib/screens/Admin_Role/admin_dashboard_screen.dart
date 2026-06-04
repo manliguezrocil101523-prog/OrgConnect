@@ -101,9 +101,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       int students = 0, officers = 0, admins = 0;
       for (var p in profilesResponse) {
         final role = p['role'] ?? '';
-        if (role == 'student')
+        if (role == 'student') {
           students++;
-        else if (role == 'officer')
+        } else if (role == 'officer')
           officers++;
         else if (role == 'admin') admins++;
       }
@@ -120,9 +120,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           interviewees = 0;
       for (var a in appsResponse) {
         final status = a['status'] ?? '';
-        if (status == 'pending')
+        if (status == 'pending') {
           pending++;
-        else if (status == 'for_approval')
+        } else if (status == 'for_approval')
           forApproval++;
         else if (status == 'accepted')
           accepted++;
@@ -294,66 +294,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           // ── Applications Overview ─────────────────────────
                           // ── Applications Overview + Roles (responsive) ───
                           _SectionLabel(
-                              label: 'Applications Overview',
+                              label: 'User Roles',
                               isDark: AppState.instance.isDark),
                           const SizedBox(height: 14),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              if (constraints.maxWidth >= 700) {
-                                // Side-by-side on wide screens
-                                return Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: _AppStatusCard(
-                                        total: _totalApps,
-                                        pending: _pending,
-                                        forApproval: _forApproval,
-                                        accepted: _accepted,
-                                        declined: _declined,
-                                        interviewees: _interviewees,
-                                        isDark: AppState.instance.isDark,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: _RolesCard(
-                                        students: _students,
-                                        officers: _officers,
-                                        admins: _admins,
-                                        isDark: AppState.instance.isDark,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }
-                              // Stacked on mobile
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _AppStatusCard(
-                                    total: _totalApps,
-                                    pending: _pending,
-                                    forApproval: _forApproval,
-                                    accepted: _accepted,
-                                    declined: _declined,
-                                    interviewees: _interviewees,
-                                    isDark: AppState.instance.isDark,
-                                  ),
-                                  const SizedBox(height: 28),
-                                  _SectionLabel(
-                                      label: 'User Roles',
-                                      isDark: AppState.instance.isDark),
-                                  const SizedBox(height: 14),
-                                  _RolesCard(
-                                    students: _students,
-                                    officers: _officers,
-                                    admins: _admins,
-                                    isDark: AppState.instance.isDark,
-                                  ),
-                                ],
-                              );
-                            },
+
+                          _RolesCard(
+                            students: _students,
+                            officers: _officers,
+                            admins: _admins,
+                            isDark: AppState.instance.isDark,
                           ),
                           const SizedBox(height: 16),
                         ],

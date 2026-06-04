@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Notification;
+import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
 import 'package:video_player/video_player.dart';
@@ -25,14 +26,20 @@ class OfficerApplicationsScreen extends StatelessWidget {
       case ApplicationStatus.pending:
         return const _SC(
             'Pending', Color(0xFFFFFBEB), Color(0xFF92400E), Color(0xFFFDE68A));
+      case ApplicationStatus.interviewed:
+        return const _SC('Interviewee', Color(0xFFEEF2FF), Color(0xFF3730A3),
+            Color(0xFFC7D2FE));
       case ApplicationStatus.for_approval:
-        return const _SC('Approval', Color(0xFFEFF6FF), Color(0xFF1E40AF),
+        return const _SC('For Approval', Color(0xFFEFF6FF), Color(0xFF1E40AF),
             Color(0xFFBFDBFE));
+      case ApplicationStatus.approved:
+        return const _SC('Approved', Color(0xFFECFDF5), Color(0xFF065F46),
+            Color(0xFFA7F3D0));
       case ApplicationStatus.accepted:
         return const _SC('Accepted', Color(0xFFECFDF5), Color(0xFF065F46),
             Color(0xFFA7F3D0));
       case ApplicationStatus.interview_scheduled:
-        return const _SC('Interview', Color(0xFFEEF2FF), Color(0xFF3730A3),
+        return const _SC('Scheduled', Color(0xFFEEF2FF), Color(0xFF3730A3),
             Color(0xFFC7D2FE));
       case ApplicationStatus.declined:
         return const _SC('Declined', Color(0xFFFFF1F2), Color(0xFF9F1239),
@@ -44,10 +51,10 @@ class OfficerApplicationsScreen extends StatelessWidget {
     switch (filter) {
       case 'pending':
         return 'Pending';
-      case 'forApproval':
-        return 'For Approval';
       case 'interviewed':
         return 'Interviewees';
+      case 'forApproval':
+        return 'For Approval';
       case 'approved':
         return 'Approved';
       case 'declined':
@@ -61,8 +68,12 @@ class OfficerApplicationsScreen extends StatelessWidget {
     switch (s) {
       case ApplicationStatus.pending:
         return 'Pending Review';
+      case ApplicationStatus.interviewed:
+        return 'Interviewee';
       case ApplicationStatus.for_approval:
         return 'For Approval';
+      case ApplicationStatus.approved:
+        return 'Approved';
       case ApplicationStatus.accepted:
         return 'Accepted';
       case ApplicationStatus.interview_scheduled:
@@ -124,37 +135,27 @@ class OfficerApplicationsScreen extends StatelessWidget {
               final pending = allApps
                   .where((a) => a.status == ApplicationStatus.pending)
                   .toList();
+              final interviewed = allApps
+                  .where((a) => a.status == ApplicationStatus.interviewed)
+                  .toList();
               final forApproval = allApps
                   .where((a) => a.status == ApplicationStatus.for_approval)
                   .toList();
-              final accepted = allApps
-                  .where((a) => a.status == ApplicationStatus.accepted)
-                  .toList();
-              final scheduled = allApps
-                  .where(
-                      (a) => a.status == ApplicationStatus.interview_scheduled)
+              final approved = allApps
+                  .where((a) => a.status == ApplicationStatus.approved)
                   .toList();
               final declined = allApps
                   .where((a) => a.status == ApplicationStatus.declined)
                   .toList();
-              final interviewed =
-                  accepted.where((a) => !memberNames.contains(a.name)).toList();
-              final approved =
-                  accepted.where((a) => memberNames.contains(a.name)).toList();
 
-              try {
-                print(
-                    'OfficerApps: org=$orgId pending=${pending.length} forApproval=${forApproval.length} accepted=${accepted.length} scheduled=${scheduled.length} declined=${declined.length}');
-              } catch (_) {}
-
-              // Filtered view
+// Filtered view
               List<Application>? filtered;
               if (filter == 'pending')
                 filtered = pending;
-              else if (filter == 'forApproval')
-                filtered = forApproval;
               else if (filter == 'interviewed')
                 filtered = interviewed;
+              else if (filter == 'forApproval')
+                filtered = forApproval;
               else if (filter == 'approved')
                 filtered = approved;
               else if (filter == 'declined') filtered = declined;
@@ -173,19 +174,22 @@ class OfficerApplicationsScreen extends StatelessWidget {
                         app: filtered![i],
                         index: i,
                         onView: () => _showDetails(context, filtered![i]),
-                        onAccept: _canAccept(filtered![i])
+                        onAccept: _canAccept(filtered[i])
                             ? () => _accept(context, filtered![i])
                             : null,
-                        onDecline: _canDecline(filtered![i])
+                        onDecline: _canDecline(filtered[i])
                             ? () => _decline(context, filtered![i])
                             : null,
-                        onSchedule: _canSchedule(filtered![i], memberNames)
+                        onSchedule: _canSchedule(filtered[i])
                             ? () => _scheduleInterview(context, filtered![i])
                             : null,
-                        onAssign: _canAssign(filtered![i], memberNames)
-                            ? () => _assignPosition(context, filtered![i])
+                        onMoveToApproval: _canMoveToApproval(filtered[i])
+                            ? () => _moveToApproval(context, filtered![i])
                             : null,
-                        onDelete: filtered![i].status ==
+                        onFinalApprove: _canFinalApprove(filtered[i])
+                            ? () => _finalApprove(context, filtered![i])
+                            : null,
+                        onDelete: filtered[i].status ==
                                 ApplicationStatus.declined
                             ? () => _deleteApplication(context, filtered![i])
                             : null,
@@ -214,24 +218,20 @@ class OfficerApplicationsScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (pending.isNotEmpty)
-                              ..._section(context, 'Pending Applications',
-                                  pending, memberNames),
-                            if (scheduled.isNotEmpty)
-                              ..._section(context, 'Scheduled Interviews',
-                                  scheduled, memberNames),
+                              ..._section(context, 'Pending', pending),
                             if (interviewed.isNotEmpty)
-                              ..._section(context, 'Interviewees', interviewed,
-                                  memberNames),
+                              ..._section(context, 'Interviewees', interviewed),
+                            if (forApproval.isNotEmpty)
+                              ..._section(context, 'For Approval', forApproval),
                             if (approved.isNotEmpty)
-                              ..._section(
-                                  context, 'Approved', approved, memberNames),
+                              ..._section(context, 'Approved', approved),
                             if (declined.isNotEmpty) ...[
                               _DeclinedHeader(
                                 onClearAll: () =>
                                     _clearDeclined(context, declined),
                               ),
                               const SizedBox(height: 12),
-                              ..._buildCards(context, declined, memberNames),
+                              ..._buildCards(context, declined),
                               const SizedBox(height: 24),
                             ],
                           ],
@@ -249,18 +249,17 @@ class OfficerApplicationsScreen extends StatelessWidget {
   }
 
   // ── Section helper ────────────────────────────────────────────────────
-  List<Widget> _section(BuildContext context, String title,
-      List<Application> apps, Set<String> memberNames) {
+  List<Widget> _section(
+      BuildContext context, String title, List<Application> apps) {
     return [
       _SectionLabel(text: title),
       const SizedBox(height: 12),
-      ..._buildCards(context, apps, memberNames),
+      ..._buildCards(context, apps),
       const SizedBox(height: 24),
     ];
   }
 
-  List<Widget> _buildCards(
-      BuildContext context, List<Application> apps, Set<String> memberNames) {
+  List<Widget> _buildCards(BuildContext context, List<Application> apps) {
     return apps
         .asMap()
         .entries
@@ -273,11 +272,14 @@ class OfficerApplicationsScreen extends StatelessWidget {
               onDecline: _canDecline(e.value)
                   ? () => _decline(context, e.value)
                   : null,
-              onSchedule: _canSchedule(e.value, memberNames)
+              onSchedule: _canSchedule(e.value)
                   ? () => _scheduleInterview(context, e.value)
                   : null,
-              onAssign: _canAssign(e.value, memberNames)
-                  ? () => _assignPosition(context, e.value)
+              onMoveToApproval: _canMoveToApproval(e.value)
+                  ? () => _moveToApproval(context, e.value)
+                  : null,
+              onFinalApprove: _canFinalApprove(e.value)
+                  ? () => _finalApprove(context, e.value)
                   : null,
               onDelete: e.value.status == ApplicationStatus.declined
                   ? () => _deleteApplication(context, e.value)
@@ -287,52 +289,89 @@ class OfficerApplicationsScreen extends StatelessWidget {
   }
 
   // ── Action guards — UNTOUCHED logic ───────────────────────────────────
-  bool _canAccept(Application a) =>
-      a.status == ApplicationStatus.pending ||
-      a.status == ApplicationStatus.for_approval;
+  // Pending → Accept → Interviewees
+  bool _canAccept(Application a) => a.status == ApplicationStatus.pending;
 
+  // Any active stage can be declined
   bool _canDecline(Application a) =>
       a.status == ApplicationStatus.pending ||
+      a.status == ApplicationStatus.interviewed ||
       a.status == ApplicationStatus.for_approval;
 
-  bool _canSchedule(Application a, Set<String> memberNames) =>
-      a.status == ApplicationStatus.accepted && !memberNames.contains(a.name);
+  // Interviewees → Schedule interview
+  bool _canSchedule(Application a) => a.status == ApplicationStatus.interviewed;
 
-  bool _canAssign(Application a, Set<String> memberNames) =>
-      a.status == ApplicationStatus.accepted && !memberNames.contains(a.name);
+  // Interviewees → Mark interview complete → For Approval
+  bool _canMoveToApproval(Application a) =>
+      a.status == ApplicationStatus.interviewed;
+
+  // For Approval → Final Approve → Approved
+  bool _canFinalApprove(Application a) =>
+      a.status == ApplicationStatus.for_approval;
 
   // ── Actions — all original logic preserved ────────────────────────────
   void _accept(BuildContext context, Application a) {
-    final orgId = AppState.instance.currentOfficerOrgId;
-    final org = orgId != null
-        ? AppState.instance.organizations.firstWhere(
-            (o) => o.id == orgId,
-            orElse: () => a.orgId != null
-                ? AppState.instance.organizations.firstWhere(
-                    (o) => o.id == a.orgId,
-                    orElse: () => AppState.instance.organizations.first)
-                : AppState.instance.organizations.first,
-          )
-        : null;
+    AppState.instance.setApplicationStatus(a.id, ApplicationStatus.interviewed);
+    _snack(context, '${a.name} moved to Interviewees.');
+  }
 
-    // Guard: if no org context, bail out safely
-    if (orgId == null || org == null) {
-      _snack(context, 'No organization context found. Please re-login.',
-          Colors.red);
-      return;
-    }
+  void _moveToApproval(BuildContext context, Application a) {
+    AppState.instance
+        .setApplicationStatus(a.id, ApplicationStatus.for_approval);
+    _snack(context, '${a.name} moved to For Approval.');
+  }
 
-    if (a.status == ApplicationStatus.for_approval) {
-      AppState.instance.approveApplication(
-        a.id,
-        defaultPosition: 'Member',
+  void _finalApprove(BuildContext context, Application a) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => _ConfirmDialog(
+        title: 'Final Approval',
+        message: 'Approve ${a.name} as an official member of ${a.orgName}?',
+        confirmLabel: 'Approve',
+        confirmColor: const Color(0xFF22C55E),
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await supabase.Supabase.instance.client
+          .from('applications')
+          .update({'status': 'approved'}).eq('id', a.id);
+
+      final idx =
+          AppState.instance.applications.indexWhere((x) => x.id == a.id);
+      if (idx != -1) {
+        AppState.instance.applications[idx] =
+            AppState.instance.applications[idx].copyWith(
+          status: ApplicationStatus.approved,
+        );
+        AppState.instance.notifyListeners();
+      }
+
+      await AppState.instance.addMember(
+        name: a.name,
+        position: 'Member',
+        orgName: a.orgName,
+        orgId: a.orgId,
       );
 
-      _snack(context, '${a.name} approved and added to the organization.',
-          _success);
-    } else {
-      AppState.instance.setApplicationStatus(a.id, ApplicationStatus.accepted);
-      _snack(context, 'Moved to Interviewees. You can schedule an interview.');
+      await AppState.instance.addNotification(Notification(
+        id: const Uuid().v4(),
+        title: 'Application Approved',
+        message: 'Your application to ${a.orgName} has been approved. Welcome!',
+        date: DateTime.now(),
+        studentId: a.userId,
+        orgId: a.orgId,
+      ));
+
+      if (context.mounted) {
+        _snack(context, '${a.name} approved and added as a member!',
+            const Color(0xFF22C55E));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        _snack(context, 'Failed to approve. Please try again.', Colors.red);
+      }
     }
   }
 
@@ -365,9 +404,10 @@ class OfficerApplicationsScreen extends StatelessWidget {
     } catch (e) {
       print('Error deleting declined: $e');
     }
-    if (context.mounted)
+    if (context.mounted) {
       _snack(context, 'Deleted ${ids.length} declined application(s).',
           Colors.red);
+    }
   }
 
   void _showDetails(BuildContext context, Application a) {
@@ -781,7 +821,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
                         final ok =
                             await AppState.instance.scheduleInterview(a.id, dt);
                         if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted)
+                        if (context.mounted) {
                           _snack(
                             context,
                             ok
@@ -789,14 +829,16 @@ class OfficerApplicationsScreen extends StatelessWidget {
                                 : 'Failed to schedule.',
                             ok ? _success : Colors.red,
                           );
+                        }
                       } catch (e) {
                         if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted)
+                        if (context.mounted) {
                           _snack(
                             context,
                             'Failed to schedule interview. Please try again.',
                             Colors.red,
                           );
+                        }
                         print('Schedule interview error: $e');
                       }
                     },
@@ -907,8 +949,9 @@ class OfficerApplicationsScreen extends StatelessWidget {
     } catch (e) {
       print('Error deleting: $e');
     }
-    if (context.mounted)
+    if (context.mounted) {
       _snack(context, "${a.name}'s application deleted.", Colors.red);
+    }
   }
 
   // ── Small helpers ─────────────────────────────────────────────────────
@@ -1049,7 +1092,12 @@ class _AppCard extends StatelessWidget {
   final Application app;
   final int index;
   final VoidCallback onView;
-  final VoidCallback? onAccept, onDecline, onSchedule, onAssign, onDelete;
+  final VoidCallback? onAccept;
+  final VoidCallback? onDecline;
+  final VoidCallback? onSchedule;
+  final VoidCallback? onMoveToApproval;
+  final VoidCallback? onFinalApprove;
+  final VoidCallback? onDelete;
 
   const _AppCard({
     required this.app,
@@ -1058,7 +1106,8 @@ class _AppCard extends StatelessWidget {
     this.onAccept,
     this.onDecline,
     this.onSchedule,
-    this.onAssign,
+    this.onMoveToApproval,
+    this.onFinalApprove,
     this.onDelete,
   });
 
@@ -1175,53 +1224,69 @@ class _AppCard extends StatelessWidget {
                       const SizedBox(height: 10),
 
                       // Action buttons row
+                      // Action buttons row
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(children: [
                           _Chip(
-                              icon: Icons.visibility_rounded,
-                              label: 'View',
-                              color: const Color(0xFF4F46E5),
-                              onTap: onView),
+                            icon: Icons.visibility_rounded,
+                            label: 'View',
+                            color: const Color(0xFF4F46E5),
+                            onTap: onView,
+                          ),
                           if (onAccept != null) ...[
                             const SizedBox(width: 6),
                             _Chip(
-                                icon: Icons.check_circle_rounded,
-                                label: 'Accept',
-                                color: const Color(0xFF22C55E),
-                                onTap: onAccept!)
-                          ],
-                          if (onDecline != null) ...[
-                            const SizedBox(width: 6),
-                            _Chip(
-                                icon: Icons.cancel_rounded,
-                                label: 'Decline',
-                                color: const Color(0xFFEF4444),
-                                onTap: onDecline!)
+                              icon: Icons.check_circle_rounded,
+                              label: 'Accept',
+                              color: const Color(0xFF22C55E),
+                              onTap: onAccept!,
+                            ),
                           ],
                           if (onSchedule != null) ...[
                             const SizedBox(width: 6),
                             _Chip(
-                                icon: Icons.schedule_rounded,
-                                label: 'Schedule',
-                                color: const Color(0xFFF59E0B),
-                                onTap: onSchedule!)
+                              icon: Icons.schedule_rounded,
+                              label: 'Schedule',
+                              color: const Color(0xFFF59E0B),
+                              onTap: onSchedule!,
+                            ),
                           ],
-                          if (onAssign != null) ...[
+                          if (onMoveToApproval != null) ...[
                             const SizedBox(width: 6),
                             _Chip(
-                                icon: Icons.person_add_rounded,
-                                label: 'Assign',
-                                color: const Color(0xFF8B5CF6),
-                                onTap: onAssign!)
+                              icon: Icons.done_all_rounded,
+                              label: 'Interview Done',
+                              color: const Color(0xFF06B6D4),
+                              onTap: onMoveToApproval!,
+                            ),
+                          ],
+                          if (onFinalApprove != null) ...[
+                            const SizedBox(width: 6),
+                            _Chip(
+                              icon: Icons.verified_rounded,
+                              label: 'Approve',
+                              color: const Color(0xFF22C55E),
+                              onTap: onFinalApprove!,
+                            ),
+                          ],
+                          if (onDecline != null) ...[
+                            const SizedBox(width: 6),
+                            _Chip(
+                              icon: Icons.cancel_rounded,
+                              label: 'Decline',
+                              color: const Color(0xFFEF4444),
+                              onTap: onDecline!,
+                            ),
                           ],
                           if (onDelete != null) ...[
                             const SizedBox(width: 6),
                             _Chip(
-                                icon: Icons.delete_forever_rounded,
-                                label: 'Delete',
-                                color: const Color(0xFFEF4444),
-                                onTap: onDelete!)
+                              icon: Icons.delete_forever_rounded,
+                              label: 'Delete',
+                              color: const Color(0xFFEF4444),
+                              onTap: onDelete!,
+                            ),
                           ],
                         ]),
                       ),

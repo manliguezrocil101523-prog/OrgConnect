@@ -191,7 +191,7 @@ class _AuthGateState extends State<AuthGate> {
               ),
               padding: const EdgeInsets.all(18),
               child: Image.asset(
-                'assets/orgconnectLogo.jpg',
+                'assets/OrgConnectLogo.jpg',
                 fit: BoxFit.contain,
               ),
             ),
