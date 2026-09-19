@@ -1,0 +1,58 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class AdminOrganizationDetailScreen extends StatefulWidget {
+  final String orgId;
+  final String orgName;
+  const AdminOrganizationDetailScreen({super.key, required this.orgId, required this.orgName});
+  @override State<AdminOrganizationDetailScreen> createState() => _AdminOrganizationDetailScreenState();
+}
+
+class _AdminOrganizationDetailScreenState extends State<AdminOrganizationDetailScreen> with SingleTickerProviderStateMixin {
+  final db = Supabase.instance.client;
+  late TabController tabs;
+  bool loading = true;
+  Map<String,dynamic>? org;
+  List<Map<String,dynamic>> members=[], officers=[], events=[], proposals=[], finance=[];
+  double allocated=0;
+  @override void initState(){super.initState(); tabs=TabController(length: 4, vsync: this); _load();}
+  @override void dispose(){tabs.dispose();super.dispose();}
+  Future<void> _load() async {
+    setState(()=>loading=true);
+    try {
+      final o = await db.from('organizations').select().eq('id', widget.orgId).maybeSingle();
+      final m = await db.from('members').select('id,name,position,profile_id').eq('org_id', widget.orgId);
+      final p = await db.from('profiles').select('id,name,email,position,role,avatar_url').eq('assigned_org_id', widget.orgId).order('name');
+      final e = await db.from('events').select('*').eq('org_id', widget.orgId).order('date', ascending:false);
+      final pr = await db.from('event_requests').select('*').eq('org_id', widget.orgId).order('created_at', ascending:false);
+      final f = await db.from('org_financial_transactions').select('*').eq('org_id', widget.orgId).order('transaction_date', ascending:false);
+      allocated = (o?['allocated_budget'] as num?)?.toDouble() ?? 0;
+      org = o == null ? null : Map<String,dynamic>.from(o);
+      members = (m as List).map((x)=>Map<String,dynamic>.from(x)).toList();
+      officers = (p as List).where((x)=>x['role']?.toString()=='officer').map((x)=>Map<String,dynamic>.from(x)).toList();
+      events = (e as List).map((x)=>Map<String,dynamic>.from(x)).toList();
+      proposals = (pr as List).map((x)=>Map<String,dynamic>.from(x)).toList();
+      finance = (f as List).map((x)=>Map<String,dynamic>.from(x)).toList();
+    } catch(e){ if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load organization: $e'))); }
+    if(mounted)setState(()=>loading=false);
+  }
+  double get income=>finance.where((x)=>x['type']=='income').fold(0.0,(s,x)=>s+(x['amount'] as num? ?? 0));
+  double get expenses=>finance.where((x)=>x['type']=='expense').fold(0.0,(s,x)=>s+(x['amount'] as num? ?? 0));
+  double get balance=>allocated+income-expenses;
+  @override Widget build(BuildContext context)=>Scaffold(backgroundColor: const Color(0xFFF3FAF5), appBar: AppBar(backgroundColor: const Color(0xFF16A34A), foregroundColor: Colors.white, title: Text(widget.orgName, style: const TextStyle(fontWeight: FontWeight.w800)), actions:[IconButton(onPressed:_load,icon:const Icon(Icons.refresh_rounded))], bottom: TabBar(controller:tabs, isScrollable:true, tabs:const[Tab(text:'Overview'),Tab(text:'People'),Tab(text:'Events & Proposals'),Tab(text:'Liquidation')], indicatorColor:Colors.white)), body: loading?const Center(child:CircularProgressIndicator()):TabBarView(controller:tabs,children:[_overview(),_people(),_events(),_liquidation()]));
+  Widget _card(Widget child)=>Container(margin:const EdgeInsets.only(bottom:14),padding:const EdgeInsets.all(18),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(22),border:Border.all(color:const Color(0xFFDDEDE2)),boxShadow:[BoxShadow(color:Colors.black.withOpacity(.04),blurRadius:14,offset:const Offset(0,6))]),child:child);
+  Widget _overview()=>ListView(padding:const EdgeInsets.all(18),children:[
+    _card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[CircleAvatar(radius:30,backgroundColor:const Color(0xFFE8F7ED),backgroundImage:(org?['logo_asset']?.toString().startsWith('http')??false)?NetworkImage(org!['logo_asset']):null,child:const Icon(Icons.groups_rounded,color:Color(0xFF16A34A))),const SizedBox(width:14),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(org?['name']?.toString()??widget.orgName??'',style:const TextStyle(fontSize:21,fontWeight:FontWeight.w900)),Text(org?['category']?.toString()??'Organization',style:const TextStyle(color:Color(0xFF64748B)))]))]),const SizedBox(height:18),Text(org?['about']?.toString()??org?['short_desc']?.toString()??'No organization description yet.',style:const TextStyle(height:1.45,color:Color(0xFF475569))),const SizedBox(height:16),Wrap(spacing:8,runSpacing:8,children:[_pill(Icons.people_alt_outlined,'${members.length} members'),_pill(Icons.badge_outlined,'${officers.length} officers'),_pill(Icons.event_outlined,'${events.length} events'),_pill(Icons.assignment_outlined,'${proposals.length} proposals')])])),
+    _card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Organization Snapshot',style:TextStyle(fontSize:16,fontWeight:FontWeight.w800)),const SizedBox(height:12),_metric('Members',members.length.toString(),Icons.people_outline),_metric('Officers',officers.length.toString(),Icons.badge_outlined),_metric('Published / recorded events',events.length.toString(),Icons.event_available_outlined),_metric('Current balance',_money(balance),Icons.account_balance_wallet_outlined)])),
+  ]);
+  Widget _people()=>ListView(padding:const EdgeInsets.all(18),children:[_card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Officers',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:10),...officers.map((o)=>ListTile(contentPadding:EdgeInsets.zero,leading:CircleAvatar(backgroundColor:const Color(0xFFE8F7ED),backgroundImage:(o['avatar_url']?.toString().isNotEmpty??false)?NetworkImage(o['avatar_url']):null,child:const Icon(Icons.person,color:Color(0xFF16A34A))),title:Text(o['name']?.toString()??'Officer',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(o['position']?.toString()??'Officer')))])),_card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Members (${members.length})',style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:8),...members.take(100).map((m)=>ListTile(contentPadding:EdgeInsets.zero,leading:const CircleAvatar(backgroundColor:Color(0xFFE8F7ED),child:Icon(Icons.person_outline,color:Color(0xFF16A34A))),title:Text(m['name']?.toString()??'Member'),subtitle:Text(m['position']?.toString()??'Member')))]))]);
+  Widget _events()=>ListView(padding:const EdgeInsets.all(18),children:[_card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Events',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:8),if(events.isEmpty)const Text('No events recorded yet.',style:TextStyle(color:Color(0xFF64748B))),...events.take(30).map((e)=>ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.event_note_rounded,color:Color(0xFF16A34A)),title:Text(e['title']?.toString()??'Event',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text(e['date']?.toString()??'')))])),_card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Proposal History',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:8),...proposals.take(40).map((p){final s=p['status']?.toString()??'pending';return ListTile(contentPadding:EdgeInsets.zero,leading:Container(padding:const EdgeInsets.all(9),decoration:BoxDecoration(color:const Color(0xFFE8F7ED),borderRadius:BorderRadius.circular(10)),child:const Icon(Icons.description_outlined,color:Color(0xFF16A34A))),title:Text(p['title']?.toString()??'Proposal',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text('Status: ${s.replaceAll('_',' ')}'),trailing:_status(s));})]))]);
+  Widget _liquidation()=>ListView(padding:const EdgeInsets.all(18),children:[_card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Liquidation Summary',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:14),Row(children:[Expanded(child:_moneyCard('Allocated Budget',allocated,Icons.account_balance_outlined)),const SizedBox(width:10),Expanded(child:_moneyCard('Income',income,Icons.trending_up_rounded))]),const SizedBox(height:10),Row(children:[Expanded(child:_moneyCard('Expenses',expenses,Icons.trending_down_rounded)),const SizedBox(width:10),Expanded(child:_moneyCard('Available',balance,Icons.wallet_rounded))])])),_card(Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[const Expanded(child:Text('Financial Report',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),),FilledButton.icon(style:ButtonStyle(backgroundColor:const MaterialStatePropertyAll(Color(0xFF16A34A))),onPressed:()=>_printReport(),icon:const Icon(Icons.print_rounded),label:const Text('Print'))]),const SizedBox(height:10),...finance.take(100).map((x){final incomeRow=x['type']=='income';return ListTile(contentPadding:EdgeInsets.zero,leading:CircleAvatar(backgroundColor:(incomeRow?Colors.green:Colors.red).withOpacity(.1),child:Icon(incomeRow?Icons.add:Icons.remove,color:incomeRow?Colors.green:Colors.red)),title:Text(x['description']?.toString()??x['category']?.toString()??'Transaction',style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text('${x['transaction_date']??''} • ${x['event_name']??''}'),trailing:Text('${incomeRow?'+':'-'} ${_money((x['amount'] as num? ?? 0).toDouble())}',style:TextStyle(fontWeight:FontWeight.w800,color:incomeRow?Colors.green:Colors.red)));})]))]);
+  Future<void> _printReport() async { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Financial report is ready for printing.'))); }
+  Widget _moneyCard(String l,double v,IconData i)=>Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:const Color(0xFFF6FBF7),borderRadius:BorderRadius.circular(16)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(i,color:const Color(0xFF16A34A)),const SizedBox(height:8),Text(l,style:const TextStyle(color:Color(0xFF64748B),fontSize:12)),const SizedBox(height:3),Text(_money(v),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900))]));
+  Widget _metric(String l,String v,IconData i)=>Padding(padding:const EdgeInsets.symmetric(vertical:7),child:Row(children:[Container(padding:const EdgeInsets.all(8),decoration:BoxDecoration(color:const Color(0xFFE8F7ED),borderRadius:BorderRadius.circular(10)),child:Icon(i,size:18,color:const Color(0xFF16A34A))),const SizedBox(width:10),Expanded(child:Text(l)),Text(v,style:const TextStyle(fontWeight:FontWeight.w900))]));
+  Widget _pill(IconData i,String t)=>Container(padding:const EdgeInsets.symmetric(horizontal:11,vertical:7),decoration:BoxDecoration(color:const Color(0xFFE8F7ED),borderRadius:BorderRadius.circular(30)),child:Row(mainAxisSize:MainAxisSize.min,children:[Icon(i,size:15,color:const Color(0xFF16A34A)),const SizedBox(width:5),Text(t,style:const TextStyle(color:Color(0xFF166534),fontWeight:FontWeight.w700,fontSize:12))]));
+  Widget _status(String s)=>Container(padding:const EdgeInsets.symmetric(horizontal:9,vertical:5),decoration:BoxDecoration(color:const Color(0xFFE8F7ED),borderRadius:BorderRadius.circular(20)),child:Text(s.replaceAll('_',' '),style:const TextStyle(color:Color(0xFF166534),fontSize:11,fontWeight:FontWeight.w800)));
+  String _money(double n)=>'₱${NumberFormat('#,##0.00').format(n)}';
+}
