@@ -45,7 +45,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     duration: const Duration(milliseconds: 400),
   )..forward();
 
-  late Animation<double> _fadeAnim = CurvedAnimation(
+  late final Animation<double> _fadeAnim = CurvedAnimation(
     parent: _animCtrl,
     curve: Curves.easeOut,
   );
@@ -393,7 +393,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
           boxShadow: _otpFocus[index].hasFocus
               ? [
                   BoxShadow(
-                    color: _kPrimaryBlue.withOpacity(0.12),
+                    color: _kPrimaryBlue.withValues(alpha: 0.12),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   )
@@ -576,7 +576,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: _kPrimaryBlue,
-          disabledBackgroundColor: _kPrimaryBlue.withOpacity(0.45),
+          disabledBackgroundColor: _kPrimaryBlue.withValues(alpha: 0.45),
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(40),
@@ -604,3 +604,4 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     );
   }
 }
+

@@ -60,11 +60,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       int students = 0, officers = 0, admins = 0;
       for (var p in profilesResponse) {
         final role = p['role'] ?? '';
-        if (role == 'student')
+        if (role == 'student') {
           students++;
-        else if (role == 'officer')
+        } else if (role == 'officer') {
           officers++;
-        else if (role == 'admin') admins++;
+        } else if (role == 'admin') {
+          admins++;
+        }
       }
 
       final apps = AppState.instance.applications;
@@ -81,14 +83,14 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _pending =
             apps.where((a) => a.status == ApplicationStatus.pending).length;
         _forApproval = apps
-            .where((a) => a.status == ApplicationStatus.for_approval)
+            .where((a) => a.status == ApplicationStatus.forApproval)
             .length;
         _accepted =
             apps.where((a) => a.status == ApplicationStatus.accepted).length;
         _declined =
             apps.where((a) => a.status == ApplicationStatus.declined).length;
         _interviewees = apps
-            .where((a) => a.status == ApplicationStatus.interview_scheduled)
+            .where((a) => a.status == ApplicationStatus.interviewScheduled)
             .length;
         _students = students;
         _officers = officers;
@@ -96,7 +98,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _loading = false;
       });
     } catch (e) {
-      print('Error loading reports: $e');
+      debugPrint('Error loading reports: $e');
       setState(() => _loading = false);
     }
   }
@@ -113,13 +115,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           'Reports & Analytics',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadReports,
-            tooltip: 'Refresh',
-          ),
-        ],
+        actions: [],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -191,7 +187,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -203,7 +199,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: accent.withOpacity(0.1),
+              color: accent.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: accent),
@@ -234,7 +230,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -268,7 +264,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -290,7 +286,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -318,3 +314,4 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 }
+

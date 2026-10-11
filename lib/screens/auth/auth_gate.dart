@@ -8,7 +8,6 @@ import '../Admin_Role/admin_dashboard_screen.dart';
 import '../Adviser_Role/adviser_dashboard_screen.dart';
 import 'unified_login_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'get_started_screen.dart';
 import '../guest/public_events_screen.dart';
 import 'forgot_password_page.dart';
 
@@ -110,6 +109,18 @@ class _AuthGateState extends State<AuthGate> {
       } else if (role == 'officer') {
         // ── Officer ────────────────────────────────────────────────────────
         final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
+        final officerMembership = await Supabase.instance.client
+            .from('members')
+            .select('position')
+            .eq('org_id', assignedOrgId)
+            .eq('profile_id', userId)
+            .maybeSingle();
+        final officerPosition = officerMembership?['position']?.toString().toLowerCase().trim() ?? '';
+        if (!{'president', 'vice president', 'secretary'}.contains(officerPosition)) {
+          await Supabase.instance.client.auth.signOut();
+          _goTo(const UnifiedLoginPage());
+          return;
+        }
 
         if (assignedOrgId.isEmpty) {
           // Officer not assigned yet — sign out and go to login
@@ -206,7 +217,7 @@ class _AuthGateState extends State<AuthGate> {
               ),
               padding: const EdgeInsets.all(18),
               child: Image.asset(
-                'assets/OrgConnectLogo.jpg',
+                'assets/OrgConnectLogo.png',
                 fit: BoxFit.contain,
               ),
             ),
@@ -264,3 +275,4 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 }
+

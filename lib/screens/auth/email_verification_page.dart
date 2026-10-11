@@ -436,7 +436,7 @@ class _EmailVerificationPageState
               ? [
                   BoxShadow(
                     color:
-                        _kBlue.withOpacity(.12),
+                        _kBlue.withValues(alpha: .12),
                     blurRadius: 8,
                     offset:
                         const Offset(0, 2),
@@ -560,7 +560,7 @@ class _EmailVerificationPageState
                           height: 82,
                           decoration: BoxDecoration(
                             color: _kBlue
-                                .withOpacity(.08),
+                                .withValues(alpha: .08),
                             borderRadius:
                                 BorderRadius.circular(
                               24,
@@ -720,7 +720,7 @@ class _EmailVerificationPageState
                             backgroundColor:
                                 _kBlue,
                             disabledBackgroundColor:
-                                _kBlue.withOpacity(
+                                _kBlue.withValues(alpha: 
                               .45,
                             ),
                             elevation: 0,

@@ -9,7 +9,6 @@ class _AppColors {
   static const surface = Color(0xFFFFFFFF);
   static const mint = Color(0xFFE2F6ED);
   static const accent = Color(0xFF13A76E);
-  static const accent2 = Color(0xFF1EBD7D);
   static const accentDark = Color(0xFF087A50);
   static const textPrimary = Color(0xFF143A2C);
   static const textSecondary = Color(0xFF5B776B);
@@ -17,7 +16,9 @@ class _AppColors {
 }
 
 class OrgListScreen extends StatefulWidget {
-  const OrgListScreen({super.key});
+  final bool showBackButton;
+
+  const OrgListScreen({super.key, this.showBackButton = false});
 
   @override
   State<OrgListScreen> createState() => _OrgListScreenState();
@@ -74,7 +75,7 @@ class _OrgListScreenState extends State<OrgListScreen> {
             child: CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
-                const SliverToBoxAdapter(child: _HeaderSection()),
+                SliverToBoxAdapter(child: _HeaderSection(showBackButton: widget.showBackButton)),
                 SliverToBoxAdapter(
                   child: _SearchBar(controller: _searchController),
                 ),
@@ -99,7 +100,7 @@ class _OrgListScreenState extends State<OrgListScreen> {
                         crossAxisCount: 2,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
-                        childAspectRatio: 0.88,
+                        childAspectRatio: 0.73,
                       ),
                     ),
                   ),
@@ -113,94 +114,114 @@ class _OrgListScreenState extends State<OrgListScreen> {
 }
 
 class _HeaderSection extends StatelessWidget {
-  const _HeaderSection();
+  final bool showBackButton;
+  const _HeaderSection({this.showBackButton = false});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
+      height: 138,
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_AppColors.accent, _AppColors.accent2],
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_AppColors.accent, _AppColors.accentDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
         ),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [          Row(
-            children: [
-              IconButton(
-                tooltip: 'Back',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 25),
-                onPressed: () {
-                  Navigator.of(context).maybePop();
-                },
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Organizations',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 25,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -48,
+              right: -34,
+              child: Container(
+                width: 150,
+                height: 150,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: .07),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Find your campus community',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
             ),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'Explore clubs, communities, and groups that match your interests.',
-            style: TextStyle(
-              color: Color(0xFFE4FFF4),
-              fontSize: 12.5,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 15),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: Colors.white.withOpacity(0.25)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.explore_rounded, size: 16, color: Colors.white),
-                SizedBox(width: 7),
-                Text(
-                  'Campus • Clubs • Community',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                  ),
+            Positioned(
+              bottom: -58,
+              left: -30,
+              child: Container(
+                width: 115,
+                height: 115,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: .045),
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (showBackButton) ...[
+                      IconButton(
+                        tooltip: 'Back',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .14),
+                        borderRadius: BorderRadius.circular(17),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: .22),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.groups_rounded,
+                        color: Colors.white,
+                        size: 27,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Organizations',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.4,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Find your campus community',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -214,7 +235,7 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 3),
       child: Material(
         color: _AppColors.surface,
         elevation: 0,
@@ -315,9 +336,9 @@ class _OrgCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: _AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(22),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         onTap: () {
           Navigator.push(
             context,
@@ -328,55 +349,101 @@ class _OrgCard extends StatelessWidget {
         },
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(color: _AppColors.border),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x1013A76E),
-                blurRadius: 14,
-                offset: Offset(0, 6),
+                color: Color(0x0A0F8A61),
+                blurRadius: 16,
+                offset: Offset(0, 7),
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(19),
-            child: Column(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: _AppColors.mint,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      padding: const EdgeInsets.all(8),
-                      child: _OrganizationImage(logoAsset: org.logoAsset),
+          padding: const EdgeInsets.all(11),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFEFFBF5), Color(0xFFDDF4E8)],
+                    ),
+                    borderRadius: BorderRadius.circular(17),
+                    border: Border.all(color: _AppColors.border),
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  child: _OrganizationImage(logoAsset: org.logoAsset),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                org.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  height: 1.15,
+                ),
+              ),
+              if (org.category.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _AppColors.mint,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    org.category,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _AppColors.accentDark,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(9, 4, 9, 12),
-                  child: Column(
-                    children: [
-                      Text(
-                        org.name,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _AppColors.textPrimary,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          height: 1.15,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
-            ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      org.shortDesc.isEmpty ? 'Campus community' : org.shortDesc,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _AppColors.textSecondary,
+                        fontSize: 10.3,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: _AppColors.mint,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 15,
+                      color: _AppColors.accentDark,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -493,3 +560,4 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+

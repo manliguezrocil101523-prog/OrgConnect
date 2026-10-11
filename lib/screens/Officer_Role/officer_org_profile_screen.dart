@@ -1,10 +1,9 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:video_player/video_player.dart';
 
 class OfficerOrgProfileScreen extends StatefulWidget {
   final String orgId;
@@ -21,10 +20,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   static const Color _primary = Color(0xFF16A34A);
   static const Color _secondary = Color(0xFF0F766E);
   static const Color _background = Color(0xFFF0FDF4);
-  static const Color _cardSurface = Colors.white;
   static const Color _textDark = Color(0xFF0F172A);
   static const Color _textMuted = Color(0xFF94A3B8);
-  static const Color _fieldFill = Color(0xFFF1F5F9);
   static const Color _fieldBorder = Color(0xFFE2E8F0);
 
   // ── Form controllers ──────────────────────────────────────────────────────
@@ -35,12 +32,11 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   late final TextEditingController _missionCtrl;
   late final TextEditingController _visionCtrl;
   late final TextEditingController _adviserCtrl;
-  late final TextEditingController _contactEmailCtrl;
-  late final TextEditingController _contactPhoneCtrl;
   late final TextEditingController _socialLinkCtrl;
 
   // ── Officers & highlights lists (editable) ────────────────────────────────
   late List<String> _officers;
+  late List<OrgOfficerProfile> _officerProfiles;
   late List<OrgMediaItem> _highlights;
 
   Uint8List? _pickedImageBytes;
@@ -50,6 +46,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
 
   bool _isSaving = false;
   late Organization _org;
+  List<Map<String, dynamic>> _orgPeople = <Map<String, dynamic>>[];
 
   @override
   void initState() {
@@ -68,18 +65,45 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     _missionCtrl = TextEditingController(text: _org.mission);
     _visionCtrl = TextEditingController(text: _org.vision);
     _adviserCtrl = TextEditingController(text: _org.adviser);
-    _contactEmailCtrl = TextEditingController(text: _org.contactEmail);
-    _contactPhoneCtrl = TextEditingController(text: _org.contactPhone);
     _socialLinkCtrl = TextEditingController(text: _org.socialLink);
 
     _officers = List<String>.from(_org.officers);
-    _highlights = List<OrgMediaItem>.from(_org.activitiesHighlights);
+    _officerProfiles = List<OrgOfficerProfile>.from(_org.officerProfiles);
+    _highlights = List<OrgMediaItem>.from(_org.activitiesHighlights)
+        .where((item) => item.type == 'image' || item.type == 'video')
+        .toList();
     _logoAsset = _org.logoAsset;
 
     // Check if logoAsset is already a network URL
     if (_org.logoAsset.startsWith('http')) {
       _logoUrl = _org.logoAsset;
     }
+
+    _loadOrganizationPeople();
+  }
+
+  Future<void> _loadOrganizationPeople() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('profiles')
+          .select('id,name,role,avatar_url,assigned_org_id,org_id')
+          .or('assigned_org_id.eq.${widget.orgId},org_id.eq.${widget.orgId}')
+          .order('name');
+      if (!mounted) return;
+      setState(() {
+        _orgPeople = List<Map<String, dynamic>>.from(rows);
+      });
+    } catch (e) {
+      debugPrint('Organization people load error: $e');
+    }
+  }
+
+  Map<String, dynamic>? _personByRole(String role) {
+    final target = role.toLowerCase();
+    for (final person in _orgPeople) {
+      if (person['role']?.toString().toLowerCase() == target) return person;
+    }
+    return null;
   }
 
   @override
@@ -91,8 +115,6 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     _missionCtrl.dispose();
     _visionCtrl.dispose();
     _adviserCtrl.dispose();
-    _contactEmailCtrl.dispose();
-    _contactPhoneCtrl.dispose();
     _socialLinkCtrl.dispose();
     super.dispose();
   }
@@ -141,6 +163,247 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     }
   }
 
+  Future<String?> _uploadOfficerPhoto(Uint8List bytes, String ext) async {
+    try {
+      final fileName =
+          'org_officers/${widget.orgId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await Supabase.instance.client.storage.from('org-assets').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: 'image/$ext',
+              upsert: true,
+            ),
+          );
+      return Supabase.instance.client.storage
+          .from('org-assets')
+          .getPublicUrl(fileName);
+    } catch (e) {
+      debugPrint('Officer photo upload error: $e');
+      return null;
+    }
+  }
+
+  String _existingOfficerAvatar(String name) {
+    final target = name.trim().toLowerCase();
+    for (final profile in _officerProfiles) {
+      if (profile.name.trim().toLowerCase() == target &&
+          profile.avatarUrl.trim().isNotEmpty) {
+        return profile.avatarUrl.trim();
+      }
+    }
+    for (final person in _orgPeople) {
+      if ((person['name']?.toString().trim().toLowerCase() ?? '') == target) {
+        return person['avatar_url']?.toString() ?? '';
+      }
+    }
+    return '';
+  }
+
+  Future<OrgOfficerProfile?> _showOfficerEditor({
+    OrgOfficerProfile? existing,
+  }) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final roleCtrl = TextEditingController(text: existing?.role ?? 'Officer');
+    Uint8List? pickedBytes;
+    String? pickedExt;
+    var currentAvatar = existing?.avatarUrl ??
+        (existing == null ? '' : _existingOfficerAvatar(existing.name));
+
+    final result = await showDialog<OrgOfficerProfile>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(existing == null ? 'Add Officer' : 'Edit Officer'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 360,
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: () async {
+                      final pick = await FilePicker.platform.pickFiles(
+                        type: FileType.image,
+                        withData: true,
+                      );
+                      if (pick?.files.single.bytes == null) return;
+                      setDialogState(() {
+                        pickedBytes = pick!.files.single.bytes;
+                        pickedExt = pick.files.single.extension ?? 'jpg';
+                      });
+                    },
+                    child: Container(
+                      width: 118,
+                      height: 118,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE7F7EF),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: _primary.withValues(alpha: .35), width: 2),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: pickedBytes != null
+                          ? Image.memory(pickedBytes!, fit: BoxFit.cover)
+                          : currentAvatar.trim().isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: currentAvatar,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) => const Center(
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  errorWidget: (_, __, ___) => const Icon(
+                                    Icons.person_rounded,
+                                    size: 42,
+                                    color: _primary,
+                                  ),
+                                )
+                              : const Center(
+                                  child: Icon(
+                                    Icons.add_a_photo_rounded,
+                                    size: 38,
+                                    color: _primary,
+                                  ),
+                                ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap the square to add or change the officer picture.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Officer name',
+                      prefixIcon: const Icon(Icons.person_rounded),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: roleCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Designation',
+                      hintText: 'e.g. President',
+                      prefixIcon: const Icon(Icons.badge_rounded),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                final role = roleCtrl.text.trim().isEmpty
+                    ? 'Officer'
+                    : roleCtrl.text.trim();
+                if (name.isEmpty) return;
+                var avatarUrl = currentAvatar;
+                if (pickedBytes != null) {
+                  final uploaded = await _uploadOfficerPhoto(
+                    pickedBytes!,
+                    pickedExt ?? 'jpg',
+                  );
+                  if (uploaded != null) {
+                    avatarUrl = uploaded;
+                  }
+                }
+                currentAvatar = avatarUrl;
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(
+                    OrgOfficerProfile(
+                      name: name,
+                      role: role,
+                      avatarUrl: avatarUrl,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save Officer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    nameCtrl.dispose();
+    roleCtrl.dispose();
+    return result;
+  }
+
+  Future<void> _addOfficer() async {
+    final profile = await _showOfficerEditor();
+    if (profile == null) return;
+    setState(() {
+      _officers.add('${profile.role}: ${profile.name}');
+      _officerProfiles.removeWhere(
+        (item) => item.name.trim().toLowerCase() == profile.name.trim().toLowerCase(),
+      );
+      _officerProfiles.add(profile);
+    });
+  }
+
+  Future<void> _editOfficer(int index) async {
+    final raw = _officers[index];
+    final split = raw.indexOf(':');
+    final currentName = split == -1 ? raw.trim() : raw.substring(split + 1).trim();
+    final currentRole = split == -1 ? 'Officer' : raw.substring(0, split).trim();
+    final existing = _officerProfiles.cast<OrgOfficerProfile?>().firstWhere(
+      (p) => p?.name.trim().toLowerCase() == currentName.toLowerCase(),
+      orElse: () => OrgOfficerProfile(
+        name: currentName,
+        role: currentRole,
+        avatarUrl: _existingOfficerAvatar(currentName),
+      ),
+    );
+    final updated = await _showOfficerEditor(existing: existing);
+    if (updated == null) return;
+    setState(() {
+      _officers[index] = '${updated.role}: ${updated.name}';
+      _officerProfiles.removeWhere(
+        (item) => item.name.trim().toLowerCase() == currentName.toLowerCase(),
+      );
+      _officerProfiles.removeWhere(
+        (item) => item.name.trim().toLowerCase() == updated.name.trim().toLowerCase(),
+      );
+      _officerProfiles.add(updated);
+    });
+  }
+
+  // Accept a Facebook page URL, username, or organization page name.
+  // A name is saved as a Facebook search URL so we do not guess the wrong page.
+  String? _normalizedFacebookUrl(String input) {
+    final value = input.trim();
+    if (value.isEmpty) return '';
+
+    final candidate = value.contains('://') ? value : 'https://$value';
+    final uri = Uri.tryParse(candidate);
+    final host = uri?.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
+    if (uri != null && host == 'facebook.com' && uri.path.isNotEmpty && uri.path != '/') {
+      return Uri(scheme: 'https', host: 'www.facebook.com', path: uri.path, query: uri.hasQuery ? uri.query : null).toString();
+    }
+
+    // A page username can be converted directly into a Facebook page URL.
+    if (!value.contains('/') && !value.contains(' ') && !value.contains('.') && !value.contains(':')) {
+      return 'https://www.facebook.com/$value';
+    }
+
+    // If the officer enters only the organization name, open Facebook search
+    // results rather than assuming a page URL that may belong to someone else.
+    if (!value.contains('://') && !value.contains('/') && !value.contains('@')) {
+      return 'https://www.facebook.com/search/top?q=${Uri.encodeQueryComponent(value)}';
+    }
+    return null;
+  }
+
   // ── Save all changes ──────────────────────────────────────────────────────
   Future<void> _save() async {
     if (_isSaving) return;
@@ -148,6 +411,11 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       _snack('Organization name cannot be empty.', isError: true);
+      return;
+    }
+    final facebookUrl = _normalizedFacebookUrl(_socialLinkCtrl.text);
+    if (facebookUrl == null) {
+      _snack('Enter a valid Facebook page URL or page username.', isError: true);
       return;
     }
 
@@ -179,10 +447,9 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         mission: _missionCtrl.text.trim(),
         vision: _visionCtrl.text.trim(),
         adviser: _adviserCtrl.text.trim(),
-        contactEmail: _contactEmailCtrl.text.trim(),
-        contactPhone: _contactPhoneCtrl.text.trim(),
-        socialLink: _socialLinkCtrl.text.trim(),
+        socialLink: facebookUrl,
         officers: _officers,
+        officerProfiles: _officerProfiles,
         activitiesHighlights: _highlights,
         logoAsset: finalLogoAsset,
       );
@@ -213,392 +480,278 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     );
   }
 
-  // ── Add item to a string list (officers / highlights) ────────────────────
-  Future<void> _addListItem(List<String> list, String label) async {
-    final ctrl = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('Add $label'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'Enter $label',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    if (result != null && result.isNotEmpty) {
-      setState(() => list.add(result));
-    }
-  }
-
-  Future<void> _postAnnouncement() async {
-    final titleCtrl = TextEditingController();
-    final messageCtrl = TextEditingController();
-    bool saving = false;
-
-    final posted = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text('Post organization announcement'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: titleCtrl,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      labelText: 'Announcement title',
-                      hintText: 'e.g. General Meeting',
-                      prefixIcon: const Icon(Icons.campaign_rounded),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: messageCtrl,
-                    maxLines: 5,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      labelText: 'Announcement details',
-                      hintText: 'e.g. Meeting will be held Friday at 4:00 PM in Room 204.',
-                      alignLabelWithHint: true,
-                      prefixIcon: const Padding(
-                        padding: EdgeInsets.only(bottom: 58),
-                        child: Icon(Icons.notes_rounded),
-                      ),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: saving ? null : () => Navigator.of(ctx).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton.icon(
-                onPressed: saving
-                    ? null
-                    : () async {
-                        final title = titleCtrl.text.trim();
-                        final message = messageCtrl.text.trim();
-                        if (title.isEmpty || message.isEmpty) return;
-                        setDialogState(() => saving = true);
-                        try {
-                          await AppState.instance.addNotification(
-                            Notification(
-                              id: DateTime.now().microsecondsSinceEpoch.toString(),
-                              title: title,
-                              message: message,
-                              date: DateTime.now(),
-                              orgId: widget.orgId,
-                              studentId: null,
-                            ),
-                          );
-                          if (ctx.mounted) Navigator.of(ctx).pop(true);
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            setDialogState(() => saving = false);
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(content: Text('Failed to post announcement: $e')),
-                            );
-                          }
-                        }
-                      },
-                icon: saving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.send_rounded, size: 17),
-                label: const Text('Post'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    titleCtrl.dispose();
-    messageCtrl.dispose();
-
-    if (posted == true && mounted) {
-      _snack('Announcement posted for ${_org.name}.');
-    }
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      appBar: AppBar(
-        backgroundColor: _primary,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: const Text(
-          'Edit Org Profile',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 17,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: _isSaving
-                ? const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5),
-                    ),
-                  )
-                : TextButton(
-                    onPressed: _save,
-                    child: const Text(
-                      'Save',
-                      style: TextStyle(
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Fixed organization header. The form below is the only scrollable
+            // area, so the scrollbar starts exactly at Basic Info.
+            Container(
+              width: double.infinity,
+              height: MediaQuery.of(context).size.height * 0.20,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF064E3B),
+                    Color(0xFF0F7A57),
+                    Color(0xFF22C55E),
+                  ],
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 10,
+                    left: 8,
+                    child: IconButton(
+                      tooltip: 'Back',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
                         color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                        size: 22,
                       ),
                     ),
                   ),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── Logo picker ─────────────────────────────────────────────
-                _LogoPicker(
-                  pickedFile: _pickedImageBytes,
-                  logoUrl: _logoUrl,
-                  logoAsset: _logoAsset,
-                  onTap: _pickLogo,
-                  primary: _primary,
-                ),
-
-                const SizedBox(height: 28),
-
-                // ── Basic Info ──────────────────────────────────────────────
-                _sectionLabel('Basic Info'),
-                const SizedBox(height: 12),
-                _field(
-                  controller: _nameCtrl,
-                  label: 'Organization Name',
-                  icon: Icons.groups_rounded,
-                ),
-                _field(
-                  controller: _categoryCtrl,
-                  label: 'Category',
-                  icon: Icons.category_rounded,
-                ),
-                _field(
-                  controller: _shortDescCtrl,
-                  label: 'Short Description',
-                  icon: Icons.notes_rounded,
-                  maxLines: 2,
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Details ─────────────────────────────────────────────────
-                _sectionLabel('Details'),
-                const SizedBox(height: 12),
-                _field(
-                  controller: _aboutCtrl,
-                  label: 'About',
-                  icon: Icons.info_rounded,
-                  maxLines: 4,
-                ),
-                _field(
-                  controller: _missionCtrl,
-                  label: 'Mission',
-                  icon: Icons.flag_rounded,
-                  maxLines: 4,
-                ),
-                _field(
-                  controller: _visionCtrl,
-                  label: 'Vision',
-                  icon: Icons.visibility_rounded,
-                  maxLines: 4,
-                ),
-                _field(
-                  controller: _adviserCtrl,
-                  label: 'Adviser',
-                  icon: Icons.person_rounded,
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Contact ─────────────────────────────────────────────────
-                _sectionLabel('Contact'),
-                const SizedBox(height: 12),
-                _field(
-                  controller: _contactEmailCtrl,
-                  label: 'Contact Email',
-                  icon: Icons.email_rounded,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                _field(
-                  controller: _contactPhoneCtrl,
-                  label: 'Contact Phone',
-                  icon: Icons.phone_rounded,
-                  keyboardType: TextInputType.phone,
-                ),
-                _field(
-                  controller: _socialLinkCtrl,
-                  label: 'Social / Facebook Link',
-                  icon: Icons.link_rounded,
-                  keyboardType: TextInputType.url,
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Officers list ───────────────────────────────────────────
-                _sectionLabel('Officers'),
-                const SizedBox(height: 12),
-                _EditableListCard(
-                  items: _officers,
-                  accentColor: _primary,
-                  onAdd: () => _addListItem(_officers, 'Officer'),
-                  onRemove: (i) => setState(() => _officers.removeAt(i)),
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Activities / Highlights list ────────────────────────────
-                // ── Activities / Highlights media ───────────────────────────
-                _sectionLabel('Activities & Events'),
-                const SizedBox(height: 12),
-                _MediaEditCard(
-                  items: _highlights,
-                  accentColor: _secondary,
-                  orgId: widget.orgId,
-                  onChanged: (updated) => setState(() => _highlights = updated),
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Organization announcements ─────────────────────────────
-                _sectionLabel('Member Announcements'),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: _fieldBorder),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F7F0),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: const Icon(Icons.campaign_rounded, color: _secondary),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'Post meetings, rehearsals, deadlines, orientations, registration reminders, fees, and other announcements for your organization members.',
-                          style: TextStyle(color: Color(0xFF64748B), fontSize: 12.5, height: 1.4),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: _postAnnouncement,
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Post'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 36),
-
-                // ── Save button ─────────────────────────────────────────────
-                SizedBox(
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _primary,
-                      disabledBackgroundColor: _primary.withOpacity(0.45),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: _isSaving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2.5),
-                          )
-                        : const Text(
-                            'Save Changes',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                  Positioned.fill(
+                    top: 42,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 8, 22, 14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _LogoPicker(
+                            pickedFile: _pickedImageBytes,
+                            logoUrl: _logoUrl,
+                            logoAsset: _logoAsset,
+                            onTap: _pickLogo,
+                            primary: _primary,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'ORGANIZATION PROFILE',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Color(0xFFD9F7E7),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _nameCtrl.text.isEmpty
+                                      ? 'Your Organization'
+                                      : _nameCtrl.text,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.12,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            Expanded(
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 48),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 560),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // ── Basic Info ──────────────────────────────
+                              _sectionLabel('Basic Info'),
+                              const SizedBox(height: 12),
+                              _field(
+                                controller: _nameCtrl,
+                                label: 'Organization Name',
+                                icon: Icons.groups_rounded,
+                              ),
+                              _field(
+                                controller: _categoryCtrl,
+                                label: 'Category',
+                                icon: Icons.category_rounded,
+                              ),
+                              _field(
+                                controller: _shortDescCtrl,
+                                label: 'Short Description',
+                                icon: Icons.notes_rounded,
+                                maxLines: 2,
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ── Details ─────────────────────────────────
+                              _sectionLabel('Details'),
+                              const SizedBox(height: 12),
+                              _field(
+                                controller: _aboutCtrl,
+                                label: 'About',
+                                icon: Icons.info_rounded,
+                                maxLines: 4,
+                              ),
+                              _field(
+                                controller: _missionCtrl,
+                                label: 'Mission',
+                                icon: Icons.flag_rounded,
+                                maxLines: 4,
+                              ),
+                              _field(
+                                controller: _visionCtrl,
+                                label: 'Vision',
+                                icon: Icons.visibility_rounded,
+                                maxLines: 4,
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ── Facebook ─────────────────────────────────
+                              _sectionLabel('Organization Facebook Page'),
+                              const SizedBox(height: 12),
+                              _field(
+                                controller: _socialLinkCtrl,
+                                label: 'Organization Facebook Page',
+                                icon: Icons.facebook_rounded,
+                                keyboardType: TextInputType.url,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Enter the Facebook page URL, page username, or organization name. A name opens Facebook search results; a URL opens the saved page.',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ── Adviser & officers ─────────────────────
+                              _sectionLabel('Adviser & Officers'),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Profile pictures are taken from the adviser and officer accounts so the public organization profile stays consistent.',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _ProfilePersonEditorCard(
+                                label: 'Adviser',
+                                name: _personByRole('adviser')?['name']?.toString().trim().isNotEmpty == true
+                                    ? _personByRole('adviser')!['name'].toString()
+                                    : _adviserCtrl.text.trim(),
+                                avatarUrl: _personByRole('adviser')?['avatar_url']?.toString() ?? '',
+                                width: double.infinity,
+                                compact: true,
+                              ),
+                              const SizedBox(height: 14),
+                              _OfficerPeopleEditor(
+                                officers: _officers,
+                                profiles: _officerProfiles,
+                                people: _orgPeople,
+                                onAdd: _addOfficer,
+                                onEdit: _editOfficer,
+                                onRemove: (i) => setState(() {
+                                  final raw = _officers.removeAt(i);
+                                  final split = raw.indexOf(':');
+                                  final name = (split == -1 ? raw : raw.substring(split + 1)).trim();
+                                  _officerProfiles.removeWhere((p) => p.name.trim().toLowerCase() == name.toLowerCase());
+                                }),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ── Highlights & activities ────────────────
+                              _sectionLabel('Highlights & Activities'),
+                              const SizedBox(height: 12),
+                              _MediaEditCard(
+                                items: _highlights,
+                                accentColor: _secondary,
+                                orgId: widget.orgId,
+                                onChanged: (updated) =>
+                                    setState(() => _highlights = updated),
+                              ),
+
+                              const SizedBox(height: 36),
+
+                              // ── Save button ─────────────────────────────
+                              SizedBox(
+                                height: 54,
+                                child: ElevatedButton(
+                                  onPressed: _isSaving ? null : _save,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _primary,
+                                    disabledBackgroundColor:
+                                        _primary.withValues(alpha: 0.45),
+                                    elevation: 5,
+                                    shadowColor:
+                                        _primary.withValues(alpha: .22),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                  ),
+                                  child: _isSaving
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5,
+                                          ),
+                                        )
+                                      : const Text(
+                                          'Save Changes',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -627,7 +780,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.8,
-            color: Color(0xFF64748B),
+            color: _secondary,
           ),
         ),
       ],
@@ -645,15 +798,14 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: _cardSurface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFE9FFF2), Color(0xFFBDF3D0)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFB9E4CF)),
+        boxShadow: [BoxShadow(color: _primary.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: TextField(
         controller: controller,
@@ -667,7 +819,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         ),
         decoration: InputDecoration(
           filled: true,
-          fillColor: _cardSurface,
+          fillColor: const Color(0xFFF8FFFB),
           labelText: label,
           labelStyle: const TextStyle(
             fontSize: 13,
@@ -717,34 +869,36 @@ class _LogoPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    const double size = 88;
+    return SizedBox(
+      width: 96,
+      height: 96,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // ── Logo circle ────────────────────────────────────────────────
+          // Compact logo for the member-style horizontal organization card.
           Container(
-            width: 110,
-            height: 110,
+            width: size,
+            height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white,
-              border: Border.all(color: primary.withOpacity(0.25), width: 2),
+              color: Colors.transparent,
+              border: Border.all(color: primary.withValues(alpha: 0.28), width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: primary.withOpacity(0.12),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
                 ),
               ],
             ),
             child: ClipOval(child: _logoWidget()),
           ),
-
-          // ── Camera edit button ─────────────────────────────────────────
           Positioned(
-            bottom: 0,
-            right: -4,
+            right: -1,
+            bottom: 1,
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: onTap,
               child: Container(
                 width: 36,
@@ -752,17 +906,20 @@ class _LogoPicker extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: primary,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2.5),
+                  border: Border.all(color: Colors.white, width: 3),
                   boxShadow: [
                     BoxShadow(
-                      color: primary.withOpacity(0.35),
-                      blurRadius: 8,
+                      color: Colors.black.withValues(alpha: 0.16),
+                      blurRadius: 7,
                       offset: const Offset(0, 3),
                     ),
                   ],
                 ),
-                child: const Icon(Icons.camera_alt_rounded,
-                    color: Colors.white, size: 18),
+                child: const Icon(
+                  Icons.camera_alt_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
               ),
             ),
           ),
@@ -774,15 +931,19 @@ class _LogoPicker extends StatelessWidget {
   Widget _logoWidget() {
     // Priority: newly picked file > network URL > asset
     if (pickedFile != null) {
-      return Image.memory(pickedFile!,
-          fit: BoxFit.cover, width: 110, height: 110);
+      return Image.memory(
+        pickedFile!,
+        fit: BoxFit.contain,
+        width: 88,
+        height: 88,
+      );
     }
     if (logoUrl.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: logoUrl,
-        fit: BoxFit.cover,
-        width: 110,
-        height: 110,
+        fit: BoxFit.contain,
+        width: 88,
+        height: 88,
         placeholder: (_, __) => _fallbackIcon(),
         errorWidget: (_, __, ___) => _fallbackIcon(),
       );
@@ -790,9 +951,9 @@ class _LogoPicker extends StatelessWidget {
     if (logoAsset.isNotEmpty) {
       return Image.asset(
         logoAsset,
-        fit: BoxFit.cover,
-        width: 110,
-        height: 110,
+        fit: BoxFit.contain,
+        width: 88,
+        height: 88,
         errorBuilder: (_, __, ___) => _fallbackIcon(),
       );
     }
@@ -806,115 +967,370 @@ class _LogoPicker extends StatelessWidget {
 }
 
 // =============================================================================
-// _EditableListCard — for Officers and Activities lists
+// _EditablePeopleCard — visual officer/adviser profile editor
 // =============================================================================
-class _EditableListCard extends StatelessWidget {
-  final List<String> items;
-  final Color accentColor;
-  final VoidCallback onAdd;
-  final void Function(int index) onRemove;
+class _ProfilePersonEditorCard extends StatelessWidget {
+  final String label;
+  final String name;
+  final String avatarUrl;
+  final double width;
+  final bool compact;
 
-  const _EditableListCard({
-    required this.items,
-    required this.accentColor,
-    required this.onAdd,
-    required this.onRemove,
+  const _ProfilePersonEditorCard({
+    required this.label,
+    required this.name,
+    required this.avatarUrl,
+    this.width = 172,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final displayName = name.trim().isEmpty ? 'No name added yet' : name.trim();
+    final displayRole = label.trim().isEmpty ? 'Officer' : label.trim();
+
+    if (compact) {
+      return Container(
+        width: width,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFB9E4CF), width: 1.1),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D0F8A61),
+              blurRadius: 12,
+              offset: Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: 74,
+                height: 74,
+                child: avatarUrl.trim().isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: avatarUrl.trim(),
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => _personFallback(),
+                        errorWidget: (_, __, ___) => _personFallback(),
+                      )
+                    : _personFallback(),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Adviser',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Color(0xFF15803D),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .6,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 14,
+                      height: 1.15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: width,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFFFF), Color(0xFFF3FCF6)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFB9E4CF), width: 1.2),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Color(0x0D0F8A61),
+            blurRadius: 14,
+            offset: Offset(0, 6),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'No items yet. Tap + to add.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade400,
-                ),
-              ),
-            )
-          else
-            ...items.asMap().entries.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          margin: const EdgeInsets.only(right: 10),
-                          decoration: BoxDecoration(
-                            color: accentColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            e.value,
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => onRemove(e.key),
-                          child: Icon(
-                            Icons.remove_circle_outline_rounded,
-                            size: 20,
-                            color: Colors.red.shade300,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: onAdd,
-            icon: Icon(Icons.add_rounded, color: accentColor, size: 18),
-            label: Text(
-              'Add Item',
-              style: TextStyle(
-                color: accentColor,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: avatarUrl.trim().isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: avatarUrl.trim(),
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => _personFallback(),
+                      errorWidget: (_, __, ___) => _personFallback(),
+                    )
+                  : _personFallback(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE3F7EA),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              displayRole,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF15803D),
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .5,
               ),
             ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: accentColor.withOpacity(0.4)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            displayName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 14.5,
+              height: 1.15,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _personFallback() => Container(
+        color: const Color(0xFFE7F7EF),
+        child: const Center(
+          child: Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 42),
+        ),
+      );
+}
+
+class _OfficerPeopleEditor extends StatelessWidget {
+  final List<String> officers;
+  final List<OrgOfficerProfile> profiles;
+  final List<Map<String, dynamic>> people;
+  final VoidCallback onAdd;
+  final void Function(int index) onEdit;
+  final void Function(int index) onRemove;
+
+  const _OfficerPeopleEditor({
+    required this.officers,
+    required this.profiles,
+    required this.people,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onRemove,
+  });
+
+  String _nameOnly(String raw) {
+    final text = raw.trim();
+    final split = text.indexOf(':');
+    return split == -1 ? text : text.substring(split + 1).trim();
+  }
+
+  String _roleOnly(String raw) {
+    final text = raw.trim();
+    final split = text.indexOf(':');
+    return split == -1 ? 'Officer' : text.substring(0, split).trim();
+  }
+
+  String _avatarFor(String name) {
+    final target = name.toLowerCase();
+    for (final person in people) {
+      if ((person['name']?.toString().trim().toLowerCase() ?? '') == target) {
+        return person['avatar_url']?.toString() ?? '';
+      }
+    }
+    return '';
+  }
+
+  String _profileAvatar(String name) {
+    final target = name.trim().toLowerCase();
+    for (final profile in profiles) {
+      if (profile.name.trim().toLowerCase() == target && profile.avatarUrl.trim().isNotEmpty) {
+        return profile.avatarUrl.trim();
+      }
+    }
+    return _avatarFor(name);
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFB9E4CF)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF16A34A).withValues(alpha: .07),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (officers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No officers added yet. Add an officer below.',
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: 244,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: officers.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, index) {
+                    final raw = officers[index];
+                    final name = _nameOnly(raw);
+                    final role = _roleOnly(raw);
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        SizedBox(
+                          width: 172,
+                          child: _ProfilePersonEditorCard(
+                            label: role,
+                            name: name,
+                            avatarUrl: _profileAvatar(name),
+                            width: 172,
+                          ),
+                        ),
+                        Positioned(
+                          top: -5,
+                          right: -4,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              GestureDetector(
+                                onTap: () => onEdit(index),
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: const Color(0xFFB9E4CF)),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x12000000),
+                                        blurRadius: 6,
+                                        offset: Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.edit_rounded,
+                                    size: 14,
+                                    color: Color(0xFF16A34A),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              GestureDetector(
+                                onTap: () => onRemove(index),
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.red.shade100),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x12000000),
+                                        blurRadius: 6,
+                                        offset: Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: Colors.red.shade400,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 17),
+              label: const Text('Add Officer'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF16A34A),
+                side: BorderSide(color: const Color(0xFF16A34A).withValues(alpha: .4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 11),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 // =============================================================================
-// _MediaEditCard — rich media editor for Activities & Events
+// _MediaEditCard — rich media editor for Highlights & Activities
 // =============================================================================
 class _MediaEditCard extends StatefulWidget {
   final List<OrgMediaItem> items;
@@ -954,51 +1370,6 @@ class _MediaEditCardState extends State<_MediaEditCard> {
     }
   }
 
-  Future<void> _addText() async {
-    final ctrl = TextEditingController();
-    final captionCtrl = TextEditingController();
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Add Text'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: 'Write something...',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Add')),
-        ],
-      ),
-    );
-    if (result == true && ctrl.text.trim().isNotEmpty) {
-      final updated = [
-        ...widget.items,
-        OrgMediaItem(
-            type: 'text',
-            content: ctrl.text.trim(),
-            caption: captionCtrl.text.trim())
-      ];
-      widget.onChanged(updated);
-    }
-  }
-
   Future<void> _addImage() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -1014,40 +1385,74 @@ class _MediaEditCardState extends State<_MediaEditCard> {
         if (f.bytes == null) continue;
         final ext = f.extension ?? 'jpg';
         final url = await _uploadFile(f.bytes!, ext, 'image/$ext');
-        if (url != null) {
-          // Ask for optional caption
-          String caption = '';
-          if (mounted) {
-            final captionCtrl = TextEditingController();
-            final cap = await showDialog<String>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18)),
-                title: Text(f.name, style: const TextStyle(fontSize: 14)),
-                content: TextField(
-                  controller: captionCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'Add a caption (optional)',
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
+        if (url != null && mounted) {
+          final activityNameCtrl = TextEditingController();
+          final descriptionCtrl = TextEditingController();
+          final details = await showDialog<Map<String, String>>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              title: const Text('Add activity picture'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      f.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: activityNameCtrl,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Activity name',
+                        hintText: 'e.g. Attending Mass',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: descriptionCtrl,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Short description (optional)',
+                        hintText: 'Add a brief note about the activity',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(''),
-                      child: const Text('Skip')),
-                  FilledButton(
-                      onPressed: () =>
-                          Navigator.of(ctx).pop(captionCtrl.text.trim()),
-                      child: const Text('Done')),
-                ],
               ),
-            );
-            caption = cap ?? '';
-          }
-          newItems
-              .add(OrgMediaItem(type: 'image', content: url, caption: caption));
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Skip'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop({
+                    'title': activityNameCtrl.text.trim(),
+                    'description': descriptionCtrl.text.trim(),
+                  }),
+                  child: const Text('Save'),
+                ),
+              ],
+            ),
+          );
+          newItems.add(
+            OrgMediaItem(
+              type: 'image',
+              content: url,
+              title: details?['title'] ?? '',
+              description: details?['description'] ?? '',
+            ),
+          );
         }
       }
       widget.onChanged([...widget.items, ...newItems]);
@@ -1069,39 +1474,81 @@ class _MediaEditCardState extends State<_MediaEditCard> {
       final ext = f.extension ?? 'mp4';
       final url = await _uploadFile(f.bytes!, ext, 'video/$ext');
       if (url != null) {
-        String caption = '';
+        String activityName = '';
+        String description = '';
         if (mounted) {
-          final captionCtrl = TextEditingController();
-          final cap = await showDialog<String>(
+          final activityNameCtrl = TextEditingController();
+          final descriptionCtrl = TextEditingController();
+          final details = await showDialog<Map<String, String>>(
             context: context,
             builder: (ctx) => AlertDialog(
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18)),
-              title: const Text('Video uploaded!'),
-              content: TextField(
-                controller: captionCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Add a caption (optional)',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              title: const Text('Add activity video'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      f.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: activityNameCtrl,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Activity name',
+                        hintText: 'e.g. Attending Mass',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: descriptionCtrl,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Short description (optional)',
+                        hintText: 'Add a brief note about the activity',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(''),
-                    child: const Text('Skip')),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Skip'),
+                ),
                 FilledButton(
-                    onPressed: () =>
-                        Navigator.of(ctx).pop(captionCtrl.text.trim()),
-                    child: const Text('Done')),
+                  onPressed: () => Navigator.of(ctx).pop({
+                    'title': activityNameCtrl.text.trim(),
+                    'description': descriptionCtrl.text.trim(),
+                  }),
+                  child: const Text('Save'),
+                ),
               ],
             ),
           );
-          caption = cap ?? '';
+          activityName = details?['title'] ?? '';
+          description = details?['description'] ?? '';
         }
         widget.onChanged([
           ...widget.items,
-          OrgMediaItem(type: 'video', content: url, caption: caption)
+          OrgMediaItem(
+            type: 'video',
+            content: url,
+            title: activityName,
+            description: description,
+          ),
         ]);
       }
     } finally {
@@ -1111,17 +1558,16 @@ class _MediaEditCardState extends State<_MediaEditCard> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleItems = widget.items
+        .where((item) => item.type == 'image' || item.type == 'video')
+        .toList();
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 3)),
-        ],
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFB9E4CF)),
+        boxShadow: [BoxShadow(color: const Color(0xFF16A34A).withValues(alpha: 0.07), blurRadius: 14, offset: const Offset(0, 5))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1131,14 +1577,14 @@ class _MediaEditCardState extends State<_MediaEditCard> {
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (widget.items.isEmpty)
+          else if (visibleItems.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('No items yet. Add text, images, or videos.',
+              child: Text('No highlights yet. Add an activity picture or video.',
                   style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
             )
           else
-            ...widget.items.asMap().entries.map((e) {
+            ...visibleItems.asMap().entries.map((e) {
               final item = e.value;
               return Container(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -1183,7 +1629,7 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                               : Container(
                                   width: 56,
                                   height: 56,
-                                  color: widget.accentColor.withOpacity(0.08),
+                                  color: widget.accentColor.withValues(alpha: 0.08),
                                   child: Icon(Icons.text_snippet_rounded,
                                       color: widget.accentColor, size: 26),
                                 ),
@@ -1198,19 +1644,43 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                             item.type == 'text'
                                 ? item.content
                                 : item.type == 'image'
-                                    ? 'Image'
+                                    ? 'Pictures'
                                     : 'Video',
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w500),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: item.type == 'image'
+                                  ? widget.accentColor
+                                  : Colors.grey.shade700,
+                            ),
                           ),
-                          if (item.caption.isNotEmpty) ...[
+                          if (item.title.trim().isNotEmpty || item.caption.trim().isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              item.title.trim().isNotEmpty
+                                  ? item.title.trim()
+                                  : item.caption.trim(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                          if (item.description.trim().isNotEmpty) ...[
                             const SizedBox(height: 2),
-                            Text(item.caption,
-                                style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: Colors.grey.shade500)),
+                            Text(
+                              item.description.trim(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
                           ],
                         ],
                       ),
@@ -1218,7 +1688,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                     // Delete
                     GestureDetector(
                       onTap: () {
-                        final updated = [...widget.items]..removeAt(e.key);
+                        final target = item;
+                        final updated = [...widget.items]..removeWhere((candidate) => identical(candidate, target));
                         widget.onChanged(updated);
                       },
                       child: Icon(Icons.remove_circle_outline_rounded,
@@ -1236,16 +1707,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
             children: [
               Expanded(
                 child: _addBtn(
-                  icon: Icons.text_fields_rounded,
-                  label: 'Text',
-                  onTap: _isUploading ? null : _addText,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _addBtn(
                   icon: Icons.image_rounded,
-                  label: 'Image',
+                  label: 'Activity Picture',
                   onTap: _isUploading ? null : _addImage,
                 ),
               ),
@@ -1253,7 +1716,7 @@ class _MediaEditCardState extends State<_MediaEditCard> {
               Expanded(
                 child: _addBtn(
                   icon: Icons.videocam_rounded,
-                  label: 'Video',
+                  label: 'Activity Video',
                   onTap: _isUploading ? null : _addVideo,
                 ),
               ),
@@ -1278,10 +1741,11 @@ class _MediaEditCardState extends State<_MediaEditCard> {
               fontWeight: FontWeight.w600,
               color: widget.accentColor)),
       style: OutlinedButton.styleFrom(
-        side: BorderSide(color: widget.accentColor.withOpacity(0.4)),
+        side: BorderSide(color: widget.accentColor.withValues(alpha: 0.4)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         padding: const EdgeInsets.symmetric(vertical: 10),
       ),
     );
   }
 }
+

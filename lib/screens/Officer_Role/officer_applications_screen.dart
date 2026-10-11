@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart' hide Notification;
-import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
-import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // =============================================================================
@@ -30,7 +29,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
       case ApplicationStatus.interviewed:
         return const _SC('Interviewee', Color(0xFFDCFCE7), Color(0xFF3730A3),
             Color(0xFFC7D2FE));
-      case ApplicationStatus.for_approval:
+      case ApplicationStatus.forApproval:
         return const _SC('For Approval', Color(0xFFEFF6FF), Color(0xFF1E40AF),
             Color(0xFFBFDBFE));
       case ApplicationStatus.approved:
@@ -39,7 +38,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
       case ApplicationStatus.accepted:
         return const _SC('Accepted', Color(0xFFECFDF5), Color(0xFF065F46),
             Color(0xFFA7F3D0));
-      case ApplicationStatus.interview_scheduled:
+      case ApplicationStatus.interviewScheduled:
         return const _SC('Scheduled', Color(0xFFDCFCE7), Color(0xFF3730A3),
             Color(0xFFC7D2FE));
       case ApplicationStatus.declined:
@@ -71,13 +70,13 @@ class OfficerApplicationsScreen extends StatelessWidget {
         return 'Pending Review';
       case ApplicationStatus.interviewed:
         return 'Interviewee';
-      case ApplicationStatus.for_approval:
+      case ApplicationStatus.forApproval:
         return 'For Approval';
       case ApplicationStatus.approved:
         return 'Approved';
       case ApplicationStatus.accepted:
         return 'Accepted';
-      case ApplicationStatus.interview_scheduled:
+      case ApplicationStatus.interviewScheduled:
         return 'Interview Scheduled';
       case ApplicationStatus.declined:
         return 'Declined';
@@ -86,7 +85,9 @@ class OfficerApplicationsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    var showAllApplications = false;
+    return StatefulBuilder(
+      builder: (context, setLocalState) => Scaffold(
       backgroundColor: _background,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
@@ -125,12 +126,10 @@ class OfficerApplicationsScreen extends StatelessWidget {
 
               final allApps = AppState.instance.applications
                   .where((a) => a.orgId == orgId)
-                  .toList();
+                  .toList()
+                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-              final memberNames = AppState.instance.members
-                  .where((m) => m.orgId == orgId)
-                  .map((m) => m.name)
-                  .toSet();
+
 
               // UNTOUCHED: original grouping logic
               final pending = allApps
@@ -140,7 +139,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
                   .where((a) => a.status == ApplicationStatus.interviewed)
                   .toList();
               final forApproval = allApps
-                  .where((a) => a.status == ApplicationStatus.for_approval)
+                  .where((a) => a.status == ApplicationStatus.forApproval)
                   .toList();
               final approved = allApps
                   .where((a) => a.status == ApplicationStatus.approved)
@@ -151,15 +150,17 @@ class OfficerApplicationsScreen extends StatelessWidget {
 
 // Filtered view
               List<Application>? filtered;
-              if (filter == 'pending')
+              if (filter == 'pending') {
                 filtered = pending;
-              else if (filter == 'interviewed')
+              } else if (filter == 'interviewed') {
                 filtered = interviewed;
-              else if (filter == 'forApproval')
+              } else if (filter == 'forApproval') {
                 filtered = forApproval;
-              else if (filter == 'approved')
+              } else if (filter == 'approved') {
                 filtered = approved;
-              else if (filter == 'declined') filtered = declined;
+              } else if (filter == 'declined') {
+                filtered = declined;
+              }
 
               if (filtered != null) {
                 if (filtered.isEmpty) {
@@ -167,36 +168,35 @@ class OfficerApplicationsScreen extends StatelessWidget {
                     child: _EmptyState(label: _filterTitle()),
                   );
                 }
+                final filteredApps = showAllApplications ? filtered : filtered.take(10).toList();
                 return SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
                   sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (_, i) => _AppCard(
-                        app: filtered![i],
-                        index: i,
-                        onView: () => _showDetails(context, filtered![i]),
-                        onAccept: _canAccept(filtered[i])
-                            ? () => _accept(context, filtered![i])
-                            : null,
-                        onDecline: _canDecline(filtered[i])
-                            ? () => _decline(context, filtered![i])
-                            : null,
-                        onSchedule: _canSchedule(filtered[i])
-                            ? () => _scheduleInterview(context, filtered![i])
-                            : null,
-                        onMoveToApproval: _canMoveToApproval(filtered[i])
-                            ? () => _moveToApproval(context, filtered![i])
-                            : null,
-                        onFinalApprove: _canFinalApprove(filtered[i])
-                            ? () => _finalApprove(context, filtered![i])
-                            : null,
-                        onDelete: filtered[i].status ==
-                                ApplicationStatus.declined
-                            ? () => _deleteApplication(context, filtered![i])
-                            : null,
-                      ),
-                      childCount: filtered.length,
-                    ),
+                    delegate: SliverChildListDelegate([
+                      ...filteredApps.asMap().entries.map((entry) {
+                        final app = entry.value;
+                        return _AppCard(
+                          app: app,
+                          index: entry.key,
+                          onView: () => _showDetails(context, app),
+                          onAccept: _canAccept(app) ? () => _accept(context, app) : null,
+                          onDecline: _canDecline(app) ? () => _decline(context, app) : null,
+                          onSchedule: _canSchedule(app) ? () => _scheduleInterview(context, app) : null,
+                          onMoveToApproval: _canMoveToApproval(app) ? () => _moveToApproval(context, app) : null,
+                          onFinalApprove: _canFinalApprove(app) ? () => _finalApprove(context, app) : null,
+                          onDelete: app.status == ApplicationStatus.declined ? () => _deleteApplication(context, app) : null,
+                        );
+                      }),
+                      if (filtered.length > 10)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: OutlinedButton.icon(
+                            onPressed: () => setLocalState(() => showAllApplications = !showAllApplications),
+                            icon: Icon(showAllApplications ? Icons.expand_less_rounded : Icons.expand_more_rounded),
+                            label: Text(showAllApplications ? 'Show Less' : 'View All ${filtered.length} Applications'),
+                          ),
+                        ),
+                    ]),
                   ),
                 );
               }
@@ -208,6 +208,13 @@ class OfficerApplicationsScreen extends StatelessWidget {
                 );
               }
 
+              final visibleApps = showAllApplications ? allApps : allApps.take(10).toList();
+              final visibleIds = visibleApps.map((a) => a.id).toSet();
+              final visiblePending = pending.where((a) => visibleIds.contains(a.id)).toList();
+              final visibleInterviewed = interviewed.where((a) => visibleIds.contains(a.id)).toList();
+              final visibleForApproval = forApproval.where((a) => visibleIds.contains(a.id)).toList();
+              final visibleApproved = approved.where((a) => visibleIds.contains(a.id)).toList();
+              final visibleDeclined = declined.where((a) => visibleIds.contains(a.id)).toList();
               return SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
                 sliver: SliverList(
@@ -218,23 +225,22 @@ class OfficerApplicationsScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (pending.isNotEmpty)
-                              ..._section(context, 'Pending', pending),
-                            if (interviewed.isNotEmpty)
-                              ..._section(context, 'Interviewees', interviewed),
-                            if (forApproval.isNotEmpty)
-                              ..._section(context, 'For Approval', forApproval),
-                            if (approved.isNotEmpty)
-                              ..._section(context, 'Approved', approved),
-                            if (declined.isNotEmpty) ...[
-                              _DeclinedHeader(
-                                onClearAll: () =>
-                                    _clearDeclined(context, declined),
-                              ),
+                            if (visiblePending.isNotEmpty) ..._section(context, 'Pending', visiblePending),
+                            if (visibleInterviewed.isNotEmpty) ..._section(context, 'Interviewees', visibleInterviewed),
+                            if (visibleForApproval.isNotEmpty) ..._section(context, 'For Approval', visibleForApproval),
+                            if (visibleApproved.isNotEmpty) ..._section(context, 'Approved', visibleApproved),
+                            if (visibleDeclined.isNotEmpty) ...[
+                              _DeclinedHeader(onClearAll: () => _clearDeclined(context, visibleDeclined)),
                               const SizedBox(height: 12),
-                              ..._buildCards(context, declined),
+                              ..._buildCards(context, visibleDeclined),
                               const SizedBox(height: 24),
                             ],
+                            if (allApps.length > 10)
+                              OutlinedButton.icon(
+                                onPressed: () => setLocalState(() => showAllApplications = !showAllApplications),
+                                icon: Icon(showAllApplications ? Icons.expand_less_rounded : Icons.expand_more_rounded),
+                                label: Text(showAllApplications ? 'Show Less' : 'View All ${allApps.length} Applications'),
+                              ),
                           ],
                         ),
                       ),
@@ -246,7 +252,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ── Section helper ────────────────────────────────────────────────────
@@ -297,7 +303,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
   bool _canDecline(Application a) =>
       a.status == ApplicationStatus.pending ||
       a.status == ApplicationStatus.interviewed ||
-      a.status == ApplicationStatus.for_approval;
+      a.status == ApplicationStatus.forApproval;
 
   // Interviewees → Schedule interview
   bool _canSchedule(Application a) => a.status == ApplicationStatus.interviewed;
@@ -308,7 +314,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
 
   // For Approval → Final Approve → Approved
   bool _canFinalApprove(Application a) =>
-      a.status == ApplicationStatus.for_approval;
+      a.status == ApplicationStatus.forApproval;
 
   // ── Actions — all original logic preserved ────────────────────────────
   void _accept(BuildContext context, Application a) {
@@ -318,7 +324,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
 
   void _moveToApproval(BuildContext context, Application a) {
     AppState.instance
-        .setApplicationStatus(a.id, ApplicationStatus.for_approval);
+        .setApplicationStatus(a.id, ApplicationStatus.forApproval);
     _snack(context, '${a.name} moved to For Approval.');
   }
 
@@ -395,7 +401,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
             .eq('id', id);
       }
     } catch (e) {
-      print('Error deleting declined: $e');
+      debugPrint('Error deleting declined: $e');
     }
     if (context.mounted) {
       _snack(context, 'Deleted ${ids.length} declined application(s).',
@@ -716,7 +722,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
           border: Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -834,7 +840,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
                             Colors.red,
                           );
                         }
-                        print('Schedule interview error: $e');
+                        debugPrint('Schedule interview error: $e');
                       }
                     },
                   )),
@@ -847,81 +853,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
     );
   }
 
-  void _assignPosition(BuildContext context, Application a) {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _dialogHeader(Icons.person_add_rounded, 'Assign Position'),
-              const SizedBox(height: 16),
-              Text('Assign a position to ${a.name}',
-                  style: const TextStyle(color: Color(0xFF64748B))),
-              const SizedBox(height: 14),
-              TextField(
-                controller: ctrl,
-                style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A)),
-                decoration: InputDecoration(
-                  hintText: 'e.g., Member, Officer, Coordinator',
-                  hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
-                  filled: true,
-                  fillColor: const Color(0xFFF0FDF4),
-                  prefixIcon: const Icon(Icons.badge_rounded,
-                      color: _primary, size: 18),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          const BorderSide(color: _primary, width: 1.5)),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(children: [
-                Expanded(
-                    child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('Cancel',
-                      style: TextStyle(color: Color(0xFF64748B))),
-                )),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _GradientButton(
-                  label: 'Assign & Accept',
-                  onTap: () {
-                    if (ctrl.text.trim().isEmpty) return;
-                    AppState.instance.approveApplication(a.id,
-                        defaultPosition: ctrl.text.trim());
-                    Navigator.pop(context);
-                    _snack(context,
-                        '${a.name} assigned as ${ctrl.text.trim()}.', _success);
-                  },
-                )),
-              ]),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+
 
   void _deleteApplication(BuildContext context, Application a) async {
     final ok = await showDialog<bool>(
@@ -942,7 +874,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
           .delete()
           .eq('id', a.id);
     } catch (e) {
-      print('Error deleting: $e');
+      debugPrint('Error deleting: $e');
     }
     if (context.mounted) {
       _snack(context, "${a.name}'s application deleted.", Colors.red);
@@ -1041,10 +973,10 @@ class _AppHeroHeader extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
+                  color: Colors.white.withValues(alpha: 0.18),
                   shape: BoxShape.circle,
                   border: Border.all(
-                      color: Colors.white.withOpacity(0.30), width: 1.5),
+                      color: Colors.white.withValues(alpha: 0.30), width: 1.5),
                 ),
                 child: const Icon(Icons.assignment_rounded,
                     color: Colors.white, size: 26),
@@ -1062,7 +994,7 @@ class _AppHeroHeader extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text('Review and manage applications',
                         style: TextStyle(
-                            color: Colors.white.withOpacity(0.72),
+                            color: Colors.white.withValues(alpha: 0.72),
                             fontSize: 12.5)),
                   ]),
             ]),
@@ -1076,7 +1008,7 @@ class _AppHeroHeader extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-            shape: BoxShape.circle, color: Colors.white.withOpacity(opacity)),
+            shape: BoxShape.circle, color: Colors.white.withValues(alpha: opacity)),
       );
 }
 
@@ -1127,7 +1059,7 @@ class _AppCard extends StatelessWidget {
           border: Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: [
             BoxShadow(
-                color: const Color(0xFF16A34A).withOpacity(0.05),
+                color: const Color(0xFF16A34A).withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 5)),
           ],
@@ -1331,7 +1263,7 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
@@ -1396,7 +1328,7 @@ class _GradientButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-                color: const Color(0xFF16A34A).withOpacity(0.28),
+                color: const Color(0xFF16A34A).withValues(alpha: 0.28),
                 blurRadius: 10,
                 offset: const Offset(0, 4))
           ],
@@ -1519,7 +1451,7 @@ class _EmptyState extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                    color: const Color(0xFF16A34A).withOpacity(0.28),
+                    color: const Color(0xFF16A34A).withValues(alpha: 0.28),
                     blurRadius: 20,
                     offset: const Offset(0, 8))
               ],
@@ -1741,3 +1673,4 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
     );
   }
 }
+

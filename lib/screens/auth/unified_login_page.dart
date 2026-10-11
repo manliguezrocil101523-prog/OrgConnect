@@ -142,6 +142,22 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
         );
       } else if (role == 'officer') {
         final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
+        // Officer accounts are individual accounts. Only the President, Vice
+        // President, or Secretary of the assigned organization may enter the
+        // officer dashboard. Other members cannot use an old/shared officer
+        // account to gain officer access.
+        final officerMembership = await Supabase.instance.client
+            .from('members')
+            .select('position')
+            .eq('org_id', assignedOrgId)
+            .eq('profile_id', res.user!.id)
+            .maybeSingle();
+        final officerPosition = officerMembership?['position']?.toString().toLowerCase().trim() ?? '';
+        if (!{'president', 'vice president', 'secretary'}.contains(officerPosition)) {
+          await Supabase.instance.client.auth.signOut();
+          _snack('Officer access is limited to the President, Vice President, or Secretary account.', isError: true);
+          return;
+        }
 
         if (assignedOrgId.isEmpty) {
           await Supabase.instance.client.auth.signOut();
@@ -200,6 +216,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
         AppState.instance.setRole(UserRole.student);
         await AppState.instance.setStudentProfile(profile);
         await AppState.instance.fetchNotifications();
+        if (!mounted) return;
 
         Navigator.pushReplacement(
           context,
@@ -336,7 +353,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                         borderRadius: BorderRadius.circular(cardRadius),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
+                            color: Colors.black.withValues(alpha: 0.05),
                             blurRadius: 20,
                             offset: const Offset(0, 4),
                           ),
@@ -434,7 +451,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage>
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _kPrimaryBlue,
                                 disabledBackgroundColor:
-                                    _kPrimaryBlue.withOpacity(0.4),
+                                    _kPrimaryBlue.withValues(alpha: 0.4),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(40),

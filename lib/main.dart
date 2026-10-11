@@ -23,10 +23,14 @@ void main() async {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNianR0dWJqemJ4cnFzbnF3b29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MTQ3NDksImV4cCI6MjEwMjQ5MDc0OX0.gfZWRz_XmgLvwM4CGhjvcXS--JEbIxeqc3lzPLtqTyg',
   );
 
-  await AppState.instance.loadStudentProfile();
-  await AppState.instance.loadTheme();
-
+  // Render the app immediately after Supabase initialization. Profile and theme
+  // loading run asynchronously; awaiting network-backed profile loading here can
+  // leave the native window blank if the request is slow or offline.
   runApp(const MyApp());
+
+  // Load cached profile/theme after the first frame without blocking startup.
+  AppState.instance.loadStudentProfile();
+  AppState.instance.loadTheme();
 }
 
 class MyApp extends StatefulWidget {
@@ -89,8 +93,8 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: const Color(0xFFF1F8F4),
         scrollbarTheme: ScrollbarThemeData(
-          thumbColor: MaterialStatePropertyAll(Color(0xFF6BBF98)),
-          trackColor: MaterialStatePropertyAll(Color(0xFFE3F1EA)),
+          thumbColor: WidgetStatePropertyAll(Color(0xFF6BBF98)),
+          trackColor: WidgetStatePropertyAll(Color(0xFFE3F1EA)),
         ),
       ),
 
@@ -112,8 +116,8 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: const Color(0xFF0C2118),
         scrollbarTheme: ScrollbarThemeData(
-          thumbColor: MaterialStatePropertyAll(Color(0xFF1B6D4D)),
-          trackColor: MaterialStatePropertyAll(Color(0xFF143326)),
+          thumbColor: WidgetStatePropertyAll(Color(0xFF1B6D4D)),
+          trackColor: WidgetStatePropertyAll(Color(0xFF143326)),
         ),
       ),
 
@@ -131,3 +135,4 @@ class _MyAppState extends State<MyApp> {
     );
   }
 }
+

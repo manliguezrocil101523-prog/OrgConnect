@@ -526,7 +526,7 @@ class _SignUpPageState extends State<SignUpPage>
                               backgroundColor:
                                   const Color(0xFF16A34A),
                               disabledBackgroundColor:
-                                  const Color(0xFF16A34A).withOpacity(
+                                  const Color(0xFF16A34A).withValues(alpha: 
                                 0.5,
                               ),
                               elevation: 8,
@@ -596,7 +596,7 @@ class _SignUpPageState extends State<SignUpPage>
                                 'Login here',
                                 style:
                                     TextStyle(
-                                  color: const Color(0xFF16A34A),
+                                  color: Color(0xFF16A34A),
                                   fontWeight:
                                       FontWeight
                                           .w700,

@@ -16,7 +16,6 @@ class AdminEventProposalsScreen extends StatefulWidget {
 class _AdminEventProposalsScreenState extends State<AdminEventProposalsScreen> {
   static const Color green = Color(0xFF16A34A);
   static const Color background = Color(0xFFF8FAFC);
-  static const Color textDark = Color(0xFF1E293B);
   static const Color textMuted = Color(0xFF64748B);
 
   final SupabaseClient _db = Supabase.instance.client;
@@ -165,11 +164,6 @@ class _AdminEventProposalsScreenState extends State<AdminEventProposalsScreen> {
     );
   }
 
-  String _formatDate(dynamic value) {
-    final date = DateTime.tryParse(value?.toString() ?? '');
-    if (date == null) return 'No target date';
-    return '${date.month}/${date.day}/${date.year}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -180,13 +174,7 @@ class _AdminEventProposalsScreenState extends State<AdminEventProposalsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('Activity Proposals'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loadRequests,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
+        actions: [],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -284,7 +272,7 @@ class _ProposalCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: green.withOpacity(0.10),
+                    color: green.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -365,3 +353,4 @@ class _ProposalCard extends StatelessWidget {
     );
   }
 }
+

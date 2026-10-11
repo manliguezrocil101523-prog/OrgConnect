@@ -13,7 +13,6 @@ class _NotificationScreenState extends State<NotificationScreen>
   static const Color _primary = Color(0xFF16A34A);
   static const Color _secondary = Color(0xFF0F766E);
   static const Color _background = Color(0xFFF1F5F9);
-  static const Color _interview = Color(0xFFF59E0B);
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
@@ -59,18 +58,33 @@ class _NotificationScreenState extends State<NotificationScreen>
 
     final notifications = currentStudent == null
         ? []
-        : allNotifications
-            .where((n) =>
-                n.studentId == currentStudent.id ||
-                n.studentId == currentStudent.studentId)
-            .toList();
+        : allNotifications.where((n) {
+            final title = n.title.toLowerCase();
+            final message = n.message.toLowerCase();
+            final isInterview = title.contains('interview') || message.contains('scheduled interview');
+            final isMember = title.contains('congratulations') || message.contains('officially a member');
+            return (n.studentId == currentStudent.id || n.studentId == currentStudent.studentId) && (isInterview || isMember);
+          }).toList();
 
-    final interviewNotifications = notifications
-        .where((n) => n.title.toLowerCase().contains('interview'))
-        .toList();
-    final otherNotifications = notifications
-        .where((n) => !n.title.toLowerCase().contains('interview'))
-        .toList();
+    // Keep one student-facing workflow card per organization and category.
+    // fetchNotifications() already performs this normalization, but this
+    // second guard prevents duplicates from cached state or a realtime update
+    // from rendering more than one card.
+    final interviewSeen = <String>{};
+    final interviewNotifications = notifications.where((n) {
+      if (!n.title.toLowerCase().contains('interview')) return false;
+      final key = n.orgId ?? n.title.toLowerCase();
+      return interviewSeen.add(key);
+    }).toList();
+    final membershipSeen = <String>{};
+    final otherNotifications = notifications.where((n) {
+      final title = n.title.toLowerCase();
+      final message = n.message.toLowerCase();
+      final membership = title.contains('congratulations') || message.contains('officially a member');
+      if (!membership) return false;
+      final key = n.orgId ?? n.title.toLowerCase();
+      return membershipSeen.add(key);
+    }).toList();
 
     final unreadCount = notifications.where((n) => !n.read).length;
 
@@ -112,10 +126,10 @@ class _NotificationScreenState extends State<NotificationScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.20),
+                          color: Colors.white.withValues(alpha: 0.20),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.35),
+                            color: Colors.white.withValues(alpha: 0.35),
                             width: 1,
                           ),
                         ),
@@ -236,7 +250,7 @@ class _NotificationHeroHeader extends StatelessWidget {
               height: 180,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
               ),
             ),
           ),
@@ -248,7 +262,7 @@ class _NotificationHeroHeader extends StatelessWidget {
               height: 130,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.04),
+                color: Colors.white.withValues(alpha: 0.04),
               ),
             ),
           ),
@@ -261,10 +275,10 @@ class _NotificationHeroHeader extends StatelessWidget {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.30),
+                        color: Colors.white.withValues(alpha: 0.30),
                         width: 1.5,
                       ),
                     ),
@@ -293,7 +307,7 @@ class _NotificationHeroHeader extends StatelessWidget {
                             ? '$unreadCount unread messages'
                             : 'All caught up!',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.72),
+                          color: Colors.white.withValues(alpha: 0.72),
                           fontSize: 12.5,
                         ),
                       ),
@@ -348,13 +362,13 @@ class _InterviewCard extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: isUnread
-                ? Border.all(color: _amber.withOpacity(0.40), width: 1.5)
+                ? Border.all(color: _amber.withValues(alpha: 0.40), width: 1.5)
                 : Border.all(color: const Color(0xFFE2E8F0), width: 1),
             boxShadow: [
               BoxShadow(
                 color: isUnread
-                    ? _amber.withOpacity(0.10)
-                    : Colors.black.withOpacity(0.04),
+                    ? _amber.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.04),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -369,7 +383,7 @@ class _InterviewCard extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: _amber.withOpacity(0.12),
+                    color: _amber.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -440,7 +454,7 @@ class _InterviewCard extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: _amber.withOpacity(0.12),
+                                color: _amber.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: const Text(
@@ -506,13 +520,13 @@ class _GeneralCard extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: isUnread
-                ? Border.all(color: _teal.withOpacity(0.35), width: 1.5)
+                ? Border.all(color: _teal.withValues(alpha: 0.35), width: 1.5)
                 : Border.all(color: const Color(0xFFE2E8F0), width: 1),
             boxShadow: [
               BoxShadow(
                 color: isUnread
-                    ? _teal.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.04),
+                    ? _teal.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.04),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -528,7 +542,7 @@ class _GeneralCard extends StatelessWidget {
                   height: 44,
                   decoration: BoxDecoration(
                     color: isUnread
-                        ? _teal.withOpacity(0.12)
+                        ? _teal.withValues(alpha: 0.12)
                         : const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -602,7 +616,7 @@ class _GeneralCard extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: _teal.withOpacity(0.10),
+                                color: _teal.withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: const Text(
@@ -643,7 +657,7 @@ class _EmptyState extends StatelessWidget {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: const Color(0xFF16A34A).withOpacity(0.08),
+              color: const Color(0xFF16A34A).withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -729,3 +743,4 @@ String _formatTimestamp(DateTime timestamp) {
   }
   return 'Just now';
 }
+

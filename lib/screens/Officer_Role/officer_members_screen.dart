@@ -1,13 +1,288 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
 
-class OfficerMembersScreen extends StatelessWidget {
-  const OfficerMembersScreen({super.key});
+class OfficerMembersScreen extends StatefulWidget {
+  final String? organizationId;
+  final bool showOnlyActive;
+  final bool readOnly;
+  final bool adviserView;
+  final String title;
+
+  const OfficerMembersScreen({
+    super.key,
+    this.organizationId,
+    this.showOnlyActive = false,
+    this.readOnly = false,
+    this.adviserView = false,
+    this.title = 'Organization Members',
+  });
+
+  @override
+  State<OfficerMembersScreen> createState() => _OfficerMembersScreenState();
+}
+
+class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
+  void _snack(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
 
   static const _p = Color(0xFF16A34A); // primary
-  static const _s = Color(0xFF0F766E); // secondary
   static const _bg = Color(0xFFF0FDF4); // background
   static const _ok = Color(0xFF22C55E); // success
+  static const _officerPositions = <String>[
+    'President',
+    'Vice President',
+    'Officer',
+    'Secretary',
+    'Assistant Secretary',
+  ];
+
+  final Set<String> _activeProfileIds = <String>{};
+  final Map<String, int> _chatMessageCounts = <String, int>{};
+  final Map<String, int> _commentCounts = <String, int>{};
+  final Map<String, int> _attendancePresentCounts = <String, int>{};
+  final Map<String, int> _attendanceTotalCounts = <String, int>{};
+  final Map<String, Map<String, dynamic>> _impactByStudentId = <String, Map<String, dynamic>>{};
+  bool _activeStatusLoaded = false;
+  bool _canManageMembers = false;
+  bool _canManageAttendance = false;
+  bool _managerRoleLoaded = false;
+  RealtimeChannel? _attendanceChannel;
+  final ScrollController _membersScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    final channel = _attendanceChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    _membersScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
+    if (orgId != null && orgId.isNotEmpty) {
+      _attendanceChannel = Supabase.instance.client.channel('member-attendance-$orgId-${Supabase.instance.client.auth.currentUser?.id ?? 'local'}')
+        ..onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'organization_member_attendance',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'org_id', value: orgId),
+          callback: (_) => _loadEngagementData(),
+        )
+        ..subscribe();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await AppState.instance.fetchMembers(organizationId: widget.organizationId ?? AppState.instance.currentOfficerOrgId);
+      await _loadManagerPermission();
+      await _loadEngagementData();
+    });
+  }
+
+  Future<void> _loadManagerPermission() async {
+    try {
+      final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (orgId == null || orgId.isEmpty || userId == null) {
+        if (mounted) setState(() => _managerRoleLoaded = true);
+        return;
+      }
+      final row = await Supabase.instance.client
+          .from('members')
+          .select('position')
+          .eq('org_id', orgId)
+          .eq('profile_id', userId)
+          .maybeSingle();
+      final position = row?['position']?.toString().toLowerCase().trim() ?? '';
+      if (mounted) {
+        setState(() {
+          _canManageMembers = position == 'president' || position == 'vice president';
+          _canManageAttendance = position == 'secretary' || position == 'assistant secretary';
+          _managerRoleLoaded = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Could not determine officer management permission: $e');
+      if (mounted) setState(() => _managerRoleLoaded = true);
+    }
+  }
+
+  Future<void> _loadEngagementData() async {
+    try {
+      final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
+      if (orgId == null || orgId.isEmpty) {
+        if (mounted) setState(() => _activeStatusLoaded = true);
+        return;
+      }
+
+      final client = Supabase.instance.client;
+      final cutoff = DateTime.now().subtract(const Duration(days: 30));
+
+      // Supabase `members` is the source of truth. Officers are members too,
+      // so Active Members & Impact must read the membership table directly
+      // instead of relying on the cached AppState member list or profile role.
+      final membershipRows = await client
+          .from('members')
+          .select('profile_id')
+          .eq('org_id', orgId);
+      final memberProfileIds = (membershipRows as List)
+          .map((row) => row['profile_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      // Keep active-account checking as a secondary guard, but never let a profile
+      // lookup failure make a real member disappear from the engagement calculation.
+      final activeAccounts = <String>{...memberProfileIds};
+      try {
+        final profileRows = await client
+            .from('profiles')
+            .select('id,active,role')
+            .inFilter('id', memberProfileIds.toList());
+        final returnedIds = <String>{};
+        for (final row in profileRows as List) {
+          final id = row['id']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          returnedIds.add(id);
+          if (row['active'] != true || !{'student', 'officer'}.contains(row['role']?.toString().toLowerCase())) {
+            activeAccounts.remove(id);
+          }
+        }
+        // If Supabase did not return some member profiles (for example because of a
+        // temporary policy/cache issue), keep those member IDs rather than clearing
+        // the list and incorrectly showing "No members yet".
+        if (returnedIds.isEmpty && memberProfileIds.isNotEmpty) {
+          activeAccounts
+            ..clear()
+            ..addAll(memberProfileIds);
+        }
+      } catch (e) {
+        debugPrint('Could not load member profile status; using membership records: $e');
+      }
+
+      List<dynamic> chatRows = <dynamic>[];
+      try {
+        chatRows = await client
+            .from('org_chat_messages')
+            .select('sender_id,created_at')
+            .eq('org_id', orgId)
+            .gte('created_at', cutoff.toIso8601String());
+      } catch (e) {
+        debugPrint('Could not load organization chat engagement: $e');
+      }
+
+      _chatMessageCounts.clear();
+      for (final row in chatRows) {
+        final senderId = row['sender_id']?.toString() ?? '';
+        if (senderId.isEmpty || !activeAccounts.contains(senderId)) continue;
+        _chatMessageCounts[senderId] = (_chatMessageCounts[senderId] ?? 0) + 1;
+      }
+
+      List<Map<String, dynamic>> eventRows = <Map<String, dynamic>>[];
+      try {
+        eventRows = List<Map<String, dynamic>>.from(
+          await client.from('events').select('id').eq('org_id', orgId),
+        );
+      } catch (e) {
+        debugPrint('Could not load organization events for engagement: $e');
+      }
+
+      _commentCounts.clear();
+      final eventIds = eventRows
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      if (eventIds.isNotEmpty) {
+        try {
+          final commentRows = await client
+              .from('event_comments')
+              .select('user_id,created_at')
+              .inFilter('event_id', eventIds)
+              .gte('created_at', cutoff.toIso8601String());
+          for (final row in commentRows as List) {
+            final userId = row['user_id']?.toString() ?? '';
+            if (userId.isEmpty || !activeAccounts.contains(userId)) continue;
+            _commentCounts[userId] = (_commentCounts[userId] ?? 0) + 1;
+          }
+        } catch (e) {
+          debugPrint('Could not load event-comment engagement: $e');
+        }
+      }
+
+      // Attendance is a second, concrete activity signal for members.
+      // It is displayed in the Active Members & Impact cards so advisers can
+      // distinguish an active account from someone who is actually attending
+      // organization activities. Attendance records are stored in Supabase.
+      _attendancePresentCounts.clear();
+      _attendanceTotalCounts.clear();
+      try {
+        final attendanceRows = await client
+            .from('organization_member_attendance')
+            .select('profile_id,status,marked_at')
+            .eq('org_id', orgId);
+        for (final row in attendanceRows as List) {
+          final profileId = row['profile_id']?.toString() ?? '';
+          if (profileId.isEmpty || !memberProfileIds.contains(profileId)) continue;
+          _attendanceTotalCounts[profileId] = (_attendanceTotalCounts[profileId] ?? 0) + 1;
+          if (row['status']?.toString().toLowerCase() == 'present') {
+            _attendancePresentCounts[profileId] = (_attendancePresentCounts[profileId] ?? 0) + 1;
+          }
+        }
+      } catch (e) {
+        debugPrint('Could not load organization attendance: $e');
+      }
+
+      _impactByStudentId.clear();
+      try {
+        final impactRows = await client
+            .from('student_impact')
+            .select('student_id,academic_growth,social_growth,leadership_growth,confidence_growth,updated_at')
+            .eq('org_id', orgId);
+        for (final row in impactRows as List) {
+          final studentId = row['student_id']?.toString() ?? '';
+          if (studentId.isNotEmpty) {
+            _impactByStudentId[studentId] = Map<String, dynamic>.from(row as Map);
+          }
+        }
+      } catch (e) {
+        debugPrint('Could not load organization impact data: $e');
+      }
+
+      // Active Members is based on the real Supabase membership + active
+      // account records. Recent chat/comment activity is shown as engagement
+      // detail, but it must never hide a legitimate member (including officers).
+      _activeProfileIds
+        ..clear()
+        ..addAll(activeAccounts);
+    } catch (e) {
+      debugPrint('Error loading member engagement data: $e');
+    }
+    if (mounted) setState(() => _activeStatusLoaded = true);
+  }
+
+  double _impactAverage(Map<String, dynamic> impact) {
+    final values = <double>[
+      _asDouble(impact['academic_growth']),
+      _asDouble(impact['social_growth']),
+      _asDouble(impact['leadership_growth']),
+      _asDouble(impact['confidence_growth']),
+    ];
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  double _asDouble(dynamic value) => double.tryParse(value?.toString() ?? '') ?? 0;
 
   // Position → accent color
   static Color _posColor(String pos) {
@@ -17,6 +292,7 @@ class OfficerMembersScreen extends StatelessWidget {
       case 'vice president':
         return const Color(0xFF0F766E);
       case 'secretary':
+      case 'assistant secretary':
         return const Color(0xFF0D9488);
       case 'officer':
         return const Color(0xFF22C55E);
@@ -27,93 +303,714 @@ class OfficerMembersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
     return Scaffold(
       backgroundColor: _bg,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── Header ────────────────────────────────────────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: MediaQuery.of(context).size.height * 0.20,
-            backgroundColor: _p,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
+      body: Column(
+        children: [
+          _membersHeader(context),
+          Expanded(
+            child: Scrollbar(
+              controller: _membersScrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              child: AnimatedBuilder(
+                animation: AppState.instance,
+                builder: (ctx, _) {
+                  var members = orgId != null
+                      ? AppState.instance.members.where((m) => m.orgId == orgId).toList()
+                      : AppState.instance.members.toList();
+                  if (widget.showOnlyActive && _activeStatusLoaded) {
+                    members = members.where((m) => m.profileId != null && _activeProfileIds.contains(m.profileId)).toList();
+                  }
+                  if (members.isEmpty) {
+                    return ListView(
+                      controller: _membersScrollController,
+                      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                      children: const [SizedBox(height: 180), _Empty(icon: Icons.groups_rounded, label: 'No members yet', sub: 'Add your first member to get started.')],
+                    );
+                  }
+                  return ListView(
+                    controller: _membersScrollController,
+                    physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
+                    children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 540),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            _Label(widget.showOnlyActive ? '${members.length} Active Member${members.length == 1 ? '' : 's'}' : '${members.length} Member${members.length == 1 ? '' : 's'}'),
+                            if (widget.showOnlyActive) ...[
+                              const SizedBox(height: 10),
+                              const _EngagementInfoCard(),
+                              const SizedBox(height: 10),
+                            ],
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(color: Colors.white.withValues(alpha: .72), borderRadius: BorderRadius.circular(22), border: Border.all(color: const Color(0xFFDCEFE2))),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                                const Padding(padding: EdgeInsets.fromLTRB(4, 2, 4, 10), child: Row(children: [Icon(Icons.fact_check_outlined, size: 18, color: _p), SizedBox(width: 8), Text('Attendance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF14532D))), Spacer(), Text('Records & reports', style: TextStyle(fontSize: 11, color: Color(0xFF718579)))])),
+                            _attendanceActionCard(
+                              title: 'View Attendance',
+                              subtitle: 'Review attendance by event, date, and session',
+                              icon: Icons.fact_check_rounded,
+                              primary: false,
+                              onTap: () => _viewAttendance(ctx, members),
+                            ),
+                            if (!widget.readOnly && _canManageAttendance) ...[
+                              const SizedBox(height: 10),
+                              _attendanceActionCard(
+                                title: 'Record & Send Attendance',
+                                subtitle: 'Take the roll call and send it to your adviser',
+                                icon: Icons.event_available_rounded,
+                                primary: true,
+                                onTap: () => _manageAttendance(ctx, members),
+                              ),
+                            ],
+                              ]),
+                            ),
+                            const SizedBox(height: 18),
+                            Row(children: [const Expanded(child: Text('Organization members', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF14532D)))), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(20)), child: Text('${members.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF166534))))]),
+                            const SizedBox(height: 10),
+                            ...members.asMap().entries.map((e) => _MemberCard(
+                              member: e.value,
+                              readOnly: widget.readOnly || !_canManageMembers,
+                              index: e.key,
+                              accentColor: _posColor(e.value.position),
+                              chatCount: _chatMessageCounts[e.value.profileId] ?? 0,
+                              commentCount: _commentCounts[e.value.profileId] ?? 0,
+                              attendancePresent: _attendancePresentCounts[e.value.profileId] ?? 0,
+                              attendanceTotal: _attendanceTotalCounts[e.value.profileId] ?? 0,
+                              onEdit: widget.readOnly || !_canManageMembers ? () {} : () => _dialog(ctx, existing: e.value),
+                              onDelete: widget.readOnly || !_canManageMembers ? () {} : () {
+                                AppState.instance.removeMember(e.value.id);
+                                _snack('Removed ${e.value.name}', Colors.redAccent);
+                              },
+                            )),
+                            const SizedBox(height: 18),
+                            if (widget.adviserView) _ImpactSection(members: members, impactByStudentId: _impactByStudentId, averageFor: _impactAverage, attendancePresent: _attendancePresentCounts, attendanceTotal: _attendanceTotalCounts, adviserView: true),
+                          ]),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
-            centerTitle: true,
-            flexibleSpace: FlexibleSpaceBar(
-                background: _GradientHero(
-              icon: Icons.groups_rounded,
-              title: 'Organisation Members',
-              subtitle: 'Manage and track your members',
-            )),
-          ),
-
-          // ── List ──────────────────────────────────────────────────────
-          AnimatedBuilder(
-            animation: AppState.instance,
-            builder: (ctx, _) {
-              final orgId = AppState.instance.currentOfficerOrgId;
-              final members = orgId != null
-                  ? AppState.instance.members
-                      .where((m) => m.orgId == orgId)
-                      .toList()
-                  : AppState.instance.members;
-              if (members.isEmpty) {
-                return SliverFillRemaining(
-                    child: _Empty(
-                  icon: Icons.groups_rounded,
-                  label: 'No members yet',
-                  sub: 'Add your first member to get started.',
-                ));
-              }
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
-                sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                  Center(
-                      child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 540),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _Label(
-                              '${members.length} Member${members.length == 1 ? '' : 's'}'),
-                          const SizedBox(height: 12),
-                          ...members.asMap().entries.map((e) => _MemberCard(
-                                member: e.value,
-                                index: e.key,
-                                accentColor: _posColor(e.value.position),
-                                onEdit: () => _dialog(ctx, existing: e.value),
-                                onDelete: () {
-                                  AppState.instance.removeMember(e.value.id);
-                                  // FIX Bug 6: use ctx (the AnimatedBuilder
-                                  // context) consistently — same scope used
-                                  // for edit/delete snacks.
-                                  _snack(ctx, 'Removed ${e.value.name}',
-                                      Colors.redAccent);
-                                },
-                              )),
-                        ]),
-                  )),
-                ])),
-              );
-            },
           ),
         ],
       ),
+      floatingActionButton: widget.readOnly || !_managerRoleLoaded || !_canManageMembers ? null : _GradFab(icon: Icons.person_add_rounded, label: 'Add Member', onTap: () => _dialog(context)),
+    );
+  }
 
-      // ── FAB ────────────────────────────────────────────────────────────
-      floatingActionButton: _GradFab(
-        icon: Icons.person_add_rounded,
-        label: 'Add Member',
-        onTap: () => _dialog(context),
+  Widget _orb(double size, double opacity) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: opacity),
+      shape: BoxShape.circle,
+    ),
+  );
+
+  Widget _membersHeader(BuildContext context) => SizedBox(
+    height: 160,
+    width: double.infinity,
+    child: Container(
+      decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF16A34A), Color(0xFF0F766E)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+      child: Stack(children: [
+        Positioned(top: -30, right: -20, child: _orb(160, 0.07)),
+        Positioned(bottom: 10, left: -40, child: _orb(120, 0.05)),
+        SafeArea(child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20)),
+            const SizedBox(width: 4),
+            Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .18), shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: .30), width: 1.5)), child: const Icon(Icons.groups_rounded, color: Colors.white, size: 26)),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              const Text('Members and impact', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+            ])),
+          ]),
+        )),
+      ]),
+    ),
+  );
+
+  Widget _attendanceFullHeader(BuildContext context, String title, IconData icon) => SizedBox(
+    height: 160,
+    width: double.infinity,
+    child: Container(
+      decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF16A34A), Color(0xFF0F766E)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+      child: SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 20, 12),
+        child: Row(children: [
+          IconButton(tooltip: 'Back', onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20)),
+          const SizedBox(width: 8),
+          Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .18), shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: .30), width: 1.5)), child: Icon(icon, color: Colors.white, size: 26)),
+          const SizedBox(width: 14),
+          Expanded(child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900))),
+        ]),
+      )),
+    ),
+  );
+
+  String _attendanceDateLabel(dynamic raw) {
+    final value = raw?.toString().trim() ?? '';
+    if (value.isEmpty) return 'Date not set';
+    final parsed = DateTime.tryParse(value)?.toLocal();
+    if (parsed == null) return value;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[parsed.month - 1]} ${parsed.day}, ${parsed.year}';
+  }
+
+  String _attendanceTimeLabel(dynamic raw) {
+    final value = raw?.toString().trim() ?? '';
+    if (value.isEmpty) return 'Time not specified';
+    final parsed = DateTime.tryParse(value)?.toLocal();
+    if (parsed == null) return value;
+    // Date-only event values should not be displayed as midnight.
+    if (parsed.hour == 0 && parsed.minute == 0) return 'Time not specified';
+    final hour = parsed.hour % 12 == 0 ? 12 : parsed.hour % 12;
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${parsed.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+
+  Widget _attendanceSessionPicker({required String session, required ValueChanged<String> onChanged}) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: const Color(0xFFEAF7EF), borderRadius: BorderRadius.circular(15)),
+      child: Row(children: [
+        for (final option in const [('morning', 'Morning', Icons.wb_twilight_rounded), ('afternoon', 'Afternoon', Icons.wb_sunny_rounded)])
+          Expanded(child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: Material(
+              color: session == option.$1 ? _p : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => onChanged(option.$1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 6),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(option.$3, size: 17, color: session == option.$1 ? Colors.white : _p),
+                    const SizedBox(width: 6),
+                    Flexible(child: Text(option.$2, style: TextStyle(fontWeight: FontWeight.w800, color: session == option.$1 ? Colors.white : _p))),
+                  ]),
+                ),
+              ),
+            ),
+          )),
+      ]),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadAttendanceActivities(String orgId) async {
+    final db = Supabase.instance.client;
+    final eventRows = List<Map<String, dynamic>>.from(
+      await db.from('events').select('id,title,date').eq('org_id', orgId).order('date', ascending: false).limit(100),
+    );
+    final customRows = List<Map<String, dynamic>>.from(
+      await db.from('organization_attendance_sessions').select('id,title,activity_type,session_date,session_time').eq('org_id', orgId).order('session_date', ascending: false).limit(100),
+    );
+    final activities = <Map<String, dynamic>>[...eventRows];
+    for (final row in customRows) {
+      final date = row['session_date']?.toString() ?? '';
+      final time = row['session_time']?.toString();
+      final dateTime = time == null || time.isEmpty ? date : '${date}T${time.length >= 8 ? time.substring(0, 8) : time}';
+      activities.add({
+        'id': row['id']?.toString(),
+        'title': row['title']?.toString() ?? 'Untitled activity',
+        'date': dateTime,
+        'activity_type': row['activity_type']?.toString() ?? 'event',
+      });
+    }
+    activities.sort((a, b) => (b['date']?.toString() ?? '').compareTo(a['date']?.toString() ?? ''));
+    return activities;
+  }
+
+  Future<Map<String, dynamic>?> _pickOrCreateAttendanceActivity(BuildContext context, String orgId) async {
+    final existing = await _loadAttendanceActivities(orgId);
+    if (!context.mounted) return null;
+    if (existing.isEmpty) return _createAttendanceActivity(context, orgId);
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (pickerContext) => AlertDialog(
+        backgroundColor: const Color(0xFFF7FFF9),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Record attendance', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF14532D))),
+        content: SizedBox(
+          width: 520,
+          child: ListView(shrinkWrap: true, children: [
+            const Text('Continue an existing event to record another session, or create a new attendance record.', style: TextStyle(height: 1.4, color: Color(0xFF64786D))),
+            const SizedBox(height: 12),
+            for (final item in existing.take(12))
+              Card(
+                elevation: 0,
+                color: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFD5F0DE))),
+                child: ListTile(
+                  leading: CircleAvatar(backgroundColor: const Color(0xFFEAF7EF), child: Icon(item['activity_type']?.toString() == 'meeting' ? Icons.groups_rounded : Icons.event_rounded, color: _p)),
+                  title: Text(item['title']?.toString() ?? 'Untitled activity', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('${(item['activity_type']?.toString() ?? 'event').toUpperCase()}  •  ${_attendanceDateLabel(item['date'])}'),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: _p),
+                  onTap: () => Navigator.pop(pickerContext, item),
+                ),
+              ),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(pickerContext), child: const Text('Cancel')),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: _p, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(pickerContext, <String, dynamic>{'_create_new': true});
+            },
+            icon: const Icon(Icons.add_rounded), label: const Text('Create new'),
+          ),
+        ],
       ),
     );
   }
+
+  Future<Map<String, dynamic>?> _createAttendanceActivity(BuildContext context, String orgId) async {
+    final titleController = TextEditingController();
+    String type = 'event';
+    DateTime date = DateTime.now();
+    TimeOfDay? time;
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      useSafeArea: false,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Scaffold(
+          backgroundColor: const Color(0xFFF0FDF4),
+          appBar: PreferredSize(
+            preferredSize: const Size.fromHeight(160),
+            child: _attendanceFullHeader(dialogContext, 'Record Attendance', Icons.event_available_rounded),
+          ),
+          body: SafeArea(
+            top: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 680),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(18, 20, 18, 24),
+                  children: [
+                    Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFE1F7E8), Color(0xFFE5F5F4)], begin: Alignment.topLeft, end: Alignment.bottomRight), borderRadius: BorderRadius.circular(22), border: Border.all(color: const Color(0xFFD1EBDD))), child: const Row(children: [CircleAvatar(radius: 25, backgroundColor: Colors.white, child: Icon(Icons.fact_check_rounded, color: _p, size: 27)), SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Create attendance record', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF14532D))), SizedBox(height: 4), Text('Set up your activity details below', style: TextStyle(fontSize: 12, color: Color(0xFF64786D))) ]))])),
+                    const SizedBox(height: 10),
+                    const Text('Enter the event or meeting details first, then mark each organization member present or absent.', style: TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF64786D))),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: titleController,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Event or meeting name',
+                        hintText: 'e.g. Monthly Organization Meeting',
+                        prefixIcon: const Icon(Icons.edit_calendar_rounded, color: _p),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      initialValue: type,
+                      decoration: InputDecoration(labelText: 'Activity type', prefixIcon: const Icon(Icons.category_outlined, color: _p), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16))),
+                      items: const [DropdownMenuItem(value: 'event', child: Text('Event')), DropdownMenuItem(value: 'meeting', child: Text('Meeting'))],
+                      onChanged: (v) { if (v != null) setDialogState(() => type = v); },
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16), alignment: Alignment.centerLeft, backgroundColor: Colors.white, foregroundColor: _p),
+                      onPressed: () async {
+                        final picked = await showDatePicker(context: dialogContext, initialDate: date, firstDate: DateTime(2020), lastDate: DateTime(2100));
+                        if (picked != null && dialogContext.mounted) setDialogState(() => date = picked);
+                      },
+                      icon: const Icon(Icons.calendar_month_rounded),
+                      label: Text('Date: ${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16), alignment: Alignment.centerLeft, backgroundColor: Colors.white, foregroundColor: _p),
+                      onPressed: () async {
+                        final initial = time ?? TimeOfDay.now();
+                        int hour = initial.hourOfPeriod == 0 ? 12 : initial.hourOfPeriod;
+                        int minute = initial.minute;
+                        String period = initial.period == DayPeriod.am ? 'AM' : 'PM';
+                        final picked = await showModalBottomSheet<TimeOfDay>(
+                          context: dialogContext,
+                          backgroundColor: const Color(0xFFF7FFF9),
+                          isScrollControlled: true,
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                          builder: (sheetContext) => StatefulBuilder(builder: (sheetContext, setTimeState) => SafeArea(
+                            child: Padding(padding: const EdgeInsets.fromLTRB(18, 20, 18, 20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                              const Text('Select time', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF173B2B))),
+                              const SizedBox(height: 16),
+                              Row(children: [
+                                Expanded(child: DropdownButtonFormField<int>(initialValue: hour, decoration: const InputDecoration(labelText: 'Hour', border: OutlineInputBorder()), items: List.generate(12, (i) => DropdownMenuItem(value: i + 1, child: Text((i + 1).toString().padLeft(2, '0'))),), onChanged: (v) { if (v != null) setTimeState(() => hour = v); })),
+                                const SizedBox(width: 8),
+                                Expanded(child: DropdownButtonFormField<int>(initialValue: minute, decoration: const InputDecoration(labelText: 'Minute', border: OutlineInputBorder()), items: List.generate(60, (i) => DropdownMenuItem(value: i, child: Text(i.toString().padLeft(2, '0'))),), onChanged: (v) { if (v != null) setTimeState(() => minute = v); })),
+                                const SizedBox(width: 8),
+                                Expanded(child: DropdownButtonFormField<String>(initialValue: period, decoration: const InputDecoration(labelText: 'AM/PM', border: OutlineInputBorder()), items: const [DropdownMenuItem(value: 'AM', child: Text('AM')), DropdownMenuItem(value: 'PM', child: Text('PM'))], onChanged: (v) { if (v != null) setTimeState(() => period = v); })),
+                              ]),
+                              const SizedBox(height: 16),
+                              FilledButton(style: FilledButton.styleFrom(backgroundColor: _p, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 13)), onPressed: () { var h = hour % 12; if (period == 'PM') h += 12; Navigator.pop(sheetContext, TimeOfDay(hour: h, minute: minute)); }, child: const Text('Confirm time')),
+                            ])),
+                          )),
+                        );
+                        if (picked != null && dialogContext.mounted) setDialogState(() => time = picked);
+                      },
+                      icon: const Icon(Icons.schedule_rounded),
+                      label: Text(time == null ? 'Select time' : 'Time: ${time!.format(dialogContext)}'),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFEAF7EF), borderRadius: BorderRadius.circular(14)), child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.info_outline_rounded, color: _p, size: 18), SizedBox(width: 8), Expanded(child: Text('Morning and afternoon attendance are saved separately. This record is saved to your organization in Supabase.', style: TextStyle(fontSize: 12, height: 1.35, color: Color(0xFF496657))))])),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          bottomNavigationBar: SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(18, 10, 18, 18), child: Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(dialogContext), style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15)), child: const Text('Cancel'))),
+            const SizedBox(width: 12),
+            Expanded(child: FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: _p, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)),
+              icon: const Icon(Icons.arrow_forward_rounded),
+              onPressed: () async {
+                final title = titleController.text.trim();
+                if (title.isEmpty) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(const SnackBar(content: Text('Enter an event or meeting name first.')));
+                  return;
+                }
+                try {
+                  final db = Supabase.instance.client;
+                  final currentUser = db.auth.currentUser?.id;
+                  if (currentUser == null) throw Exception('You are not signed in to Supabase. Please sign in again.');
+                  final row = await db.from('organization_attendance_sessions').insert({
+                    'org_id': orgId,
+                    'title': title,
+                    'activity_type': type,
+                    'session_date': '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+                    'session_time': time == null ? null : '${time!.hour.toString().padLeft(2, '0')}:${time!.minute.toString().padLeft(2, '0')}:00',
+                    'created_by': currentUser,
+                  }).select('id,title,activity_type,session_date,session_time').single();
+                  if (!dialogContext.mounted) return;
+                  Navigator.pop(dialogContext, {'id': row['id'].toString(), 'title': row['title'], 'activity_type': row['activity_type'], 'date': time == null ? row['session_date'].toString() : '${row['session_date']}T${row['session_time']}'});
+                } catch (e) {
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Could not save attendance activity to Supabase: $e')));
+                }
+              },
+              label: const Text('Continue to Member Roll Call'),
+            )),
+          ]))),
+        ),
+      ),
+    );
+    titleController.dispose();
+    return result;
+  }
+
+  Future<void> _viewAttendance(BuildContext context, List<Member> members) async {
+    final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
+    if (orgId == null || orgId.isEmpty) return;
+    try {
+      final db = Supabase.instance.client;
+      final events = await _loadAttendanceActivities(orgId);
+      if (!context.mounted) return;
+      if (events.isEmpty) {
+        _snack('There are no attendance records yet. The Secretary can create an event or meeting from Record Attendance.', Colors.orange);
+        return;
+      }
+      // Start on the activity/session that was most recently recorded, rather than
+      // blindly showing the activity with the newest scheduled date (which may be empty).
+      final latestAttendance = List<Map<String, dynamic>>.from(
+        await db.from('organization_member_attendance')
+            .select('event_id,session,marked_at')
+            .eq('org_id', orgId)
+            .order('marked_at', ascending: false)
+            .limit(1),
+      );
+      final latestEventId = latestAttendance.isEmpty ? null : latestAttendance.first['event_id']?.toString();
+      final selectedActivity = events.where((e) => e['id']?.toString() == latestEventId).toList();
+      String selectedEvent = selectedActivity.isNotEmpty
+          ? selectedActivity.first['id'].toString()
+          : (events.first['id']?.toString() ?? '');
+      final selectedRow = latestAttendance.isNotEmpty && latestEventId == selectedEvent
+          ? latestAttendance.first
+          : null;
+      bool isMeeting = events.firstWhere((e) => e['id']?.toString() == selectedEvent, orElse: () => events.first)['activity_type']?.toString().toLowerCase() == 'meeting';
+      // The database only permits 'morning' or 'afternoon' in the session column.
+      // Meetings use the single stored 'morning' slot internally; the UI hides the session picker.
+      String session = isMeeting ? 'morning' : ((selectedRow?['session']?.toString() == 'afternoon') ? 'afternoon' : 'morning');
+      List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(await db.from('organization_member_attendance').select('profile_id,status,marked_at,session').eq('org_id', orgId).eq('event_id', selectedEvent).eq('session', session));
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        useSafeArea: false,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) {
+          final byProfile = <String, Map<String, dynamic>>{for (final row in records) if (row['profile_id'] != null) row['profile_id'].toString(): row};
+          final presentCount = records.where((r) => r['status']?.toString().toLowerCase() == 'present').length;
+          final absentCount = records.where((r) => r['status']?.toString().toLowerCase() == 'absent').length;
+          final event = events.firstWhere((e) => e['id']?.toString() == selectedEvent, orElse: () => events.first);
+          return Scaffold(
+            backgroundColor: const Color(0xFFF0FDF4),
+            appBar: PreferredSize(preferredSize: const Size.fromHeight(160), child: _attendanceFullHeader(dialogContext, 'View Attendance', Icons.fact_check_rounded)),
+            body: SizedBox(width: double.infinity, height: MediaQuery.of(dialogContext).size.height - 180, child: Scrollbar(thumbVisibility: true, interactive: true, child: SingleChildScrollView(primary: true, child: Padding(padding: const EdgeInsets.fromLTRB(18, 16, 18, 24), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                const Expanded(child: Text('LATEST ACTIVITY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.0, color: _p))),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.history_rounded, size: 17),
+                  label: Text('View All (${events.length})'),
+                  onPressed: () async {
+                    final chosen = await showDialog<Map<String, dynamic>>(
+                      context: dialogContext,
+                      builder: (pickerContext) => AlertDialog(
+                        title: const Text('All Attendance Activities'),
+                        content: SizedBox(
+                          width: 420,
+                          height: MediaQuery.of(pickerContext).size.height * .55,
+                          child: ListView.separated(
+                            itemCount: events.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (pickerContext, index) {
+                              final item = events[index];
+                              final itemId = item['id']?.toString() ?? '';
+                              return ListTile(
+                                leading: Icon(
+                                  item['activity_type']?.toString().toLowerCase() == 'meeting' ? Icons.groups_rounded : Icons.event_rounded,
+                                  color: _p,
+                                ),
+                                title: Text(item['title']?.toString() ?? 'Activity', maxLines: 2, overflow: TextOverflow.ellipsis),
+                                subtitle: Text('${_attendanceDateLabel(item['date'])} • ${(item['activity_type']?.toString() ?? 'event').toUpperCase()}'),
+                                trailing: itemId == selectedEvent ? const Icon(Icons.check_circle_rounded, color: _p) : const Icon(Icons.chevron_right_rounded),
+                                onTap: () => Navigator.pop(pickerContext, item),
+                              );
+                            },
+                          ),
+                        ),
+                        actions: [TextButton(onPressed: () => Navigator.pop(pickerContext), child: const Text('Cancel'))],
+                      ),
+                    );
+                    if (chosen == null || !dialogContext.mounted) return;
+                    final nextId = chosen['id']?.toString() ?? '';
+                    final nextIsMeeting = chosen['activity_type']?.toString().toLowerCase() == 'meeting';
+                    final nextSession = nextIsMeeting ? 'morning' : 'morning';
+                    try {
+                      final rows = await db.from('organization_member_attendance').select('profile_id,status,marked_at,session').eq('org_id', orgId).eq('event_id', nextId).eq('session', nextSession);
+                      if (!dialogContext.mounted) return;
+                      selectedEvent = nextId;
+                      isMeeting = nextIsMeeting;
+                      session = nextSession;
+                      records = List<Map<String, dynamic>>.from(rows as List);
+                      setDialogState(() {});
+                    } catch (e) {
+                      _snack('Could not load this activity: $e', Colors.red);
+                    }
+                  },
+                ),
+              ]),
+              const SizedBox(height: 8),
+              Container(padding: const EdgeInsets.all(13), decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFD5F0DE))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [Expanded(child: Text(event['title']?.toString() ?? 'Event', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF14532D)))), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDDF5E5), borderRadius: BorderRadius.circular(20)), child: Text((event['activity_type']?.toString() ?? 'event').toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFF166534))))]),
+                const SizedBox(height: 9),
+                Row(children: [const Icon(Icons.calendar_month_rounded, size: 17, color: _p), const SizedBox(width: 7), Expanded(child: Text(_attendanceDateLabel(event['date']), style: const TextStyle(fontWeight: FontWeight.w700)))]),
+                const SizedBox(height: 4),
+                Row(children: [const Icon(Icons.schedule_rounded, size: 17, color: _p), const SizedBox(width: 7), Expanded(child: Text(_attendanceTimeLabel(event['date']), style: const TextStyle(fontWeight: FontWeight.w700)))]),
+              ])),
+              const SizedBox(height: 12),
+              if (!isMeeting) _attendanceSessionPicker(session: session, onChanged: (value) async {
+                try {
+                  final rows = await db.from('organization_member_attendance').select('profile_id,status,marked_at,session').eq('org_id', orgId).eq('event_id', selectedEvent).eq('session', value);
+                  if (!dialogContext.mounted) return;
+                  session = value;
+                  records = List<Map<String, dynamic>>.from(rows as List);
+                  setDialogState(() {});
+                } catch (e) { _snack('Could not load this session: $e', Colors.red); }
+              }),
+              const SizedBox(height: 10),
+              Text('$presentCount present  •  $absentCount absent  •  ${members.length - records.length < 0 ? 0 : members.length - records.length} not recorded', style: const TextStyle(fontWeight: FontWeight.w800, color: _p, fontSize: 12)),
+              const SizedBox(height: 8),
+              ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.of(dialogContext).size.height * .52), child: Scrollbar(thumbVisibility: true, interactive: true, child: ListView.separated(shrinkWrap: true, itemCount: members.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, index) {
+                final member = members[index];
+                final row = member.profileId == null ? null : byProfile[member.profileId!];
+                final status = row?['status']?.toString().toLowerCase();
+                final isPresent = status == 'present';
+                return ListTile(dense: true, contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(radius: 17, backgroundColor: status == null ? Colors.grey.shade100 : isPresent ? const Color(0xFFDCFCE7) : const Color(0xFFFFE4E6), child: Icon(status == null ? Icons.hourglass_empty_rounded : isPresent ? Icons.check_rounded : Icons.close_rounded, size: 18, color: status == null ? Colors.grey : isPresent ? _p : Colors.redAccent)),
+                  title: Text(member.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(member.position),
+                  trailing: Text(status == null ? 'Not recorded' : isPresent ? 'Present' : 'Absent', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: status == null ? Colors.grey : isPresent ? _p : Colors.redAccent)),
+                );
+              }))),
+            ]))))),
+          );
+        }),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Could not load attendance: $e', Colors.red);
+    }
+  }
+
+  Future<void> _manageAttendance(BuildContext context, List<Member> members) async {
+    final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
+    if (orgId == null || orgId.isEmpty) return;
+    try {
+      final db = Supabase.instance.client;
+      if (!context.mounted) return;
+      // Reuse an existing activity when recording another session later in the day.
+      final choice = await _pickOrCreateAttendanceActivity(context, orgId);
+      if (choice == null || !context.mounted) return;
+      final activity = choice['_create_new'] == true ? await _createAttendanceActivity(context, orgId) : choice;
+      if (activity == null || !context.mounted) return;
+      final events = <Map<String, dynamic>>[activity];
+      String selectedEvent = activity['id']?.toString() ?? '';
+      final isMeeting = activity['activity_type']?.toString().toLowerCase() == 'meeting';
+      // The database only permits 'morning' or 'afternoon' in the session column.
+      // Meetings use the single stored 'morning' slot internally; the UI hides the session picker.
+      String session = 'morning';
+      final selected = <String>{};
+      Future<void> loadSelected() async {
+        final rows = await db.from('organization_member_attendance').select('profile_id,status').eq('event_id', selectedEvent).eq('org_id', orgId).eq('session', session);
+        selected.clear();
+        for (final row in rows as List) {
+          if (row['status']?.toString().toLowerCase() == 'present') {
+            final id = row['profile_id']?.toString() ?? '';
+            if (id.isNotEmpty) selected.add(id);
+          }
+        }
+      }
+      await loadSelected();
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        useSafeArea: false,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => Scaffold(
+          backgroundColor: const Color(0xFFF0FDF4),
+          appBar: PreferredSize(preferredSize: const Size.fromHeight(160), child: _attendanceFullHeader(dialogContext, 'Record Attendance', Icons.event_available_rounded)),
+          body: SizedBox(width: double.infinity, height: MediaQuery.of(dialogContext).size.height - 260, child: Scrollbar(thumbVisibility: true, interactive: true, child: SingleChildScrollView(primary: true, child: Padding(padding: const EdgeInsets.fromLTRB(18, 16, 18, 24), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFEAF7EF), borderRadius: BorderRadius.circular(14)),
+              child: Row(children: [
+                const Icon(Icons.edit_calendar_rounded, color: _p),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Attendance for: ${events.first['title'] ?? 'Event or meeting'}', style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF173B2B)))),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            Builder(builder: (_) {
+              final event = events.firstWhere((e) => e['id']?.toString() == selectedEvent, orElse: () => events.first);
+              return Container(padding: const EdgeInsets.all(13), decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFD5F0DE))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [Expanded(child: Text(event['title']?.toString() ?? 'Event', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF14532D)))), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDDF5E5), borderRadius: BorderRadius.circular(20)), child: Text((event['activity_type']?.toString() ?? 'event').toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFF166534))))]),
+                const SizedBox(height: 9),
+                Row(children: [const Icon(Icons.calendar_month_rounded, size: 17, color: _p), const SizedBox(width: 7), Expanded(child: Text(_attendanceDateLabel(event['date']), style: const TextStyle(fontWeight: FontWeight.w700)))]),
+                const SizedBox(height: 4),
+                Row(children: [const Icon(Icons.schedule_rounded, size: 17, color: _p), const SizedBox(width: 7), Expanded(child: Text(_attendanceTimeLabel(event['date']), style: const TextStyle(fontWeight: FontWeight.w700)))]),
+              ]));
+            }),
+            const SizedBox(height: 12),
+            if (!isMeeting) _attendanceSessionPicker(session: session, onChanged: (value) async {
+              try {
+                session = value;
+                await loadSelected();
+                if (!dialogContext.mounted) return;
+                setDialogState(() {});
+              } catch (e) { _snack('Could not load this session: $e', Colors.red); }
+            }),
+            const SizedBox(height: 8),
+            Text(isMeeting ? 'Check the members who attended this meeting.' : 'Check the members who are present for the ${session == 'morning' ? 'morning' : 'afternoon'} session.', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+            const SizedBox(height: 6),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), decoration: BoxDecoration(color: const Color(0xFFF7FAF8), borderRadius: BorderRadius.circular(12)), child: Row(children: [const Icon(Icons.groups_2_rounded, size: 17, color: _p), const SizedBox(width: 7), Expanded(child: Text('${members.length} members', style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF315342)))), Text('${selected.length} present', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _p))])),
+            ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.of(dialogContext).size.height * .52), child: Scrollbar(thumbVisibility: true, interactive: true, child: ListView.separated(shrinkWrap: true, itemCount: members.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, index) {
+              final member = members[index];
+              final id = member.profileId;
+              if (id == null || id.isEmpty) return const SizedBox.shrink();
+              final present = selected.contains(id);
+              return CheckboxListTile(value: present, activeColor: _p, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: Text(member.name, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(member.position), onChanged: (value) => setDialogState(() => value == true ? selected.add(id) : selected.remove(id)));
+            }))),
+          ]))))),
+          bottomNavigationBar: SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: _p, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)), icon: const Icon(Icons.send_rounded, size: 18), onPressed: () async {
+              try {
+                final now = DateTime.now().toIso8601String();
+                for (final member in members) {
+                  final id = member.profileId;
+                  if (id == null || id.isEmpty) continue;
+                  await db.from('organization_member_attendance').upsert({
+                    'org_id': orgId,
+                    'event_id': selectedEvent,
+                    'profile_id': id,
+                    'session': session,
+                    'status': selected.contains(id) ? 'present' : 'absent',
+                    'marked_by': db.auth.currentUser?.id,
+                    'marked_at': now,
+                    'submitted_at': now,
+                    'submitted_by': db.auth.currentUser?.id,
+                    'submission_status': 'submitted',
+                  }, onConflict: 'event_id,profile_id,session');
+                }
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                await _loadEngagementData();
+                if (!mounted) return;
+                _snack(isMeeting ? 'Meeting attendance saved and sent to the adviser.' : '${session == 'morning' ? 'Morning' : 'Afternoon'} attendance saved and sent to the adviser.', _ok);
+              } catch (e) {
+                if (!mounted) return;
+                _snack('Could not save attendance: $e', Colors.red);
+              }
+            }, label: const Text('Save & Send')))),
+        )),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Could not load attendance: $e', Colors.red);
+    }
+  }
+
+  // Clear, touch-friendly attendance actions for both desktop and mobile layouts.
+  Widget _attendanceActionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool primary,
+    required VoidCallback onTap,
+  }) => Material(
+    color: primary ? _p : Colors.white,
+    borderRadius: BorderRadius.circular(18),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: primary ? _p : const Color(0xFFB7E4C7), width: 1.2),
+          boxShadow: [BoxShadow(color: const Color(0xFF14532D).withValues(alpha: primary ? .10 : .04), blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        child: Row(children: [
+          Container(width: 44, height: 44, decoration: BoxDecoration(color: primary ? Colors.white.withValues(alpha: .16) : const Color(0xFFEAF7EF), borderRadius: BorderRadius.circular(14)), child: Icon(icon, color: primary ? Colors.white : _p, size: 23)),
+          const SizedBox(width: 13),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: TextStyle(color: primary ? Colors.white : const Color(0xFF166534), fontSize: 15, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(subtitle, style: TextStyle(color: primary ? Colors.white.withValues(alpha: .86) : const Color(0xFF64786D), fontSize: 11.5, height: 1.3, fontWeight: FontWeight.w500)),
+          ])),
+          const SizedBox(width: 8),
+          Icon(Icons.arrow_forward_ios_rounded, size: 15, color: primary ? Colors.white : _p),
+        ]),
+      ),
+    ),
+  );
 
   // ── Member dialog ────────────────────────────────────────────────────────
   void _dialog(BuildContext context, {Member? existing}) {
@@ -124,7 +1021,8 @@ class OfficerMembersScreen extends StatelessWidget {
       'Officer',
       'President',
       'Vice President',
-      'Secretary'
+      'Secretary',
+      'Assistant Secretary'
     ];
 
     String position =
@@ -145,7 +1043,7 @@ class OfficerMembersScreen extends StatelessWidget {
 
     // Guard: bail out if no officer org context is available
     if (officerOrgId == null) {
-      _snack(context, 'No organization context. Please re-login.', Colors.red);
+      _snack('No organization context. Please re-login.', Colors.red);
       return;
     }
 
@@ -184,6 +1082,7 @@ class OfficerMembersScreen extends StatelessWidget {
                             'President',
                             'Vice President',
                             'Secretary',
+                            'Assistant Secretary',
                           ]
                               .map((v) =>
                                   DropdownMenuItem(value: v, child: Text(v)))
@@ -225,29 +1124,55 @@ class OfficerMembersScreen extends StatelessWidget {
                               child:
                                   _CancelBtn(onTap: () => Navigator.pop(ctx))),
                           const SizedBox(width: 12),
-                          Expanded(child: _SaveBtn(onTap: () {
+                          Expanded(child: _SaveBtn(onTap: () async {
                             final name = nameCtrl.text.trim();
+                            final navigator = Navigator.of(ctx);
+                            final messenger = ScaffoldMessenger.of(ctx);
                             if (name.isEmpty) return;
                             if (existing == null) {
                               // ADD: org identifiers sourced from officer session only
-                              AppState.instance.addMember(
+                              await AppState.instance.addMember(
                                 name: name,
                                 position: position,
-                                orgName: officerOrgName, // hardcoded
-                                orgId: officerOrgId, // hardcoded
+                                orgName: officerOrgName,
+                                orgId: officerOrgId,
                               );
-                              _snack(ctx, 'Added $name', _ok);
+                              await AppState.instance.fetchMembers(organizationId: officerOrgId);
+                              _showSnack(messenger, 'Added $name', _ok);
                             } else {
-                              // UPDATE: preserve id, override org identifiers
-                              AppState.instance.updateMember(existing.copyWith(
+                              // UPDATE: preserve id, override org identifiers.
+                              final updated = existing.copyWith(
                                 name: name,
                                 position: position,
-                                orgName: officerOrgName, // hardcoded
-                                orgId: officerOrgId, // hardcoded
-                              ));
-                              _snack(ctx, 'Updated $name', _ok);
+                                orgName: officerOrgName,
+                                orgId: officerOrgId,
+                              );
+                              final saved = await AppState.instance.updateMember(updated);
+                              if (!saved) {
+                                _showSnack(messenger, 'Could not save position: ${AppState.instance.lastMemberUpdateError ?? 'Unknown database error'}', Colors.redAccent);
+                                return;
+                              }
+                              // Keep account-level access synchronized with the
+                              // membership position. The dashboard reads the exact
+                              // position from members, while profiles.role controls
+                              // student/officer routing.
+                              if (existing.profileId != null && existing.profileId!.isNotEmpty) {
+                                final officerPosition = _officerPositions.contains(position) || position == 'Officer';
+                                try {
+                                  await Supabase.instance.client.from('profiles').update({
+                                    'role': officerPosition ? 'officer' : 'student',
+                                    'assigned_org_id': officerPosition ? officerOrgId : null,
+                                  }).eq('id', existing.profileId!);
+                                } catch (e) {
+                                  debugPrint('Could not synchronize officer account role: $e');
+                                }
+                              }
+                              await AppState.instance.fetchMembers(organizationId: officerOrgId);
+                              if (!mounted) return;
+                              _showSnack(messenger, 'Updated $name to $position', _ok);
                             }
-                            Navigator.pop(ctx);
+                            if (!mounted) return;
+                            navigator.pop();
                           })),
                         ]),
                       ],
@@ -256,8 +1181,8 @@ class OfficerMembersScreen extends StatelessWidget {
     );
   }
 
-  void _snack(BuildContext ctx, String msg, Color bg) =>
-      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+  void _showSnack(ScaffoldMessengerState messenger, String msg, Color bg) =>
+      messenger.showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: bg,
         behavior: SnackBarBehavior.floating,
@@ -268,15 +1193,26 @@ class OfficerMembersScreen extends StatelessWidget {
 // ── Member card ─────────────────────────────────────────────────────────────
 class _MemberCard extends StatelessWidget {
   final Member member;
+  final bool readOnly;
   final int index;
   final Color accentColor;
+  final int chatCount;
+  final int commentCount;
+  final int attendancePresent;
+  final int attendanceTotal;
   final VoidCallback onEdit, onDelete;
-  const _MemberCard(
-      {required this.member,
-      required this.index,
-      required this.accentColor,
-      required this.onEdit,
-      required this.onDelete});
+  const _MemberCard({
+    required this.member,
+    this.readOnly = false,
+    required this.index,
+    required this.accentColor,
+    this.chatCount = 0,
+    this.commentCount = 0,
+    this.attendancePresent = 0,
+    this.attendanceTotal = 0,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -293,10 +1229,11 @@ class _MemberCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE4F0E8)),
           boxShadow: [
             BoxShadow(
-                color: const Color(0xFF16A34A).withOpacity(0.06),
+                color: const Color(0xFF16A34A).withValues(alpha: 0.06),
                 blurRadius: 20,
                 offset: const Offset(0, 6))
           ],
@@ -309,7 +1246,7 @@ class _MemberCard extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                    color: accentColor.withOpacity(0.12),
+                    color: accentColor.withValues(alpha: 0.12),
                     shape: BoxShape.circle),
                 child: Center(
                     child: Text(initial,
@@ -333,97 +1270,217 @@ class _MemberCard extends StatelessWidget {
                         style: const TextStyle(
                             fontSize: 12, color: Color(0xFF94A3B8))),
                     const SizedBox(height: 5),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                          color: accentColor.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(20)),
-                      child: Text(member.position,
-                          style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: accentColor)),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 5,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(member.position, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: accentColor)),
+                        ),
+                        if (chatCount > 0) _tinyMetric(Icons.chat_bubble_rounded, '$chatCount chat'),
+                        if (commentCount > 0) _tinyMetric(Icons.forum_rounded, '$commentCount comment${commentCount == 1 ? '' : 's'}'),
+                        _tinyMetric(Icons.event_available_rounded, attendanceTotal == 0 ? 'Attendance —' : 'Attendance ${((attendancePresent / attendanceTotal) * 100).round()}%'),
+                      ],
                     ),
                   ])),
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                _IconBtn(
-                    icon: Icons.edit_rounded,
-                    color: const Color(0xFF16A34A),
-                    onTap: onEdit,
-                    tip: 'Edit'),
-                const SizedBox(width: 4),
-                _IconBtn(
-                    icon: Icons.delete_rounded,
-                    color: const Color(0xFFEF4444),
-                    onTap: onDelete,
-                    tip: 'Remove'),
-              ]),
+              if (!readOnly)
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  _IconBtn(
+                      icon: Icons.edit_rounded,
+                      color: const Color(0xFF16A34A),
+                      onTap: onEdit,
+                      tip: 'Edit'),
+                  const SizedBox(width: 4),
+                  _IconBtn(
+                      icon: Icons.delete_rounded,
+                      color: const Color(0xFFEF4444),
+                      onTap: onDelete,
+                      tip: 'Remove'),
+                ]),
             ])),
       ),
     );
   }
 }
 
-// ── Shared small widgets ────────────────────────────────────────────────────
+Widget _tinyMetric(IconData icon, String text) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16A34A).withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 11, color: const Color(0xFF16A34A)),
+        const SizedBox(width: 4),
+        Text(text, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF166534))),
+      ]),
+    );
 
-class _GradientHero extends StatelessWidget {
-  final IconData icon;
-  final String title, subtitle;
-  const _GradientHero(
-      {required this.icon, required this.title, required this.subtitle});
-
+class _EngagementInfoCard extends StatelessWidget {
+  const _EngagementInfoCard();
   @override
   Widget build(BuildContext context) => Container(
-        decoration: const BoxDecoration(
-            gradient: LinearGradient(
-          colors: [Color(0xFF16A34A), Color(0xFF0F766E)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        )),
-        child: Stack(children: [
-          Positioned(top: -30, right: -20, child: _orb(160, 0.07)),
-          Positioned(bottom: 10, left: -40, child: _orb(120, 0.05)),
-          SafeArea(
-              child: Padding(
-            padding: const EdgeInsets.only(top: 52, left: 24, right: 24),
-            child: Row(children: [
-              Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.18),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.30), width: 1.5)),
-                  child: Icon(icon, color: Colors.white, size: 26)),
-              const SizedBox(width: 16),
-              Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(title,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 3),
-                    Text(subtitle,
-                        style: TextStyle(
-                            color: Colors.white.withOpacity(0.72),
-                            fontSize: 12.5)),
-                  ]),
-            ]),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFFF5FFF9), Color(0xFFDDF4E8)]),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFB9E4CF)),
+        ),
+        child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.verified_user_rounded, color: Color(0xFF16A34A), size: 21),
+          SizedBox(width: 10),
+          Expanded(child: Text(
+            'Active means the member has an active account and has participated in the last 30 days through community chat or event comments.',
+            style: TextStyle(color: Color(0xFF4D6F62), fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w600),
           )),
         ]),
       );
-
-  Widget _orb(double size, double opacity) => Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-          shape: BoxShape.circle, color: Colors.white.withOpacity(opacity)));
 }
+
+class _ImpactSection extends StatelessWidget {
+  final List<Member> members;
+  final Map<String, Map<String, dynamic>> impactByStudentId;
+  final double Function(Map<String, dynamic>) averageFor;
+  final Map<String, int> attendancePresent;
+  final Map<String, int> attendanceTotal;
+  final bool adviserView;
+  const _ImpactSection({required this.members, required this.impactByStudentId, required this.averageFor, required this.attendancePresent, required this.attendanceTotal, this.adviserView = false});
+
+  double _rating(dynamic value) {
+    final n = double.tryParse(value?.toString() ?? '') ?? 0;
+    // v26+ stores impact on a 1–5 scale. Normalize legacy percentage values
+    // so older records do not make the adviser dashboard display misleading data.
+    return n > 5 ? (n / 20).clamp(1, 5) : n.clamp(0, 5);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = members
+        .where((m) => m.profileId != null && impactByStudentId.containsKey(m.profileId))
+        .toList();
+    final impacts = rows.map((m) => impactByStudentId[m.profileId!]!).toList();
+    final orgAverage = impacts.isEmpty
+        ? 0.0
+        : impacts.map(averageFor).map((v) => v > 5 ? v / 20 : v).reduce((a, b) => a + b) / impacts.length;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFEAF9F0), Color(0xFFD6F1E1)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFB7E2C9)),
+        boxShadow: [BoxShadow(color: const Color(0xFF16A34A).withValues(alpha: .08), blurRadius: 20, offset: const Offset(0, 8))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: const Color(0xFF16A34A).withValues(alpha: .12), borderRadius: BorderRadius.circular(14)),
+            child: const Icon(Icons.insights_rounded, color: Color(0xFF15803D), size: 21),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('Organization Impact', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF12352A)))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .75), borderRadius: BorderRadius.circular(20)),
+            child: Text(impacts.isEmpty ? 'No ratings' : '${orgAverage.toStringAsFixed(1)}/5', style: const TextStyle(color: Color(0xFF166534), fontSize: 11, fontWeight: FontWeight.w900)),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text(
+          impacts.isEmpty
+              ? 'Members can rate how helpful the organization has been to them from 1 to 5 in Academic, Social, Leadership, and Confidence.'
+              : 'These are self-reported helpfulness ratings from members. Higher scores mean members feel the organization is helping them more in that area.',
+          style: const TextStyle(color: Color(0xFF3F6255), fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w600),
+        ),
+        if (adviserView)
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .72),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFB7E2C9)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.verified_rounded, color: Color(0xFF15803D), size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Attendance is recorded by the organization Secretary and automatically sent here for the adviser to review.',
+                    style: TextStyle(color: Color(0xFF3F6255), fontSize: 11, height: 1.35, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (impacts.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .72), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFBFE6CE))),
+            child: const Row(children: [
+              Icon(Icons.assignment_turned_in_outlined, color: Color(0xFF15803D), size: 20),
+              SizedBox(width: 9),
+              Expanded(child: Text('No student impact responses have been submitted yet.', style: TextStyle(color: Color(0xFF48665A), fontSize: 11.5, height: 1.35))),
+            ]),
+          )
+        else
+          ...rows.map((member) {
+            final impact = impactByStudentId[member.profileId!]!;
+            final avg = averageFor(impact);
+            final normalizedAvg = avg > 5 ? avg / 20 : avg;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF198754), Color(0xFF36A96F)]),
+                borderRadius: BorderRadius.circular(19),
+                boxShadow: [BoxShadow(color: const Color(0xFF128058).withValues(alpha: .10), blurRadius: 12, offset: const Offset(0, 5))],
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text(member.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5))),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .16), borderRadius: BorderRadius.circular(20)), child: Text('${normalizedAvg.toStringAsFixed(1)}/5 helpful', style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900))),
+                ]),
+                const SizedBox(height: 11),
+                Wrap(spacing: 7, runSpacing: 7, children: [
+                  _impactChip('Academic', _rating(impact['academic_growth'])),
+                  _impactChip('Social', _rating(impact['social_growth'])),
+                  _impactChip('Leadership', _rating(impact['leadership_growth'])),
+                  _impactChip('Confidence', _rating(impact['confidence_growth'])),
+                ]),
+                const SizedBox(height: 9),
+                Builder(builder: (_) {
+                  final total = attendanceTotal[member.profileId!] ?? 0;
+                  final present = attendancePresent[member.profileId!] ?? 0;
+                  final label = total == 0 ? 'Attendance: No records yet' : 'Attendance: $present/$total present (${((present / total) * 100).round()}%)';
+                  return Text(label, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800));
+                }),
+              ]),
+            );
+          }),
+      ]),
+    );
+  }
+
+  Widget _impactChip(String label, double value) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .92), borderRadius: BorderRadius.circular(30)),
+        child: Text('$label ${value.round()}/5', style: const TextStyle(fontSize: 9.5, color: Color(0xFF166534), fontWeight: FontWeight.w900)),
+      );
+}
+
+// Shared small widgets
 
 class _GradFab extends StatelessWidget {
   final IconData icon;
@@ -442,7 +1499,7 @@ class _GradFab extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: const Color(0xFF16A34A).withOpacity(0.35),
+                color: const Color(0xFF16A34A).withValues(alpha: 0.35),
                 blurRadius: 14,
                 offset: const Offset(0, 6))
           ],
@@ -483,7 +1540,7 @@ class _IconBtn extends StatelessWidget {
   Widget build(BuildContext context) => Tooltip(
       message: tip,
       child: Material(
-          color: color.withOpacity(0.08),
+          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
               borderRadius: BorderRadius.circular(10),
@@ -537,7 +1594,7 @@ class _Empty extends StatelessWidget {
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: [
                   BoxShadow(
-                      color: const Color(0xFF16A34A).withOpacity(0.28),
+                      color: const Color(0xFF16A34A).withValues(alpha: 0.28),
                       blurRadius: 20,
                       offset: const Offset(0, 8))
                 ]),
@@ -617,13 +1674,11 @@ class _Field extends StatelessWidget {
   final TextEditingController ctrl;
   final String label, hint;
   final IconData icon;
-  final int maxLines;
   const _Field(
       {required this.ctrl,
       required this.label,
       required this.hint,
-      required this.icon,
-      this.maxLines = 1});
+      required this.icon});
 
   @override
   Widget build(BuildContext context) =>
@@ -631,7 +1686,7 @@ class _Field extends StatelessWidget {
         _FieldLabel(label),
         TextField(
             controller: ctrl,
-            maxLines: maxLines,
+            maxLines: 1,
             style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -670,7 +1725,7 @@ class _SaveBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-                color: const Color(0xFF16A34A).withOpacity(0.28),
+                color: const Color(0xFF16A34A).withValues(alpha: 0.28),
                 blurRadius: 10,
                 offset: const Offset(0, 4))
           ],

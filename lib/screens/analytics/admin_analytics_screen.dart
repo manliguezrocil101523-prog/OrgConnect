@@ -42,7 +42,6 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
       appBar: AppBar(
         title: const Text('Organization Analytics'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
         ],
       ),
       body: _loading || data == null
@@ -271,3 +270,4 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
     );
   }
 }
+

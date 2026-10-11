@@ -2,19 +2,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
-import 'dart:ui';
 import '../../core/app_state.dart';
 import '../analytics/event_comments_sheet.dart';
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 class _DT {
-  static const bg = Color(0xFFF6F7FB);
-  static const surface = Color(0xFFFFFFFF);
-  static const surfaceAlt = Color(0xFFF0F2F8);
+  static const bg = Color(0xFFF0FDF4);
+  static const surface = Color(0xFFF8FFFB);
   static const primary = Color(0xFF15803D);
-  static const primaryLight = Color(0xFFDCFCE7);
-  static const primaryMid = Color(0xFF4ADE80);
-  static const gradStart = Color(0xFF15803D);
   static const gradEnd = Color(0xFF22C55E);
   static const ink = Color(0xFF0F0D2E);
   static const inkSecond = Color(0xFF6B6B8E);
@@ -23,25 +18,18 @@ class _DT {
 
   static List<BoxShadow> get cardShadow => [
         BoxShadow(
-            color: const Color(0xFF15803D).withOpacity(0.06),
+            color: const Color(0xFF15803D).withValues(alpha: 0.06),
             blurRadius: 20,
             offset: const Offset(0, 6)),
         BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2)),
       ];
   static List<BoxShadow> get glowShadow => [
         BoxShadow(
-            color: primary.withOpacity(0.45), blurRadius: 16, spreadRadius: 1),
-        BoxShadow(color: gradEnd.withOpacity(0.25), blurRadius: 28),
-      ];
-  static List<BoxShadow> get heroShadow => [
-        BoxShadow(
-            color: primary.withOpacity(0.30),
-            blurRadius: 32,
-            offset: const Offset(0, 12),
-            spreadRadius: -4),
+            color: primary.withValues(alpha: 0.45), blurRadius: 16, spreadRadius: 1),
+        BoxShadow(color: gradEnd.withValues(alpha: 0.25), blurRadius: 28),
       ];
 }
 
@@ -57,8 +45,9 @@ class _StudentDashboardState extends State<StudentDashboard>
     with TickerProviderStateMixin {
   late DateTime _focusedDay;
   DateTime? _selectedDay;
-  late final AnimationController _entranceCtrl, _pulseCtrl;
-  late final Animation<double> _entranceFade, _pulseAnim;
+  final ScrollController _scrollController = ScrollController();
+  late final AnimationController _entranceCtrl;
+  late final Animation<double> _entranceFade;
   late final Animation<Offset> _entranceSlide;
 
   @override
@@ -66,7 +55,8 @@ class _StudentDashboardState extends State<StudentDashboard>
     super.initState();
     final now = DateTime.now();
     _focusedDay = now;
-    final upcoming = _allEvents.where((e) => e.date.isAfter(now)).toList()
+    final today = DateTime(now.year, now.month, now.day);
+    final upcoming = _allEvents.where((e) => !DateTime(e.date.year, e.date.month, e.date.day).isBefore(today)).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
     _selectedDay = upcoming.isNotEmpty ? upcoming.first.date : now;
 
@@ -78,10 +68,6 @@ class _StudentDashboardState extends State<StudentDashboard>
         Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero).animate(
             CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutCubic));
 
-    _pulseCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 2800))
-      ..repeat(reverse: true);
-    _pulseAnim = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
 
     _entranceCtrl.forward();
 
@@ -92,7 +78,7 @@ class _StudentDashboardState extends State<StudentDashboard>
   @override
   void dispose() {
     _entranceCtrl.dispose();
-    _pulseCtrl.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -103,10 +89,7 @@ class _StudentDashboardState extends State<StudentDashboard>
 
   /// Events that fall on a given day (date-only comparison)
   List<Event> _eventsForDay(DateTime day) {
-    final now = DateTime.now();
-    return _allEvents
-        .where((e) => isSameDay(e.date, day) && e.date.isAfter(now))
-        .toList();
+    return _allEvents.where((e) => isSameDay(e.date, day)).toList();
   }
 
   /// Events on the currently selected day
@@ -123,8 +106,6 @@ class _StudentDashboardState extends State<StudentDashboard>
 
     return Scaffold(
       backgroundColor: _DT.bg,
-      extendBodyBehindAppBar: true,
-      appBar: _buildAppBar(),
       body: AnimatedBuilder(
         // Rebuild whenever AppState changes (new events, applications, etc.)
         animation: AppState.instance,
@@ -136,42 +117,49 @@ class _StudentDashboardState extends State<StudentDashboard>
             opacity: _entranceFade,
             child: SlideTransition(
               position: _entranceSlide,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(
-                      child: SizedBox(
-                          height: mq.padding.top + kToolbarHeight + 4)),
-
-                  // ── Hero card ──────────────────────────────────────
-                  SliverToBoxAdapter(
-                      child: Padding(
-                          padding: hp.copyWith(top: 4, bottom: 24),
-                          child: _buildHeroCard(mq))),
-
-                  // ── Calendar section label ─────────────────────────
-                  SliverToBoxAdapter(
-                      child: Padding(
-                          padding: hp.copyWith(bottom: 12),
-                          child: _sectionLabel('Calendar', 'Your schedule'))),
-
-                  // ── Calendar card ──────────────────────────────────
-                  SliverToBoxAdapter(
-                      child: Padding(
-                          padding: hp.copyWith(bottom: 0),
-                          child: _buildCalendarCard(allEvents))),
-
-                  // ── Selected day events (appears right below calendar)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: hp.copyWith(top: 16, bottom: 8),
-                      child: _buildSelectedDaySection(selectedEvents),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Keep the greeting/header fixed. The scrollbar starts below it.
+                  _buildSectionHeader(),
+                  Expanded(
+                    child: Scrollbar(
+                      controller: _scrollController,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      interactive: true,
+                      thickness: 7,
+                      radius: const Radius.circular(10),
+                      child: CustomScrollView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        slivers: [
+                          // ── Calendar section label ─────────────────────
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: hp.copyWith(bottom: 12),
+                              child: _sectionLabel('Calendar', 'Your schedule'),
+                            ),
+                          ),
+                          // ── Calendar card ──────────────────────────────
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: hp.copyWith(bottom: 0),
+                              child: _buildCalendarCard(allEvents),
+                            ),
+                          ),
+                          // ── Selected day events ───────────────────────
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: hp.copyWith(top: 16, bottom: 8),
+                              child: _buildSelectedDaySection(selectedEvents),
+                            ),
+                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                        ],
+                      ),
                     ),
                   ),
-
-                  // ── Applications section ───────────────────────────
-
-                  const SliverToBoxAdapter(child: SizedBox(height: 96)),
                 ],
               ),
             ),
@@ -194,43 +182,58 @@ class _StudentDashboardState extends State<StudentDashboard>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Section header with selected date
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 4,
-              height: 22,
-              decoration: BoxDecoration(
-                color: const Color(0xFF16A34A),
-                borderRadius: BorderRadius.circular(2),
+        Container(
+          padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: _DT.border),
+            boxShadow: _DT.cardShadow,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF16A34A), Color(0xFF22C55E)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.event_rounded, color: Colors.white, size: 19),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                        fontSize: 18,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: _DT.ink,
-                        letterSpacing: -0.4),
-                  ),
-                  Text(
-                    events.isEmpty
-                        ? 'No events scheduled'
-                        : '${events.length} event${events.length == 1 ? '' : 's'}',
-                    style: const TextStyle(
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      events.isEmpty
+                          ? 'No events scheduled'
+                          : '${events.length} event${events.length == 1 ? '' : 's'} on this date',
+                      style: const TextStyle(
                         fontSize: 11.5,
                         color: _DT.inkSecond,
-                        fontWeight: FontWeight.w400),
-                  ),
-                ],
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
 
         const SizedBox(height: 14),
@@ -289,174 +292,116 @@ class _StudentDashboardState extends State<StudentDashboard>
     );
   }
 
-  // ── App bar ──────────────────────────────────────────────────────────
-  PreferredSizeWidget _buildAppBar() {
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(kToolbarHeight),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: AppBar(
-            backgroundColor: _DT.bg.withOpacity(0.80),
-            elevation: 0,
-            centerTitle: true,
-            automaticallyImplyLeading: false,
-            title: const Text('Dashboard',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: _DT.inkSecond,
-                    letterSpacing: 0.2)),
-          ),
+  Widget _buildSectionHeader() {
+    final fullName = AppState.instance.currentStudent?.name ?? '';
+    final nameParts = fullName.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    final firstName = nameParts.take(2).join(' ');
+    final greeting = firstName.isNotEmpty ? 'Welcome Back, $firstName' : 'Welcome Back';
+    final now = DateTime.now();
+    final dateText = DateFormat('EEEE, MMMM d').format(now);
+
+    return Container(
+      height: 132,
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF13A76E), Color(0xFF087A50)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
-    );
-  }
-
-  // ── Hero card ────────────────────────────────────────────────────────
-  Widget _buildHeroCard(MediaQueryData mq) {
-    final hour = DateTime.now().hour;
-    final greeting = hour < 12
-        ? 'Good morning'
-        : hour < 17
-            ? 'Good afternoon'
-            : 'Good evening';
-    final greetEmoji = hour < 12
-        ? '☀️'
-        : hour < 17
-            ? '👋'
-            : '🌙';
-
-    return AnimatedBuilder(
-      animation: _pulseAnim,
-      builder: (context, child) => Container(
-        width: double.infinity,
-        clipBehavior: Clip.hardEdge,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFF16A34A), Color(0xFF0F766E)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: _DT.heroShadow,
-        ),
-        child: Stack(children: [
+      child: Stack(
+        children: [
           Positioned(
-              top: -30,
-              right: -20,
-              child: Opacity(
-                  opacity: 0.18 + _pulseAnim.value * 0.07,
-                  child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: const BoxDecoration(
-                          color: Colors.white, shape: BoxShape.circle)))),
-          Positioned(
-              bottom: -40,
-              left: -24,
-              child: Opacity(
-                  opacity: 0.10 + (1 - _pulseAnim.value) * 0.06,
-                  child: Container(
-                      width: 130,
-                      height: 130,
-                      decoration: const BoxDecoration(
-                          color: Colors.white, shape: BoxShape.circle)))),
-          child!,
-        ]),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            top: -48,
+            right: -26,
+            child: Container(
+              width: 150,
+              height: 150,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.22),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.30)),
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: .09),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(greetEmoji, style: const TextStyle(fontSize: 12)),
-                const SizedBox(width: 5),
-                Text(greeting,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.2)),
-              ]),
             ),
-            const Spacer(),
-            // Show student name initial in avatar
-            ListenableBuilder(
-              listenable: AppState.instance,
-              builder: (context, _) {
-                final name = AppState.instance.currentStudent?.name ?? '';
-                final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-                return Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.25),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: Colors.white.withOpacity(0.50), width: 1.5),
-                  ),
-                  child: Center(
-                    child: Text(initial,
-                        style: const TextStyle(
+          ),
+          Positioned(
+            bottom: -64,
+            left: -38,
+            child: Container(
+              width: 130,
+              height: 130,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: .06),
+              ),
+            ),
+          ),
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          greeting,
+                          style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800)),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -.2,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          dateText,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: .82),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_month_rounded, size: 15, color: Colors.white.withValues(alpha: .95)),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Your schedule',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: .9),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              },
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .14),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: .45), width: 1.5),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      firstName.isNotEmpty ? firstName[0].toUpperCase() : 'G',
+                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ]),
-          const SizedBox(height: 18),
-          ListenableBuilder(
-            listenable: AppState.instance,
-            builder: (context, _) {
-              final fullName = AppState.instance.currentStudent?.name ?? '';
-              final firstName = fullName.trim().split(' ').first;
-              return Text(
-                firstName.isNotEmpty
-                    ? 'Welcome Back, $firstName'
-                    : 'Welcome Back',
-                style: const TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.08,
-                    letterSpacing: -1.0),
-              );
-            },
           ),
-          const SizedBox(height: 6),
-          Text(
-            DateFormat('EEEE, MMMM d').format(DateTime.now()),
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.white.withOpacity(0.78)),
-          ),
-          const SizedBox(height: 22),
-          Container(height: 1, color: Colors.white.withOpacity(0.20)),
-          const SizedBox(height: 16),
-          Row(children: [
-            const Icon(Icons.rocket_launch_rounded,
-                color: Colors.white, size: 14),
-            const SizedBox(width: 6),
-            const Text(
-              'Your path to great organizations starts here.',
-              style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white,
-                  letterSpacing: 0.1),
-            ),
-          ]),
-        ]),
+        ],
       ),
     );
   }
@@ -474,7 +419,39 @@ class _StudentDashboardState extends State<StudentDashboard>
         borderRadius: BorderRadius.circular(24),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-          child: TableCalendar(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Previous month',
+                      onPressed: () => _changeCalendarMonth(-1),
+                      icon: _chevronBtn(Icons.chevron_left_rounded),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    ),
+                    Expanded(
+                      child: Text(
+                        DateFormat.yMMMM().format(_focusedDay),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _DT.ink, letterSpacing: -0.3),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Next month',
+                      onPressed: () => _changeCalendarMonth(1),
+                      icon: _chevronBtn(Icons.chevron_right_rounded),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    ),
+                  ],
+                ),
+              ),
+              TableCalendar(
+            headerVisible: false,
             availableGestures: AvailableGestures.horizontalSwipe,
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
@@ -556,7 +533,7 @@ class _StudentDashboardState extends State<StudentDashboard>
               defaultTextStyle: const TextStyle(
                   color: _DT.ink, fontWeight: FontWeight.w500, fontSize: 13),
               weekendTextStyle: TextStyle(
-                  color: _DT.ink.withOpacity(0.55),
+                  color: _DT.ink.withValues(alpha: 0.55),
                   fontWeight: FontWeight.w500,
                   fontSize: 13),
               outsideTextStyle:
@@ -575,12 +552,12 @@ class _StudentDashboardState extends State<StudentDashboard>
             ),
             daysOfWeekStyle: DaysOfWeekStyle(
               weekdayStyle: TextStyle(
-                  color: _DT.inkSecond.withOpacity(0.70),
+                  color: _DT.inkSecond.withValues(alpha: 0.70),
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5),
               weekendStyle: TextStyle(
-                  color: _DT.inkSecond.withOpacity(0.50),
+                  color: _DT.inkSecond.withValues(alpha: 0.50),
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5),
@@ -603,9 +580,21 @@ class _StudentDashboardState extends State<StudentDashboard>
               decoration: const BoxDecoration(color: Colors.transparent),
             ),
           ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _changeCalendarMonth(int offset) {
+    final nextMonth = DateTime(_focusedDay.year, _focusedDay.month + offset, 1);
+    final firstAllowed = DateTime(2020, 1, 1);
+    final lastAllowed = DateTime(2030, 12, 1);
+    if (nextMonth.isBefore(firstAllowed) || nextMonth.isAfter(lastAllowed)) return;
+    setState(() {
+      _focusedDay = nextMonth;
+    });
   }
 
   Widget _chevronBtn(IconData icon) => Container(
@@ -614,7 +603,7 @@ class _StudentDashboardState extends State<StudentDashboard>
         decoration: BoxDecoration(
           color: const Color(0xFFDCFCE7),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFF16A34A).withOpacity(0.25)),
+          border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.25)),
         ),
         child: Icon(icon, color: const Color(0xFF16A34A), size: 18),
       );
@@ -714,7 +703,9 @@ class _EventFeedCardState extends State<_EventFeedCard> {
 
   @override
   Widget build(BuildContext context) {
-    final isUpcoming = widget.event.date.isAfter(DateTime.now());
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isUpcoming = !DateTime(widget.event.date.year, widget.event.date.month, widget.event.date.day).isBefore(today);
     final urls = _imageUrls;
     final hasImages = urls.isNotEmpty;
     final hasMultiple = urls.length > 1;
@@ -726,17 +717,17 @@ class _EventFeedCardState extends State<_EventFeedCard> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isUpcoming
-              ? const Color(0xFF16A34A).withOpacity(0.18)
+              ? const Color(0xFF16A34A).withValues(alpha: 0.18)
               : const Color(0xFFE8E9F3),
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF16A34A).withOpacity(0.06),
+            color: const Color(0xFF16A34A).withValues(alpha: 0.06),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -791,7 +782,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                             decoration: BoxDecoration(
                               color: isActive
                                   ? Colors.white
-                                  : Colors.white.withOpacity(0.45),
+                                  : Colors.white.withValues(alpha: 0.45),
                               borderRadius: BorderRadius.circular(3),
                             ),
                           );
@@ -808,7 +799,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.45),
+                          color: Colors.black.withValues(alpha: 0.45),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -935,6 +926,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                EventReactionBar(eventId: widget.event.id),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -1020,3 +1012,4 @@ class _EventFeedCardState extends State<_EventFeedCard> {
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 }
+

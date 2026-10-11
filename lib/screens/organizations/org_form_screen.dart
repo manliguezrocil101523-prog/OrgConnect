@@ -8,11 +8,15 @@ import '../../core/app_state.dart';
 class OrgFormScreen extends StatelessWidget {
   final String title;
   final String logoAsset;
+  final String? orgId;
+  final String category;
 
   const OrgFormScreen({
     super.key,
     required this.title,
     required this.logoAsset,
+    this.orgId,
+    this.category = '',
   });
 
   @override
@@ -33,7 +37,7 @@ class OrgFormScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: OrgFormContent(title: title, logoAsset: logoAsset),
+      body: OrgFormContent(title: title, logoAsset: logoAsset, orgId: orgId, category: category),
     );
   }
 }
@@ -41,11 +45,15 @@ class OrgFormScreen extends StatelessWidget {
 class OrgFormContent extends StatefulWidget {
   final String title;
   final String logoAsset;
+  final String? orgId;
+  final String category;
 
   const OrgFormContent({
     super.key,
     required this.title,
     required this.logoAsset,
+    this.orgId,
+    this.category = '',
   });
 
   @override
@@ -86,6 +94,36 @@ class _OrgFormContentState extends State<OrgFormContent> {
   bool _isUploading = false;
   final List<String> _attachments = [];
   final List<String> _attachmentNames = [];
+
+  String get _orgLower => widget.title.trim().toLowerCase();
+  bool get _isTheater => _orgLower.contains('teatro') || _orgLower.contains('theater') || widget.category.toLowerCase().contains('performing');
+  bool get _isCatholic => _orgLower.contains('catholic') || _orgLower.contains('scap') || widget.category.toLowerCase().contains('faith');
+  bool get _isSports => widget.category.toLowerCase().contains('sports') || widget.category.toLowerCase().contains('athletic');
+  bool get _isAcademic => widget.category.toLowerCase().contains('academic') || widget.category.toLowerCase().contains('education');
+
+  String get _reasonHint {
+    if (_isTheater) return 'e.g. I want to develop my acting, stage performance, and teamwork skills through ${widget.title} productions.';
+    if (_isCatholic) return 'e.g. I want to grow in faith, service, and community involvement through ${widget.title}.';
+    if (_isSports) return 'e.g. I want to improve my skills, discipline, teamwork, and fitness through ${widget.title}.';
+    if (_isAcademic) return 'e.g. I want to strengthen my academic skills and contribute to ${widget.title} learning activities.';
+    return 'e.g. I want to develop my skills and actively contribute to ${widget.title} activities.';
+  }
+
+  String get _skillsHint {
+    if (_isTheater) return 'e.g. Acting, stage performance, voice projection, dancing, directing, or scriptwriting';
+    if (_isCatholic) return 'e.g. Community service, organizing, public speaking, music, outreach, or teamwork';
+    if (_isSports) return 'e.g. Basketball, volleyball, athletics, coaching, event support, or team leadership';
+    if (_isAcademic) return 'e.g. Research, tutoring, writing, organizing, presentation, or peer mentoring';
+    return 'e.g. Communication, organizing, leadership, creativity, teamwork, or skills related to ${widget.title}';
+  }
+
+  String get _experienceHint {
+    if (_isTheater) return 'e.g. School play, stage performance, theater workshop, production crew, or None';
+    if (_isCatholic) return 'e.g. Outreach activity, parish service, campus ministry, volunteer work, or None';
+    if (_isSports) return 'e.g. School team, intramurals, sports club, coaching, or None';
+    if (_isAcademic) return 'e.g. Academic club, research project, tutoring, seminar, or None';
+    return 'e.g. School organization, volunteer activity, event project, or None';
+  }
 
   static const List<String> _courseOptions = [
     'BEED',
@@ -205,6 +243,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
     try {
       await AppState.instance.submitApplication(
         orgName: widget.title,
+        orgId: widget.orgId,
         studentId: studentIdCtrl.text.trim(),
         name: fullNameCtrl.text.trim(),
         course: courseCtrl.text.trim(),
@@ -392,7 +431,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     _fieldLabel('REASON FOR JOINING', required: true),
                     _field(
                       controller: reasonCtrl,
-                      hint: 'e.g. I want to improve my acting skills and be part of EL TIATRO performances.',
+                      hint: _reasonHint,
                       maxLines: 4,
                       validator: (value) {
                         final error = _requiredValidator(value);
@@ -407,7 +446,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     _fieldLabel('SKILLS / TALENTS', required: true),
                     _field(
                       controller: skillsCtrl,
-                      hint: 'e.g. Acting, singing, dancing, or scriptwriting',
+                      hint: _skillsHint,
                       maxLines: 3,
                       validator: _requiredValidator,
                     ),
@@ -415,7 +454,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
                     _fieldLabel('PREVIOUS EXPERIENCE', required: true),
                     _field(
                       controller: experienceCtrl,
-                      hint: 'e.g. School play, classroom performance, or None',
+                      hint: _experienceHint,
                       maxLines: 3,
                       validator: _requiredValidator,
                     ),
@@ -514,7 +553,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
         border: Border.all(color: _FormColors.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(.035),
+            color: Colors.black.withValues(alpha: .035),
             blurRadius: 12,
             offset: const Offset(0, 5),
           ),
@@ -611,7 +650,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: _FormColors.green.withOpacity(.18),
+            color: _FormColors.green.withValues(alpha: .18),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -701,7 +740,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
         shape: BoxShape.circle,
         color: Colors.white,
         border: Border.all(
-          color: Colors.white.withOpacity(.55),
+          color: Colors.white.withValues(alpha: .55),
           width: 2,
         ),
       ),
@@ -723,7 +762,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
         border: Border.all(color: _FormColors.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(.035),
+            color: Colors.black.withValues(alpha: .035),
             blurRadius: 12,
             offset: const Offset(0, 5),
           ),
@@ -883,7 +922,7 @@ class _OrgFormContentState extends State<OrgFormContent> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: DropdownButtonFormField<String>(
-        value: controller.text.isEmpty ? null : controller.text,
+        initialValue: controller.text.isEmpty ? null : controller.text,
         isExpanded: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded),
         dropdownColor: Colors.white,
@@ -997,3 +1036,4 @@ class _OrgFormContentState extends State<OrgFormContent> {
     );
   }
 }
+

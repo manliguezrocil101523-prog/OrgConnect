@@ -7,7 +7,6 @@ class GetStartedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0FDF4),
@@ -37,7 +36,7 @@ class GetStartedScreen extends StatelessWidget {
               height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF60A5FA).withOpacity(0.18),
+                color: const Color(0xFF60A5FA).withValues(alpha: 0.18),
               ),
             ),
           ),
@@ -50,7 +49,7 @@ class GetStartedScreen extends StatelessWidget {
               height: 220,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF2563EB).withOpacity(0.12),
+                color: const Color(0xFF2563EB).withValues(alpha: 0.12),
               ),
             ),
           ),
@@ -84,7 +83,7 @@ class GetStartedScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(28),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF2563EB).withOpacity(0.25),
+                            color: const Color(0xFF2563EB).withValues(alpha: 0.25),
                             blurRadius: 25,
                             offset: const Offset(0, 10),
                           ),
@@ -129,15 +128,15 @@ class GetStartedScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(30),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.75),
+                      color: Colors.white.withValues(alpha: 0.75),
                       borderRadius: BorderRadius.circular(32),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
+                          color: Colors.black.withValues(alpha: 0.06),
                           blurRadius: 30,
                           offset: const Offset(0, 15),
                         ),
@@ -190,7 +189,7 @@ class GetStartedScreen extends StatelessWidget {
                                 boxShadow: [
                                   BoxShadow(
                                     color: const Color(0xFF2563EB)
-                                        .withOpacity(0.35),
+                                        .withValues(alpha: 0.35),
                                     blurRadius: 20,
                                     offset: const Offset(0, 10),
                                   ),
@@ -285,3 +284,4 @@ class GetStartedScreen extends StatelessWidget {
     );
   }
 }
+

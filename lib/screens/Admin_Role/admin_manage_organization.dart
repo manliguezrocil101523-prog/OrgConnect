@@ -28,7 +28,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
     }
   }
 
-  static const Color accent = Color(0xFF22C55E);
+  static const Color accent = Color(0xFF20B77D);
   static const Color danger = Color(0xFFEF4444);
 
   @override
@@ -37,7 +37,6 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
     final background =
         isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F7FA);
     final cardColor = isDark ? const Color(0xFF181C27) : Colors.white;
-    final primary = isDark ? const Color(0xFF181C27) : const Color(0xFF1E293B);
     final textMain = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
     final textSub = isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600;
     final textSub2 = isDark ? const Color(0xFF64748B) : Colors.grey.shade700;
@@ -46,7 +45,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
       backgroundColor: background,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: primary,
+        backgroundColor: const Color(0xFF128058),
         title: const Text(
           'Manage Organizations',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
@@ -87,7 +86,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
@@ -123,7 +122,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                                 return Container(
                                   width: 56,
                                   height: 56,
-                                  color: accent.withOpacity(0.15),
+                                  color: accent.withValues(alpha: 0.15),
                                   child: Center(
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
@@ -143,7 +142,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                               errorBuilder: (_, __, ___) => Container(
                                 width: 56,
                                 height: 56,
-                                color: accent.withOpacity(0.15),
+                                color: accent.withValues(alpha: 0.15),
                                 child:
                                     Icon(Icons.groups_outlined, color: accent),
                               ),
@@ -157,8 +156,9 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                                   // ✅ Smooth fade-in for asset images too
                                   frameBuilder: (context, child, frame,
                                       wasSynchronouslyLoaded) {
-                                    if (wasSynchronouslyLoaded || frame != null)
+                                    if (wasSynchronouslyLoaded || frame != null) {
                                       return child;
+                                    }
                                     return AnimatedOpacity(
                                       opacity: frame == null ? 0.0 : 1.0,
                                       duration:
@@ -170,7 +170,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                                   errorBuilder: (_, __, ___) => Container(
                                     width: 56,
                                     height: 56,
-                                    color: accent.withOpacity(0.15),
+                                    color: accent.withValues(alpha: 0.15),
                                     child: Icon(Icons.groups_outlined,
                                         color: accent),
                                   ),
@@ -179,7 +179,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                                   width: 56,
                                   height: 56,
                                   decoration: BoxDecoration(
-                                    color: accent.withOpacity(0.15),
+                                    color: accent.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(Icons.groups_outlined,
@@ -370,3 +370,4 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
     );
   }
 }
+

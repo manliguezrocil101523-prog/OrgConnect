@@ -114,7 +114,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                             horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: isChosen
-                              ? const Color(0xFF22C55E).withOpacity(0.10)
+                              ? const Color(0xFF22C55E).withValues(alpha: 0.10)
                               : Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
@@ -232,329 +232,156 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = AppState.instance.isDark;
-    final background =
-        isDark ? const Color(0xFF0F1712) : const Color(0xFFF3FAF5);
+    final background = isDark ? const Color(0xFF0F1712) : const Color(0xFFF3FAF5);
     final cardColor = isDark ? const Color(0xFF181C27) : Colors.white;
-    final primary = accent;
-    final textMain = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
-    final textSub = isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600;
-    final textSub2 = isDark ? const Color(0xFF64748B) : Colors.grey.shade500;
-    final dropdownBg = isDark ? const Color(0xFF1E2334) : Colors.grey.shade100;
-    final dropdownIcon = isDark ? const Color(0xFF94A3B8) : Colors.black54;
+    final textMain = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F2D22);
+    final textSub = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final dropdownBg = isDark ? const Color(0xFF1E2334) : const Color(0xFFF8FAFC);
+    final dropdownIcon = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
 
     return Scaffold(
       backgroundColor: background,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: accent,
-        title: const Text(
-          'User Management',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-            tooltip: 'Refresh',
-            onPressed: () {
-              setState(() => isLoading = true);
-              _fetchUsersFromDatabase();
-            },
+      body: Column(
+        children: [
+          _header(),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator(color: accent))
+                : dbUsers.isEmpty
+                    ? Center(child: Text('No users found', style: TextStyle(color: textSub, fontWeight: FontWeight.w700)))
+                    : Builder(
+                        builder: (context) {
+                          final students = dbUsers.where((u) => (u['role']?.toString() ?? 'student') == 'student').toList();
+                          final officers = dbUsers.where((u) => u['role']?.toString() == 'officer').toList();
+                          final admins = dbUsers.where((u) => u['role']?.toString() == 'admin').toList();
+                          final advisers = dbUsers.where((u) => u['role']?.toString() == 'adviser').toList();
+                          final List<dynamic> items = [];
+                          if (students.isNotEmpty) { items.add({'_header': 'Students'}); items.addAll(students); }
+                          if (officers.isNotEmpty) { items.add({'_header': 'Officers'}); items.addAll(officers); }
+                          if (advisers.isNotEmpty) { items.add({'_header': 'Advisers'}); items.addAll(advisers); }
+                          if (admins.isNotEmpty) { items.add({'_header': 'Admins'}); items.addAll(admins); }
+
+                          return ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
+                            itemCount: items.length,
+                            itemBuilder: (context, index) {
+                              final item = items[index];
+                              if (item is Map && item.containsKey('_header')) {
+                                return Padding(
+                                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
+                                  child: Row(children: [
+                                    Container(width: 8, height: 8, decoration: const BoxDecoration(color: accent, shape: BoxShape.circle)),
+                                    const SizedBox(width: 8),
+                                    Text(item['_header'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: accent, letterSpacing: .6)),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: Divider(color: accent.withValues(alpha: .18))),
+                                  ]),
+                                );
+                              }
+
+                              final u = item as Map<String, dynamic>;
+                              final role = u['role']?.toString() ?? 'student';
+                              final isActive = u['active'] ?? true;
+                              final assignedOrgId = u['assigned_org_id']?.toString();
+                              String? assignedOrgName;
+                              if (assignedOrgId != null) {
+                                try {
+                                  assignedOrgName = AppState.instance.organizations.firstWhere((o) => o.id == assignedOrgId).name;
+                                } catch (_) { assignedOrgName = assignedOrgId; }
+                              }
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(15),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: isDark ? [cardColor, cardColor] : [Colors.white, const Color(0xFFF1FBF5)]),
+                                  borderRadius: BorderRadius.circular(22),
+                                  border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFD7EFE0)),
+                                  boxShadow: [BoxShadow(color: accent.withValues(alpha: isDark ? .08 : .07), blurRadius: 18, offset: const Offset(0, 7))],
+                                ),
+                                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  CircleAvatar(
+                                    radius: 27,
+                                    backgroundColor: accent.withValues(alpha: .14),
+                                    child: (u['avatar_url']?.toString().isNotEmpty ?? false)
+                                        ? ClipOval(child: Image.network(u['avatar_url'].toString(), width: 54, height: 54, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Text((u['name']?.toString().isNotEmpty == true) ? u['name'].toString()[0].toUpperCase() : '?', style: const TextStyle(color: accent, fontWeight: FontWeight.w900, fontSize: 18))))
+                                        : Text((u['name']?.toString().isNotEmpty == true) ? u['name'].toString()[0].toUpperCase() : '?', style: const TextStyle(color: accent, fontWeight: FontWeight.w900, fontSize: 18)),
+                                  ),
+                                  const SizedBox(width: 13),
+                                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text(u['name']?.toString() ?? 'No Name', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: textMain)),
+                                    const SizedBox(height: 4),
+                                    Text(u['email']?.toString() ?? '', style: TextStyle(color: textSub, fontSize: 12.5)),
+                                    if (assignedOrgName != null && role == 'adviser') ...[
+                                      const SizedBox(height: 7),
+                                      Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: accent.withValues(alpha: .09), borderRadius: BorderRadius.circular(10), border: Border.all(color: accent.withValues(alpha: .20))), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.apartment_rounded, color: accent, size: 12), const SizedBox(width: 4), Text(assignedOrgName, style: const TextStyle(color: accent, fontSize: 10.5, fontWeight: FontWeight.w800))])),
+                                    ],
+                                    const SizedBox(height: 10),
+                                    if (role == 'officer')
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                                        decoration: BoxDecoration(color: accent.withValues(alpha: .09), borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: .20))),
+                                        child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.lock_person_rounded, color: accent, size: 15), SizedBox(width: 6), Text('Officer — assigned by Adviser', style: TextStyle(color: accent, fontSize: 11.5, fontWeight: FontWeight.w800))]),
+                                      )
+                                    else
+                                      Container(padding: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: dropdownBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0))), child: DropdownButton<String>(value: role, isDense: true, underline: const SizedBox(), dropdownColor: dropdownBg, style: TextStyle(color: textMain, fontSize: 12), icon: Icon(Icons.keyboard_arrow_down_rounded, color: dropdownIcon), items: const [
+                                        DropdownMenuItem(value: 'student', child: Text('Student')),
+                                        DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                                        DropdownMenuItem(value: 'adviser', child: Text('Adviser')),
+                                      ], onChanged: (val) async {
+                                        if (val == null) return;
+                                        if (val == 'adviser') {
+                                          await _showOrgPickerDialog(u, role: val);
+                                        } else {
+                                          await supabase.Supabase.instance.client.from('profiles').update({'role': val, 'assigned_org_id': null}).eq('id', u['id'].toString());
+                                          if (!mounted) return;
+                                          setState(() { final realIdx = dbUsers.indexWhere((d) => d['id'] == u['id']); if (realIdx != -1) { dbUsers[realIdx]['role'] = val; dbUsers[realIdx]['assigned_org_id'] = null; } });
+                                          _showSnack('Role updated to $val');
+                                        }
+                                      })),
+                                  ])),
+                                  const SizedBox(width: 10),
+                                  Column(children: [
+                                    Text(isActive ? 'Active' : 'Inactive', style: TextStyle(color: isActive ? success : danger, fontSize: 11, fontWeight: FontWeight.w800)),
+                                    Switch(value: isActive, activeThumbColor: success, onChanged: (value) async { await _updateActiveInDatabase(u['id'].toString(), value); if (!mounted) return; setState(() { final realIdx = dbUsers.indexWhere((d) => d['id'] == u['id']); if (realIdx != -1) dbUsers[realIdx]['active'] = value; }); _showSnack(value ? 'User activated' : 'User disabled'); }),
+                                  ]),
+                                ]),
+                              );
+                            },
+                          );
+                        },
+                      ),
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : dbUsers.isEmpty
-              ? const Center(child: Text('No users found'))
-              : Builder(
-                  builder: (context) {
-                    // ── Group users by role ──────────────────────────────
-                    final students = dbUsers
-                        .where((u) =>
-                            (u['role']?.toString() ?? 'student') == 'student')
-                        .toList();
-                    final officers = dbUsers
-                        .where((u) => u['role']?.toString() == 'officer')
-                        .toList();
-                    final admins = dbUsers
-                        .where((u) => u['role']?.toString() == 'admin')
-                        .toList();
-                    final advisers = dbUsers
-                        .where((u) => u['role']?.toString() == 'adviser')
-                        .toList();
+    );
+  }
 
-                    // ── Build flat list: [header, user, user, header, ...] ──
-                    final List<dynamic> items = [];
-
-                    if (students.isNotEmpty) {
-                      items.add({'_header': 'Students'});
-                      items.addAll(students);
-                    }
-                    if (officers.isNotEmpty) {
-                      items.add({'_header': 'Officers'});
-                      items.addAll(officers);
-                    }
-                    if (admins.isNotEmpty) {
-                      items.add({'_header': 'Admins'});
-                      items.addAll(admins);
-                    }
-                    if (advisers.isNotEmpty) {
-                      items.add({'_header': 'Advisers'});
-                      items.addAll(advisers);
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: items.length,
-                      itemBuilder: (context, index) {
-                        final item = items[index];
-
-                        // ── Render section header ──
-                        if (item is Map && item.containsKey('_header')) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8, bottom: 10),
-                            child: Row(
-                              children: [
-                                Text(
-                                  item['_header'],
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: accent,
-                                    letterSpacing: 0.8,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Divider(
-                                    color: accent.withOpacity(0.25),
-                                    thickness: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        // ── Render user card ──
-                        final u = item as Map<String, dynamic>;
-                        final role = u['role']?.toString() ?? 'student';
-                        final isActive = u['active'] ?? true;
-                        final assignedOrgId = u['assigned_org_id']?.toString();
-
-                        // Find org name to display on the card
-                        String? assignedOrgName;
-                        if (assignedOrgId != null) {
-                          try {
-                            assignedOrgName = AppState.instance.organizations
-                                .firstWhere((o) => o.id == assignedOrgId)
-                                .name;
-                          } catch (_) {
-                            assignedOrgName = assignedOrgId;
-                          }
-                        }
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 14),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: cardColor,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black
-                                    .withOpacity(isDark ? 0.3 : 0.05),
-                                blurRadius: 12,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Avatar
-                              CircleAvatar(
-                                radius: 24,
-                                backgroundColor: accent,
-                                child: Text(
-                                  (u['name']?.toString().isNotEmpty == true)
-                                      ? u['name'].toString()[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-
-                              // Info
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      u['name']?.toString() ?? 'No Name',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color: textMain),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      u['email']?.toString() ?? '',
-                                      style: TextStyle(
-                                          color: textSub, fontSize: 13),
-                                    ),
-                                    if (u['student_id'] != null)
-                                      Text(
-                                        'ID: ${u['student_id']}',
-                                        style: TextStyle(
-                                            color: textSub2, fontSize: 12),
-                                      ),
-
-                                    // ── Assigned org badge ──
-                                    if ((role == 'officer' || role == 'adviser') &&
-                                        assignedOrgName != null) ...[
-                                      const SizedBox(height: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF22C55E)
-                                              .withOpacity(0.10),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                            color: const Color(0xFF22C55E)
-                                                .withOpacity(0.30),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.shield_rounded,
-                                                color: Color(0xFF22C55E),
-                                                size: 12),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              assignedOrgName,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF22C55E),
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-
-                                    const SizedBox(height: 10),
-
-                                    // Role Dropdown
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10),
-                                      decoration: BoxDecoration(
-                                        color: dropdownBg,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: DropdownButton<String>(
-                                        value: role,
-                                        underline: const SizedBox(),
-                                        dropdownColor: dropdownBg,
-                                        style: TextStyle(color: textMain),
-                                        icon: Icon(Icons.keyboard_arrow_down,
-                                            color: dropdownIcon),
-                                        items: const [
-                                          DropdownMenuItem(
-                                              value: 'student',
-                                              child: Text('Student')),
-                                          DropdownMenuItem(
-                                              value: 'officer',
-                                              child: Text('Officer')),
-                                          DropdownMenuItem(
-                                              value: 'admin',
-                                              child: Text('Admin')),
-                                          DropdownMenuItem(
-                                              value: 'adviser',
-                                              child: Text('Adviser')),
-                                        ],
-                                        onChanged: (val) async {
-                                          if (val == null) return;
-
-                                          if (val == 'officer' || val == 'adviser') {
-                                            // Both organization officers and advisers must be assigned to an organization.
-                                            await _showOrgPickerDialog(u, role: val);
-                                          } else {
-                                            // Remove officer privileges
-                                            await supabase
-                                                .Supabase.instance.client
-                                                .from('profiles')
-                                                .update({
-                                              'role': val,
-                                              'assigned_org_id': null,
-                                            }).eq('id', u['id'].toString());
-
-                                            setState(() {
-                                              final realIdx =
-                                                  dbUsers.indexWhere((d) =>
-                                                      d['id'] == u['id']);
-                                              if (realIdx != -1) {
-                                                dbUsers[realIdx]['role'] = val;
-                                                dbUsers[realIdx]
-                                                    ['assigned_org_id'] = null;
-                                              }
-                                            });
-                                            _showSnack('Role updated to $val');
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // Active Switch
-                              Column(
-                                children: [
-                                  Text(
-                                    isActive ? 'Active' : 'Inactive',
-                                    style: TextStyle(
-                                      color: isActive ? success : danger,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Switch(
-                                    value: isActive,
-                                    activeThumbColor: success,
-                                    onChanged: (value) async {
-                                      await _updateActiveInDatabase(
-                                          u['id'].toString(), value);
-                                      setState(() {
-                                        final realIdx = dbUsers.indexWhere(
-                                            (d) => d['id'] == u['id']);
-                                        if (realIdx != -1) {
-                                          dbUsers[realIdx]['active'] = value;
-                                        }
-                                      });
-                                      _showSnack(value
-                                          ? 'User activated'
-                                          : 'User disabled');
-                                    },
-                                  ),
-                                ],
-                              ), // Column (active switch)
-                            ],
-                          ), // Row
-                        ); // Container (card)
-                      }, // itemBuilder
-                    ); // ListView.builder
-                  }, // Builder callback
-                ), // Builder
-    ); // Scaffold
-  } // build()
+  Widget _header() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 24, 16, 22),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF064E3B), Color(0xFF128058), Color(0xFF22C55E)]),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(30)),
+      ),
+      child: Stack(children: [
+        Positioned(right: -42, top: -55, child: Container(width: 150, height: 150, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: .06)))),
+        SafeArea(
+          bottom: false,
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('User Management', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text('Manage accounts, roles, organizations, and access', style: TextStyle(color: Colors.white.withValues(alpha: .84), fontSize: 12.5, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 9),
+              Text('${dbUsers.length} accounts', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .5)),
+            ])),
+          ]),
+        ),
+      ]),
+    );
+  }
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -566,3 +393,4 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
     );
   }
 }
+

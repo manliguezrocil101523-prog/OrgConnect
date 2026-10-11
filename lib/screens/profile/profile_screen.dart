@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/unified_login_page.dart';
+import '../analytics/student_impact_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -31,11 +32,11 @@ BoxDecoration _cardDecoration() => BoxDecoration(
       borderRadius: BorderRadius.circular(20),
       boxShadow: [
         BoxShadow(
-            color: _kPrimary.withOpacity(0.07),
+            color: _kPrimary.withValues(alpha: 0.07),
             blurRadius: 24,
             offset: const Offset(0, 8)),
         BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 4,
             offset: const Offset(0, 2)),
       ],
@@ -62,7 +63,7 @@ InputDecoration _fieldDecoration({
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.10),
+              color: iconColor.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(8)),
           child: Icon(icon, color: iconColor, size: 16),
         ),
@@ -105,20 +106,17 @@ class _ProfileScreenState extends State<ProfileScreen>
   final facebookCtrl = TextEditingController();
 
   Uint8List? _avatarBytes;
-  bool _isEditing = false;
   bool _isLoading = true;
   bool _showZoom = false;
   Map<String, dynamic>? _profile;
 
   late final AnimationController _headerAnim;
-  late final Animation<double> _headerFade;
 
   @override
   void initState() {
     super.initState();
     _headerAnim = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
-    _headerFade = CurvedAnimation(parent: _headerAnim, curve: Curves.easeOut);
     _loadProfile();
   }
 
@@ -172,7 +170,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     // FIX Bug 3: guard mounted before touching widget tree after async gap
     if (!mounted) return;
     setState(() {
-      _isEditing = false;
       _isLoading = false;
     });
     _headerAnim.forward();
@@ -187,15 +184,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     facebookCtrl.text = _profile!['facebook'] ?? '';
   }
 
-  double get _completeness {
-    if (_profile == null) return 0;
-    final keys = ['student_id', 'name', 'email', 'contact', 'facebook'];
-    return keys
-            .where((k) => (_profile![k] as String? ?? '').isNotEmpty)
-            .length /
-        keys.length;
-  }
-
   Future<Uint8List?> _pickAvatar() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -203,9 +191,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'heic', 'webp'],
         withData: true,
       );
-      final bytes = result?.files.isNotEmpty == true
-          ? result!.files.first.bytes
-          : null;
+      final bytes =
+          result?.files.isNotEmpty == true ? result!.files.first.bytes : null;
       if (bytes != null && mounted) {
         setState(() => _avatarBytes = bytes);
       }
@@ -288,7 +275,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (!mounted) return true;
       setState(() {
         _avatarBytes = null;
-        _isEditing = false;
         _isLoading = false;
         _profile = {
           'student_id': studentIdCtrl.text.trim(),
@@ -338,7 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
+                    color: Colors.black.withValues(alpha: 0.12),
                     blurRadius: 40,
                     offset: const Offset(0, 16)),
               ],
@@ -351,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   width: 64,
                   height: 64,
                   decoration: BoxDecoration(
-                    color: _kRed.withOpacity(0.08),
+                    color: _kRed.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
                   child:
@@ -423,7 +409,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           borderRadius: BorderRadius.circular(13),
                           boxShadow: [
                             BoxShadow(
-                                color: _kRed.withOpacity(0.30),
+                                color: _kRed.withValues(alpha: 0.30),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4)),
                           ],
@@ -455,7 +441,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           title: const Row(
             children: [
               Icon(Icons.lock_reset_rounded, color: _kPrimary),
@@ -475,9 +462,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   prefixIcon: const Icon(Icons.lock_outline_rounded),
                   suffixIcon: IconButton(
                     onPressed: () => setDialogState(() => obscure = !obscure),
-                    icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+                    icon:
+                        Icon(obscure ? Icons.visibility_off : Icons.visibility),
                   ),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
               ),
               const SizedBox(height: 14),
@@ -489,27 +478,36 @@ class _ProfileScreenState extends State<ProfileScreen>
                   hintText: 'Re-enter your new password',
                   prefixIcon: const Icon(Icons.verified_user_outlined),
                   suffixIcon: IconButton(
-                    onPressed: () => setDialogState(() => confirmObscure = !confirmObscure),
-                    icon: Icon(confirmObscure ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () =>
+                        setDialogState(() => confirmObscure = !confirmObscure),
+                    icon: Icon(confirmObscure
+                        ? Icons.visibility_off
+                        : Icons.visibility),
                   ),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _kPrimary),
               onPressed: () async {
                 final password = controller.text.trim();
                 final confirm = confirmController.text.trim();
                 if (password.length < 6) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password must be at least 6 characters.')));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content:
+                          Text('Password must be at least 6 characters.')));
                   return;
                 }
                 if (password != confirm) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Passwords do not match.')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Passwords do not match.')));
                   return;
                 }
                 try {
@@ -519,7 +517,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } catch (e) {
                   if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Could not change password: $e')));
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                        content: Text('Could not change password: $e')));
                   }
                 }
               },
@@ -533,7 +532,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     controller.dispose();
     confirmController.dispose();
     if (changed == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated successfully.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Password updated successfully.')));
     }
   }
 
@@ -596,7 +596,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                           padding: const EdgeInsets.fromLTRB(20, 10, 14, 0),
                           child: Row(
                             children: [
-                              const Text('Profile', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)),
+                              const Text('Profile',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 21,
+                                      fontWeight: FontWeight.w800)),
                               const Spacer(),
                               _AppBarActionButton(
                                 isEditing: false,
@@ -632,7 +636,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                           children: [
                             GestureDetector(
                               onTap: () => setState(() => _showZoom = true),
-                              child: _CompactAvatar(image: avatarImage, showCamera: false),
+                              child: _CompactAvatar(
+                                  image: avatarImage, showCamera: false),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -641,16 +646,28 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    (_profile?['name'] ?? '').toString().isEmpty ? 'Your Profile' : (_profile?['name'] ?? '').toString(),
+                                    (_profile?['name'] ?? '').toString().isEmpty
+                                        ? 'Your Profile'
+                                        : (_profile?['name'] ?? '').toString(),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.w800),
                                   ),
                                   const SizedBox(height: 3),
-                                  if ((_profile?['student_id'] ?? '').toString().isNotEmpty)
+                                  if ((_profile?['student_id'] ?? '')
+                                      .toString()
+                                      .isNotEmpty)
                                     Text(
-                                      (_profile?['student_id'] ?? '').toString(),
-                                      style: TextStyle(color: Colors.white.withOpacity(.82), fontSize: 12.5, fontWeight: FontWeight.w600),
+                                      (_profile?['student_id'] ?? '')
+                                          .toString(),
+                                      style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: .82),
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600),
                                     ),
                                 ],
                               ),
@@ -664,7 +681,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               Expanded(
                 child: ScrollConfiguration(
-                  behavior: const MaterialScrollBehavior().copyWith(scrollbars: false),
+                  behavior: const MaterialScrollBehavior()
+                      .copyWith(scrollbars: false),
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(20, 22, 20, 48),
@@ -675,7 +693,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           profile: _profile,
                           onLogout: _showLogoutDialog,
                           onChangePassword: _changePassword,
-                          loggedInEmail: Supabase.instance.client.auth.currentUser?.email ?? (_profile?['email'] as String? ?? ''),
+                          loggedInEmail: Supabase
+                                  .instance.client.auth.currentUser?.email ??
+                              (_profile?['email'] as String? ?? ''),
                         ),
                       ),
                     ),
@@ -747,266 +767,6 @@ class _CompactAvatar extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _ProfileHeroHeader
-// =============================================================================
-class _ProfileHeroHeader extends StatelessWidget {
-  final Uint8List? avatarBytes;
-  final String? avatarUrl;
-  final bool isEditing;
-  final VoidCallback? onAvatarTap;
-  final String displayName;
-  final String studentId;
-  final double completeness;
-
-  const _ProfileHeroHeader({
-    required this.avatarBytes,
-    required this.avatarUrl,
-    required this.isEditing,
-    required this.onAvatarTap,
-    required this.displayName,
-    required this.studentId,
-    required this.completeness,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final avatarSize = (size.width * 0.22).clamp(68.0, 96.0);
-
-    // FIX Bug 4 (hero header): same data URI guard for the header avatar
-    Widget? avatarChild;
-    ImageProvider? bgImage;
-    if (avatarBytes != null) {
-      bgImage = MemoryImage(avatarBytes!);
-    } else {
-      final url = avatarUrl ?? '';
-      if (url.startsWith('data:')) {
-        try {
-          final base64Str = url.substring(url.indexOf(',') + 1);
-          bgImage = MemoryImage(base64Decode(base64Str));
-        } catch (_) {}
-      } else if (url.isNotEmpty) {
-        // Use a plain Image.network wrapped in ClipOval as child so errors
-        // are handled gracefully.
-        avatarChild = ClipOval(
-          child: CachedNetworkImage(
-            imageUrl: url,
-            fit: BoxFit.cover,
-            width: avatarSize,
-            height: avatarSize,
-            errorWidget: (_, __, ___) => Icon(
-              Icons.person_rounded,
-              size: avatarSize * 0.48,
-              color: _kPrimary,
-            ),
-          ),
-        );
-      }
-    }
-
-    // If no image at all, show the person icon
-    avatarChild ??= (bgImage == null
-        ? Icon(Icons.person_rounded, size: avatarSize * 0.48, color: _kPrimary)
-        : null);
-
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_kPrimary, _kSecondary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Stack(
-        children: [
-          _Orb(top: -40, right: -30, size: 200, opacity: 0.06),
-          _Orb(bottom: -20, left: -50, size: 160, opacity: 0.04),
-          _Orb(top: 60, left: 30, size: 60, opacity: 0.05),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (ctx, constraints) {
-                // Dynamically scale top padding & gaps so content never
-                // overflows on any screen height.
-                final topPad = (constraints.maxHeight * 0.18).clamp(8.0, 44.0);
-                final gap = (constraints.maxHeight * 0.04).clamp(4.0, 14.0);
-                return SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minHeight: constraints.maxHeight),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(height: topPad),
-                        GestureDetector(
-                          onTap: onAvatarTap,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            alignment: Alignment.center,
-                            children: [
-                              Container(
-                                width: avatarSize + 20,
-                                height: avatarSize + 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: SweepGradient(colors: [
-                                    _kSecondary.withOpacity(0.7),
-                                    _kPrimary.withOpacity(0.3),
-                                    _kSecondary.withOpacity(0.7),
-                                  ]),
-                                ),
-                              ),
-                              Container(
-                                width: avatarSize + 8,
-                                height: avatarSize + 8,
-                                decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.white),
-                              ),
-                              CircleAvatar(
-                                radius: avatarSize / 2,
-                                backgroundColor: const Color(0xFFE0E7FF),
-                                backgroundImage: bgImage,
-                                child: bgImage == null ? avatarChild : null,
-                              ),
-                              if (isEditing)
-                                Positioned(
-                                  bottom: 2,
-                                  right: 2,
-                                  child: Container(
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                          colors: [_kPrimary, _kSecondary],
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight),
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.18),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2))
-                                      ],
-                                    ),
-                                    child: const Icon(Icons.camera_alt_rounded,
-                                        size: 14, color: Colors.white),
-                                  ),
-                                )
-                              else if (avatarBytes != null ||
-                                  (avatarUrl ?? '').isNotEmpty)
-                                Positioned(
-                                  bottom: 2,
-                                  right: 2,
-                                  child: Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.12),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 2))
-                                      ],
-                                    ),
-                                    child: const Icon(Icons.zoom_in_rounded,
-                                        size: 14, color: _kSecondary),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(height: gap),
-                        if (displayName.isNotEmpty) ...[
-                          Text(displayName,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.1)),
-                          if (studentId.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 3),
-                                decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(20)),
-                                child: Text(studentId,
-                                    style: TextStyle(
-                                        color: Colors.white.withOpacity(0.90),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        letterSpacing: 0.3)),
-                              ),
-                            ),
-                        ] else
-                          Text(
-                            isEditing
-                                ? 'Tap photo to upload'
-                                : 'No profile set',
-                            style: TextStyle(
-                                color: Colors.white.withOpacity(0.65),
-                                fontSize: 13,
-                                fontStyle: FontStyle.italic),
-                          ),
-                        SizedBox(height: gap),
-                        if (!isEditing)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 48),
-                            child: Column(children: [
-                              Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Profile Completeness',
-                                        style: TextStyle(
-                                            color:
-                                                Colors.white.withOpacity(0.70),
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w500)),
-                                    Text('${(completeness * 100).toInt()}%',
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w700)),
-                                  ]),
-                              const SizedBox(height: 6),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: completeness,
-                                  minHeight: 5,
-                                  backgroundColor:
-                                      Colors.white.withOpacity(0.20),
-                                  valueColor:
-                                      const AlwaysStoppedAnimation<Color>(
-                                          _kSecondary),
-                                ),
-                              ),
-                            ]),
-                          ),
-                        SizedBox(height: gap / 2),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Simple decorative circle helper
 class _Orb extends StatelessWidget {
   final double? top, bottom, left, right, size, opacity;
   const _Orb(
@@ -1028,7 +788,7 @@ class _Orb extends StatelessWidget {
           height: size,
           decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withOpacity(opacity!)),
+              color: Colors.white.withValues(alpha: opacity!)),
         ),
       );
 }
@@ -1077,7 +837,8 @@ class _AvatarZoomOverlay extends StatelessWidget {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.20), width: 4),
+                              color: Colors.white.withValues(alpha: 0.20),
+                              width: 4),
                         ),
                         child: ClipOval(
                           child: avatarImage != null
@@ -1109,7 +870,7 @@ class _AvatarZoomOverlay extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text('Tap × to close',
                           style: TextStyle(
-                              color: Colors.white.withOpacity(0.40),
+                              color: Colors.white.withValues(alpha: 0.40),
                               fontSize: 12)),
                     ]),
                   ),
@@ -1123,10 +884,11 @@ class _AvatarZoomOverlay extends StatelessWidget {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.12),
+                          color: Colors.white.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.20), width: 1),
+                              color: Colors.white.withValues(alpha: 0.20),
+                              width: 1),
                         ),
                         child: const Icon(Icons.close_rounded,
                             color: Colors.white, size: 20),
@@ -1160,15 +922,17 @@ class _AppBarActionButton extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: isEditing ? Colors.white : Colors.white.withOpacity(0.18),
+          color:
+              isEditing ? Colors.white : Colors.white.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(20),
           border: isEditing
               ? null
-              : Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+              : Border.all(
+                  color: Colors.white.withValues(alpha: 0.35), width: 1),
           boxShadow: isEditing
               ? [
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color: Colors.black.withValues(alpha: 0.12),
                       blurRadius: 8,
                       offset: const Offset(0, 3))
                 ]
@@ -1205,7 +969,6 @@ class _ViewCard extends StatelessWidget {
   final VoidCallback? onChangePassword;
   final String loggedInEmail;
   const _ViewCard({
-    super.key,
     required this.profile,
     this.onLogout,
     this.onChangePassword,
@@ -1235,6 +998,73 @@ class _ViewCard extends StatelessWidget {
         const SizedBox(height: 10),
       ],
       const SizedBox(height: 18),
+      const _SectionLabel(text: 'Growth & Impact'),
+      const SizedBox(height: 12),
+      GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentImpactScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 17, 14, 17),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [_kPrimary, _kSecondary],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: _kPrimary.withValues(alpha: .16),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .16),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withValues(alpha: .25)),
+                ),
+                child: const Icon(Icons.insights_rounded, color: Colors.white, size: 23),
+              ),
+              const SizedBox(width: 13),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Organization Impact',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Record how your organizations support your growth.',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 23),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 20),
       const _SectionLabel(text: 'Account & Security'),
       const SizedBox(height: 12),
       Container(
@@ -1245,27 +1075,49 @@ class _ViewCard extends StatelessWidget {
             children: [
               ListTile(
                 onTap: onChangePassword,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                leading: _IconBox(icon: Icons.lock_reset_rounded, color: _kPrimary),
-                title: const Text('Change Password', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: _kSlate0F)),
-                subtitle: const Text('Update your account password securely', style: TextStyle(fontSize: 11.5, color: _kSlate94)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: _kPrimary),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                leading:
+                    _IconBox(icon: Icons.lock_reset_rounded, color: _kPrimary),
+                title: const Text('Change Password',
+                    style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: _kSlate0F)),
+                subtitle: const Text('Update your account password securely',
+                    style: TextStyle(fontSize: 11.5, color: _kSlate94)),
+                trailing:
+                    const Icon(Icons.chevron_right_rounded, color: _kPrimary),
               ),
-              Divider(height: 1, indent: 76, endIndent: 20, color: Colors.grey.shade100),
+              Divider(
+                  height: 1,
+                  indent: 76,
+                  endIndent: 20,
+                  color: Colors.grey.shade100),
               ListTile(
                 onTap: onLogout,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                 leading: _IconBox(icon: Icons.logout_rounded, color: _kRed),
-                title: const Text('Log Out', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: _kRed)),
+                title: const Text('Log Out',
+                    style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: _kRed)),
                 subtitle: Text(
-                  loggedInEmail.isNotEmpty ? 'Logged in as: $loggedInEmail' : 'Tap to sign out',
+                  loggedInEmail.isNotEmpty
+                      ? 'Logged in as: $loggedInEmail'
+                      : 'Tap to sign out',
                   style: const TextStyle(fontSize: 11.5, color: _kSlate94),
                 ),
                 trailing: Container(
                   width: 30,
                   height: 30,
-                  decoration: BoxDecoration(color: _kRed.withOpacity(0.08), borderRadius: BorderRadius.circular(9)),
-                  child: const Icon(Icons.chevron_right_rounded, color: _kRed, size: 18),
+                  decoration: BoxDecoration(
+                      color: _kRed.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(9)),
+                  child: const Icon(Icons.chevron_right_rounded,
+                      color: _kRed, size: 18),
                 ),
               ),
             ],
@@ -1280,15 +1132,14 @@ class _ViewCard extends StatelessWidget {
 class _IconBox extends StatelessWidget {
   final IconData icon;
   final Color color;
-  final double size;
-  const _IconBox({required this.icon, required this.color, this.size = 40});
+  const _IconBox({required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
-            color: color.withOpacity(0.10),
+            color: color.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(11)),
         child: Icon(icon, color: color, size: 19),
       );
@@ -1313,7 +1164,10 @@ class _ProfileInfoCard extends StatelessWidget {
             height: 46,
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [fieldDef.color.withOpacity(.14), fieldDef.color.withOpacity(.06)],
+                colors: [
+                  fieldDef.color.withValues(alpha: .14),
+                  fieldDef.color.withValues(alpha: .06)
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -1328,7 +1182,11 @@ class _ProfileInfoCard extends StatelessWidget {
               children: [
                 Text(
                   fieldDef.label.toUpperCase(),
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _kSlate94, letterSpacing: .9),
+                  style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: _kSlate94,
+                      letterSpacing: .9),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -1348,8 +1206,10 @@ class _ProfileInfoCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Icon(
-            isEmpty ? Icons.add_circle_outline_rounded : Icons.check_circle_rounded,
-            color: isEmpty ? _kSlateE2 : fieldDef.color.withOpacity(.65),
+            isEmpty
+                ? Icons.add_circle_outline_rounded
+                : Icons.check_circle_rounded,
+            color: isEmpty ? _kSlateE2 : fieldDef.color.withValues(alpha: .65),
             size: 18,
           ),
         ],
@@ -1462,7 +1322,6 @@ class _EditForm extends StatelessWidget {
   final VoidCallback onSave;
 
   const _EditForm({
-    super.key,
     required this.studentIdCtrl,
     required this.nameCtrl,
     required this.emailCtrl,
@@ -1513,7 +1372,7 @@ class _EditForm extends StatelessWidget {
                         gradient: _kGrad,
                         boxShadow: [
                           BoxShadow(
-                            color: _kPrimary.withOpacity(0.18),
+                            color: _kPrimary.withValues(alpha: 0.18),
                             blurRadius: 18,
                             offset: const Offset(0, 8),
                           ),
@@ -1687,22 +1546,14 @@ class _FormField extends StatefulWidget {
 
 class _FormFieldState extends State<_FormField> {
   late final FocusNode _focus = FocusNode();
-  bool _isFocused = false;
 
   @override
   void initState() {
     super.initState();
-    _focus.addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    // FIX Bug 5: guard mounted before calling setState from focus listener
-    if (mounted) setState(() => _isFocused = _focus.hasFocus);
   }
 
   @override
   void dispose() {
-    _focus.removeListener(_onFocusChange);
     _focus.dispose();
     super.dispose();
   }
@@ -1757,12 +1608,11 @@ class _GradientButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback? onTap;
-  final bool isLoading;
-  const _GradientButton(
-      {required this.label,
-      required this.icon,
-      this.onTap,
-      this.isLoading = false});
+  const _GradientButton({
+    required this.label,
+    required this.icon,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1770,7 +1620,7 @@ class _GradientButton extends StatelessWidget {
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        onTap: isLoading ? null : onTap,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
           height: 54,
@@ -1779,28 +1629,22 @@ class _GradientButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                  color: _kPrimary.withOpacity(0.32),
+                  color: _kPrimary.withValues(alpha: 0.32),
                   blurRadius: 16,
                   offset: const Offset(0, 6))
             ],
           ),
           child: Center(
-            child: isLoading
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2.5, color: Colors.white))
-                : Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(icon, color: Colors.white, size: 19),
-                    const SizedBox(width: 8),
-                    Text(label,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3)),
-                  ]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, color: Colors.white, size: 19),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3)),
+            ]),
           ),
         ),
       ),
@@ -1844,3 +1688,4 @@ class _SectionLabel extends StatelessWidget {
 // =============================================================================
 // _ChangePasswordSheet
 // =============================================================================
+

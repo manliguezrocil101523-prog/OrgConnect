@@ -28,11 +28,43 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
 
   List<Event> _events = <Event>[];
   bool _loading = true;
+  bool _showAllEvents = false;
+  final ScrollController _scrollController = ScrollController();
+  RealtimeChannel? _eventsChannel;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _eventsChannel = Supabase.instance.client
+        .channel('public-events-screen')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'events',
+        callback: (_) {
+          if (mounted) _load();
+        },
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'event_images',
+        callback: (_) {
+          if (mounted) _load();
+        },
+      )
+      ..subscribe();
+  }
+
+  @override
+  void dispose() {
+    final channel = _eventsChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -40,17 +72,16 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       final rows = await Supabase.instance.client
           .from('events')
           .select('*')
-          .order('date', ascending: true)
-          .limit(30);
+          .order('created_at', ascending: false)
+          .limit(100);
 
-      final now = DateTime.now();
       final result = <Event>[];
       for (final row in rows as List) {
         final imageUrls = row['image_urls'] is List
             ? List<String>.from(row['image_urls'] as List)
             : <String>[];
         final eventDate = DateTime.tryParse(row['date']?.toString() ?? '');
-        if (eventDate == null || !eventDate.isAfter(now)) continue;
+        if (eventDate == null) continue;
         result.add(Event(
           id: row['id'].toString(),
           title: row['title']?.toString() ?? '',
@@ -60,12 +91,15 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           orgId: row['org_id']?.toString(),
           imageUrl: row['image_url']?.toString(),
           imageUrls: imageUrls,
+          createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '')?.toLocal()
+              ?? eventDate.toLocal(),
         ));
       }
 
       if (mounted) {
         setState(() {
-          _events = result.take(8).toList();
+          result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _events = result;
           _loading = false;
         });
       }
@@ -81,7 +115,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   }
 
   void _openOrganizations() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const OrgListScreen()));
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const OrgListScreen(showBackButton: true)));
   }
 
   @override
@@ -92,9 +126,17 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         child: RefreshIndicator(
           color: _green,
           onRefresh: _load,
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
+          child: Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            trackVisibility: true,
+            interactive: true,
+            thickness: 7,
+            radius: const Radius.circular(10),
+            child: CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
               SliverToBoxAdapter(child: _hero()),
               const SliverToBoxAdapter(child: _InterestMatchCard()),
               SliverToBoxAdapter(child: _sectionHeader()),
@@ -103,18 +145,29 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                   hasScrollBody: false,
                   child: Center(child: CircularProgressIndicator(color: _green)),
                 )
-              else if (_events.isEmpty)
+              else if (_upcomingEvents.isEmpty && !_showAllEvents)
                 SliverToBoxAdapter(child: _emptyState())
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-                  sliver: SliverList.builder(
-                    itemCount: _events.length,
-                    itemBuilder: (_, index) => _eventCard(_events[index], index == 0),
+              else ...[
+                ..._buildUpcomingSlivers(),
+                if (_showAllEvents) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                      child: Text('Event history', style: const TextStyle(color: _ink, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -.3)),
+                    ),
                   ),
-                ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                    sliver: SliverList.builder(
+                      itemCount: _pastEvents.length,
+                      itemBuilder: (_, index) => _eventCard(_pastEvents[index], false),
+                    ),
+                  ),
+                ],
+              ],
               const SliverToBoxAdapter(child: SizedBox(height: 20)),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -134,14 +187,14 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         ),
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
-          BoxShadow(color: _green.withOpacity(.24), blurRadius: 28, offset: const Offset(0, 14)),
+          BoxShadow(color: _green.withValues(alpha: .24), blurRadius: 28, offset: const Offset(0, 14)),
         ],
       ),
       child: Stack(
         children: [
-          Positioned(top: -45, right: -35, child: _orb(150, Colors.white.withOpacity(.09))),
-          Positioned(top: 95, right: 35, child: _orb(52, Colors.white.withOpacity(.07))),
-          Positioned(bottom: -70, left: -45, child: _orb(145, Colors.black.withOpacity(.08))),
+          Positioned(top: -45, right: -35, child: _orb(150, Colors.white.withValues(alpha: .09))),
+          Positioned(top: 95, right: 35, child: _orb(52, Colors.white.withValues(alpha: .07))),
+          Positioned(bottom: -70, left: -45, child: _orb(145, Colors.black.withValues(alpha: .08))),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
             child: Column(
@@ -154,9 +207,9 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                       height: 48,
                       padding: const EdgeInsets.all(9),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(.13),
+                        color: Colors.white.withValues(alpha: .13),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(.22)),
+                        border: Border.all(color: Colors.white.withValues(alpha: .22)),
                       ),
                       child: Image.asset('assets/OrgConnectLogo.png', fit: BoxFit.contain),
                     ),
@@ -175,7 +228,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                       onPressed: _openLogin,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
-                        side: BorderSide(color: Colors.white.withOpacity(.5)),
+                        side: BorderSide(color: Colors.white.withValues(alpha: .5)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                         padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
                       ),
@@ -187,9 +240,9 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.12),
+                    color: Colors.white.withValues(alpha: .12),
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.white.withOpacity(.17)),
+                    border: Border.all(color: Colors.white.withValues(alpha: .17)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -214,7 +267,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                 const SizedBox(height: 11),
                 Text(
                   'Find organizations, discover what is happening next, and choose where you want to belong.',
-                  style: TextStyle(color: Colors.white.withOpacity(.84), height: 1.42, fontSize: 14),
+                  style: TextStyle(color: Colors.white.withValues(alpha: .84), height: 1.42, fontSize: 14),
                 ),
                 const SizedBox(height: 21),
                 Row(
@@ -244,6 +297,70 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: color));
   }
 
+  static const Duration _postLifetime = Duration(days: 30);
+
+  List<Event> get _upcomingEvents {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final cutoff = now.subtract(_postLifetime);
+    // Compare calendar days, not the current clock time: events dated today
+    // must remain visible even when their stored date is midnight.
+    final result = _events.where((e) {
+      final eventDay = DateTime(e.date.year, e.date.month, e.date.day);
+      return !eventDay.isBefore(today) && !e.createdAt.isBefore(cutoff);
+    }).toList();
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
+  }
+
+  List<Event> get _pastEvents {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final cutoff = now.subtract(_postLifetime);
+    final result = _events.where((e) {
+      final eventDay = DateTime(e.date.year, e.date.month, e.date.day);
+      return eventDay.isBefore(today) || e.createdAt.isBefore(cutoff);
+    }).toList();
+    result.sort((a, b) {
+      final byDate = b.date.compareTo(a.date);
+      return byDate != 0 ? byDate : b.createdAt.compareTo(a.createdAt);
+    });
+    return result;
+  }
+
+  List<Widget> _buildUpcomingSlivers() {
+    final upcoming = _upcomingEvents;
+    final visible = _showAllEvents ? upcoming : upcoming.take(5).toList();
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        sliver: SliverList.builder(
+          itemCount: visible.length,
+          itemBuilder: (_, index) => _eventCard(visible[index], index == 0),
+        ),
+      ),
+      if (!_showAllEvents && upcoming.length > 5)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+            child: Center(
+              child: OutlinedButton.icon(
+                onPressed: () => setState(() => _showAllEvents = true),
+                icon: const Icon(Icons.grid_view_rounded, size: 18),
+                label: Text('View all ${upcoming.length} events'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _greenDark,
+                  side: const BorderSide(color: _green),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
   Widget _heroAction(IconData icon, String label, {required bool filled, required VoidCallback onTap}) {
     return Material(
       color: Colors.transparent,
@@ -253,9 +370,9 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
           decoration: BoxDecoration(
-            color: filled ? Colors.white : Colors.white.withOpacity(.11),
+            color: filled ? Colors.white : Colors.white.withValues(alpha: .11),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(filled ? .1 : .2)),
+            border: Border.all(color: Colors.white.withValues(alpha: filled ? .1 : .2)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -274,9 +391,9 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 13, color: Colors.white.withOpacity(.72)),
+        Icon(icon, size: 13, color: Colors.white.withValues(alpha: .72)),
         const SizedBox(width: 5),
-        Text(label, style: TextStyle(color: Colors.white.withOpacity(.72), fontSize: 10.5, fontWeight: FontWeight.w700)),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: .72), fontSize: 10.5, fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -294,22 +411,37 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   final GlobalKey _eventsKey = GlobalKey();
 
   Widget _sectionHeader() {
+    final count = _upcomingEvents.length;
     return Padding(
       key: _eventsKey,
       padding: const EdgeInsets.fromLTRB(20, 25, 20, 13),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Upcoming events', style: TextStyle(color: _ink, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -.3)),
-                SizedBox(height: 4),
-                Text('See what organizations are planning next.', style: TextStyle(color: _muted, fontSize: 13)),
+                const Text('Upcoming events', style: TextStyle(color: _ink, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -.3)),
+                const SizedBox(height: 4),
+                Text(
+                  _showAllEvents ? 'Showing all posted events.' : 'Latest posts from campus organizations.',
+                  style: const TextStyle(color: _muted, fontSize: 13),
+                ),
               ],
             ),
           ),
+          if (_showAllEvents)
+            TextButton(
+              onPressed: () => setState(() => _showAllEvents = false),
+              child: const Text('Latest 5'),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFFE2F6ED), borderRadius: BorderRadius.circular(18)),
+              child: Text('$count', style: const TextStyle(color: _greenDark, fontWeight: FontWeight.w900, fontSize: 11.5)),
+            ),
         ],
       ),
     );
@@ -323,7 +455,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: _line),
-        boxShadow: [BoxShadow(color: _greenDark.withOpacity(.06), blurRadius: 18, offset: const Offset(0, 7))],
+        boxShadow: [BoxShadow(color: _greenDark.withValues(alpha: .06), blurRadius: 18, offset: const Offset(0, 7))],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -357,9 +489,11 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                 Text(event.title, style: const TextStyle(color: _ink, fontSize: 18, fontWeight: FontWeight.w900, height: 1.15)),
                 if (event.description.isNotEmpty) ...[
                   const SizedBox(height: 7),
-                  Text(event.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _muted, height: 1.4, fontSize: 13)),
+                  Text(event.description, maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _muted, height: 1.4, fontSize: 13)),
                 ],
-                const SizedBox(height: 13),
+                const SizedBox(height: 8),
+                EventReactionBar(eventId: event.id),
+                const SizedBox(height: 5),
                 Row(
                   children: [
                     const Icon(Icons.calendar_today_rounded, size: 16, color: _green),
@@ -370,7 +504,8 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                       onPressed: () async {
                         await AnalyticsService.instance.logEventView(event.id);
                         if (!context.mounted) return;
-                        await showEventComments(context, eventId: event.id, eventTitle: event.title);
+                        final dialogContext = context;
+                        await showEventComments(dialogContext, eventId: event.id, eventTitle: event.title);
                       },
                       icon: const Icon(Icons.forum_outlined, size: 19, color: _green),
                     ),
@@ -408,7 +543,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           ),
           borderRadius: BorderRadius.circular(26),
           border: Border.all(color: const Color(0xFFB8E3D0)),
-          boxShadow: [BoxShadow(color: _greenDark.withOpacity(.09), blurRadius: 20, offset: const Offset(0, 8))],
+          boxShadow: [BoxShadow(color: _greenDark.withValues(alpha: .09), blurRadius: 20, offset: const Offset(0, 8))],
         ),
         child: Stack(
           children: [
@@ -423,21 +558,21 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(colors: [_green, _greenBright]),
                       borderRadius: BorderRadius.circular(22),
-                      boxShadow: [BoxShadow(color: _green.withOpacity(.18), blurRadius: 15, offset: const Offset(0, 7))],
+                      boxShadow: [BoxShadow(color: _green.withValues(alpha: .18), blurRadius: 15, offset: const Offset(0, 7))],
                     ),
                     child: const Icon(Icons.event_available_rounded, color: Colors.white, size: 31),
                   ),
                   const SizedBox(height: 15),
-                  const Text('Your campus calendar starts here', textAlign: TextAlign.center, style: TextStyle(color: _ink, fontWeight: FontWeight.w900, fontSize: 18, height: 1.15)),
+                  const Text('No upcoming events', textAlign: TextAlign.center, style: TextStyle(color: _ink, fontWeight: FontWeight.w900, fontSize: 18, height: 1.15)),
                   const SizedBox(height: 7),
-                  const Text('No public events have been posted yet. Explore campus organizations while you wait.', textAlign: TextAlign.center, style: TextStyle(color: _muted, height: 1.45, fontSize: 13)),
+                  const Text('There are no upcoming events right now. Please check back later.', textAlign: TextAlign.center, style: TextStyle(color: _muted, height: 1.45, fontSize: 13)),
                   const SizedBox(height: 18),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(.45),
+                      color: Colors.white.withValues(alpha: .45),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withOpacity(.65)),
+                      border: Border.all(color: Colors.white.withValues(alpha: .65)),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -823,7 +958,7 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF0F8A61).withOpacity(.14),
+              color: const Color(0xFF0F8A61).withValues(alpha: .14),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -840,9 +975,9 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(.12),
+                      color: Colors.white.withValues(alpha: .12),
                       borderRadius: BorderRadius.circular(13),
-                      border: Border.all(color: Colors.white.withOpacity(.16)),
+                      border: Border.all(color: Colors.white.withValues(alpha: .16)),
                     ),
                     child: const Icon(Icons.psychology_alt_rounded, color: Colors.white, size: 20),
                   ),
@@ -860,7 +995,7 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                   if (_answers != null)
                     IconButton(
                       onPressed: _startQuiz,
-                      icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+                      icon: const Icon(Icons.replay_rounded, color: Colors.white70),
                       tooltip: 'Retake quiz',
                     ),
                 ],
@@ -873,7 +1008,7 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                     Expanded(
                       child: Text(
                         'Your answers create an interest profile and surface organizations whose purpose and activities are closest to what you chose.',
-                        style: TextStyle(color: Colors.white.withOpacity(.88), fontSize: 12.5, height: 1.4),
+                        style: TextStyle(color: Colors.white.withValues(alpha: .88), fontSize: 12.5, height: 1.4),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -910,9 +1045,9 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                           width: 190,
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(.12),
+                            color: Colors.white.withValues(alpha: .12),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withOpacity(.18)),
+                            border: Border.all(color: Colors.white.withValues(alpha: .18)),
                           ),
                           child: Row(
                             children: [
@@ -956,4 +1091,5 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
 
   Widget _smallLogo() => Container(color: const Color(0xFFE4F7EF), child: const Icon(Icons.groups_rounded, color: Color(0xFF0F8A61), size: 22));
 }
+
 
