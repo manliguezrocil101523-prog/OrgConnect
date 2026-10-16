@@ -349,9 +349,8 @@ class OrgMediaItem {
         content: raw['content']?.toString() ?? '',
         caption: legacyCaption,
         title: rawTitle ?? '',
-        description: raw['description']?.toString() ??
-            raw['details']?.toString() ??
-            '',
+        description:
+            raw['description']?.toString() ?? raw['details']?.toString() ?? '',
       );
     }
     return const OrgMediaItem(type: 'text', content: '');
@@ -689,7 +688,9 @@ class AppState extends ChangeNotifier {
     // Tables used by screens that query Supabase directly. Notify all open
     // AppState listeners on changes so shared widgets and dashboards rebuild;
     // screens with private query state should also reload in their own channel.
-    subscribe('org_chat_messages', () async { notifyListeners(); });
+    subscribe('org_chat_messages', () async {
+      notifyListeners();
+    });
   }
 
   // ── Status helper ─────────────────────────────────────────────────────────
@@ -730,7 +731,8 @@ class AppState extends ChangeNotifier {
       // officer is also a member/student and must be able to see their own
       // applications to other organizations. Fetch both scopes and merge by
       // application id so one screen never hides a valid application.
-      if (currentOfficerOrgId != null && currentOfficerOrgId!.trim().isNotEmpty) {
+      if (currentOfficerOrgId != null &&
+          currentOfficerOrgId!.trim().isNotEmpty) {
         final officerRows = await client
             .from('applications')
             .select('*')
@@ -814,21 +816,26 @@ class AppState extends ChangeNotifier {
           final visibleRows = await client.from('applications').select('*');
           final normalizedName = currentStudent!.name.trim().toLowerCase();
           final normalizedEmail = currentStudent!.email.trim().toLowerCase();
-          final normalizedStudentId = currentStudent!.studentId.trim().toLowerCase();
+          final normalizedStudentId =
+              currentStudent!.studentId.trim().toLowerCase();
           for (final row in (visibleRows as List)) {
             final map = Map<String, dynamic>.from(row);
             final rowName = map['name']?.toString().trim().toLowerCase() ?? '';
-            final rowEmail = map['email']?.toString().trim().toLowerCase() ?? '';
-            final rowStudentId = map['student_id']?.toString().trim().toLowerCase() ?? '';
+            final rowEmail =
+                map['email']?.toString().trim().toLowerCase() ?? '';
+            final rowStudentId =
+                map['student_id']?.toString().trim().toLowerCase() ?? '';
             if ((normalizedEmail.isNotEmpty && rowEmail == normalizedEmail) ||
-                (normalizedStudentId.isNotEmpty && rowStudentId == normalizedStudentId) ||
+                (normalizedStudentId.isNotEmpty &&
+                    rowStudentId == normalizedStudentId) ||
                 (normalizedName.isNotEmpty && rowName == normalizedName)) {
               final id = map['id']?.toString() ?? '';
               if (id.isNotEmpty) byId[id] = map;
             }
           }
         } catch (e) {
-          debugPrint('Could not use visible application compatibility fallback: $e');
+          debugPrint(
+              'Could not use visible application compatibility fallback: $e');
         }
       }
 
@@ -840,9 +847,7 @@ class AppState extends ChangeNotifier {
 
       applications
         ..clear()
-        ..addAll(byId.values
-            .map(_applicationFromRow)
-            .toList()
+        ..addAll(byId.values.map(_applicationFromRow).toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
 
       await _syncCurrentStudentMemberships();
@@ -879,7 +884,9 @@ class AppState extends ChangeNotifier {
       throw Exception('User not logged in');
     }
 
-    final found = orgId == null || orgId.isEmpty ? _findOrgByName(orgName) : _findOrgById(orgId);
+    final found = orgId == null || orgId.isEmpty
+        ? _findOrgByName(orgName)
+        : _findOrgById(orgId);
     final app = Application(
       id: _genId(),
       orgName: orgName,
@@ -927,7 +934,8 @@ class AppState extends ChangeNotifier {
         'profile_pic_url': app.profilePicUrl,
         'decline_reason': app.declineReason,
       });
-      debugPrint('SUCCESS: Application inserted with user_id: ${currentUser.id}');
+      debugPrint(
+          'SUCCESS: Application inserted with user_id: ${currentUser.id}');
     } catch (e) {
       debugPrint('Error persisting application to Supabase: $e');
       // Do not report a successful submission when the database rejected it.
@@ -944,12 +952,26 @@ class AppState extends ChangeNotifier {
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
     final app = applications[idx];
-    applications[idx] = app.copyWith(status: ApplicationStatus.declined, declineReason: reason);
+    applications[idx] =
+        app.copyWith(status: ApplicationStatus.declined, declineReason: reason);
     final client = supabase.Supabase.instance.client;
     try {
-      await client.from('applications').update({'status': 'declined', 'decline_reason': reason, 'updated_at': DateTime.now().toIso8601String()}).eq('id', applicationId);
-      await client.from('notifications').insert({'id': _genId(), 'title': 'Application update', 'message': 'We are sorry, your application to ${app.orgName} was not approved. Reason: $reason', 'student_id': app.userId ?? app.studentId, 'org_id': app.orgId});
-    } catch (e) { debugPrint('Error declining application: $e'); }
+      await client.from('applications').update({
+        'status': 'declined',
+        'decline_reason': reason,
+        'updated_at': DateTime.now().toIso8601String()
+      }).eq('id', applicationId);
+      await client.from('notifications').insert({
+        'id': _genId(),
+        'title': 'Application update',
+        'message':
+            'We are sorry, your application to ${app.orgName} was not approved. Reason: $reason',
+        'student_id': app.userId ?? app.studentId,
+        'org_id': app.orgId
+      });
+    } catch (e) {
+      debugPrint('Error declining application: $e');
+    }
     notifyListeners();
     return true;
   }
@@ -994,7 +1016,8 @@ class AppState extends ChangeNotifier {
             .maybeSingle();
         profileId = profile?['id']?.toString();
       }
-      if ((profileId == null || profileId.isEmpty) && app.studentId.trim().isNotEmpty) {
+      if ((profileId == null || profileId.isEmpty) &&
+          app.studentId.trim().isNotEmpty) {
         final profile = await client
             .from('profiles')
             .select('id')
@@ -1002,7 +1025,8 @@ class AppState extends ChangeNotifier {
             .maybeSingle();
         profileId = profile?['id']?.toString();
       }
-      if ((profileId == null || profileId.isEmpty) && app.email.trim().isNotEmpty) {
+      if ((profileId == null || profileId.isEmpty) &&
+          app.email.trim().isNotEmpty) {
         final profile = await client
             .from('profiles')
             .select('id')
@@ -1038,14 +1062,12 @@ class AppState extends ChangeNotifier {
       if (remoteStatus == 'interviewed' && remoteInterviewAt != null) {
         await client
             .from('applications')
-            .update({'status': 'for_approval'})
-            .eq('id', applicationId);
+            .update({'status': 'for_approval'}).eq('id', applicationId);
       }
 
       await client
           .from('applications')
-          .update({'status': 'approved'})
-          .eq('id', applicationId);
+          .update({'status': 'approved'}).eq('id', applicationId);
     } catch (e) {
       debugPrint('Error updating application status: $e');
       return false;
@@ -1228,14 +1250,18 @@ class AppState extends ChangeNotifier {
 
     final newId = _genId();
     try {
-      final response = await client.from('members').insert({
-        'id': newId,
-        'name': name,
-        'position': position,
-        'org_name': orgName,
-        'org_id': resolvedOrgId,
-        'profile_id': profileId,
-      }).select().single();
+      final response = await client
+          .from('members')
+          .insert({
+            'id': newId,
+            'name': name,
+            'position': position,
+            'org_name': orgName,
+            'org_id': resolvedOrgId,
+            'profile_id': profileId,
+          })
+          .select()
+          .single();
 
       final member = Member(
         id: response['id']?.toString() ?? newId,
@@ -1292,7 +1318,8 @@ class AppState extends ChangeNotifier {
           .maybeSingle();
 
       if (response == null) {
-        lastMemberUpdateError = 'No membership row was updated. Check the selected organization and database permissions.';
+        lastMemberUpdateError =
+            'No membership row was updated. Check the selected organization and database permissions.';
         debugPrint('Member update returned no row for id ${member.id}.');
         return false;
       }
@@ -1361,9 +1388,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchMembers({String? organizationId}) async {
     final client = supabase.Supabase.instance.client;
-    final requestedOrgId = (organizationId != null && organizationId.trim().isNotEmpty)
-        ? organizationId.trim()
-        : currentOfficerOrgId;
+    final requestedOrgId =
+        (organizationId != null && organizationId.trim().isNotEmpty)
+            ? organizationId.trim()
+            : currentOfficerOrgId;
     try {
       // Use the exact organization membership key. The database can contain
       // valid members even when their profile role is still "student".
@@ -1407,7 +1435,8 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       // Preserve the last known cache if the read fails; do not silently clear it.
-      debugPrint('Error fetching members from Supabase for org $requestedOrgId: $e');
+      debugPrint(
+          'Error fetching members from Supabase for org $requestedOrgId: $e');
     }
   }
 
@@ -1437,8 +1466,10 @@ class AppState extends ChangeNotifier {
           imageUrls = [singleUrl];
         }
 
-        final createdAt = DateTime.tryParse(item['created_at']?.toString() ?? '')?.toLocal()
-            ?? DateTime.parse(item['date']).toLocal();
+        final createdAt =
+            DateTime.tryParse(item['created_at']?.toString() ?? '')
+                    ?.toLocal() ??
+                DateTime.parse(item['date']).toLocal();
 
         events.add(Event(
           id: item['id'],
@@ -1579,7 +1610,9 @@ class AppState extends ChangeNotifier {
         attachments = raw.map((e) => e.toString()).toList();
       } else if (raw is String && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
-        if (decoded is List) attachments = decoded.map((e) => e.toString()).toList();
+        if (decoded is List) {
+          attachments = decoded.map((e) => e.toString()).toList();
+        }
       }
     } catch (_) {}
 
@@ -1596,7 +1629,8 @@ class AppState extends ChangeNotifier {
       skills: item['skills']?.toString() ?? '',
       attachments: attachments,
       status: _parseStatus(item['status']?.toString()),
-      createdAt: DateTime.tryParse(item['created_at']?.toString() ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(item['created_at']?.toString() ?? '') ??
+          DateTime.now(),
       interviewAt: item['interview_at'] == null
           ? null
           : DateTime.tryParse(item['interview_at'].toString()),
@@ -1627,7 +1661,8 @@ class AppState extends ChangeNotifier {
       'admin / cso',
       'final pictures, venue, purpose, and time details',
     ];
-    return hiddenPhrases.any((phrase) => t.contains(phrase) || m.contains(phrase)) ||
+    return hiddenPhrases
+            .any((phrase) => t.contains(phrase) || m.contains(phrase)) ||
         (t == 'new event' && m.contains('approved and published'));
   }
 
@@ -1665,7 +1700,9 @@ class AppState extends ChangeNotifier {
             if (orgId != null && orgId.isNotEmpty) memberOrgIds.add(orgId);
             if (orgName.isNotEmpty) {
               memberOrgNames.add(orgName.toLowerCase());
-              if (orgId != null && orgId.isNotEmpty) memberOrganizations[orgId] = orgName;
+              if (orgId != null && orgId.isNotEmpty) {
+                memberOrganizations[orgId] = orgName;
+              }
             }
           }
         } catch (_) {}
@@ -1685,7 +1722,9 @@ class AppState extends ChangeNotifier {
               if (orgId != null && orgId.isNotEmpty) memberOrgIds.add(orgId);
               if (orgName.isNotEmpty) {
                 memberOrgNames.add(orgName.toLowerCase());
-                if (orgId != null && orgId.isNotEmpty) memberOrganizations[orgId] = orgName;
+                if (orgId != null && orgId.isNotEmpty) {
+                  memberOrganizations[orgId] = orgName;
+                }
               }
             }
           } catch (_) {}
@@ -1698,9 +1737,13 @@ class AppState extends ChangeNotifier {
       // application for from reappearing in the UI.
       final applicationOrgIds = <String>{};
       final applicationOrgNames = <String>{};
-      Future<void> collectStudentApplications(String column, String value) async {
+      Future<void> collectStudentApplications(
+          String column, String value) async {
         try {
-          final rows = await client.from('applications').select('org_id,org_name').eq(column, value);
+          final rows = await client
+              .from('applications')
+              .select('org_id,org_name')
+              .eq(column, value);
           for (final row in (rows as List)) {
             final id = row['org_id']?.toString().trim();
             final name = row['org_name']?.toString().trim().toLowerCase() ?? '';
@@ -1709,6 +1752,7 @@ class AppState extends ChangeNotifier {
           }
         } catch (_) {}
       }
+
       if (userId != null && userId.isNotEmpty) {
         await collectStudentApplications('user_id', userId);
       }
@@ -1789,9 +1833,11 @@ class AppState extends ChangeNotifier {
           // which a real application currently exists. Membership history,
           // cached state, and old notification rows cannot resurrect an old
           // application in the Notifications screen.
-          if (belongsToCurrentStudent && orgId != null &&
+          if (belongsToCurrentStudent &&
+              orgId != null &&
               !applicationOrgIds.contains(orgId)) {
-            final notificationOrgName = memberOrganizations[orgId]?.toLowerCase() ?? '';
+            final notificationOrgName =
+                memberOrganizations[orgId]?.toLowerCase() ?? '';
             if (notificationOrgName.isEmpty ||
                 !applicationOrgNames.contains(notificationOrgName)) {
               continue;
@@ -2169,14 +2215,12 @@ class AppState extends ChangeNotifier {
     try {
       await supabase.Supabase.instance.client
           .from('profiles')
-          .update({'joined_org_ids': nextIds})
-          .eq('id', id);
+          .update({'joined_org_ids': nextIds}).eq('id', id);
     } catch (e) {
       try {
         await supabase.Supabase.instance.client
             .from('profiles')
-            .update({'joined_org_ids': jsonEncode(nextIds)})
-            .eq('id', id);
+            .update({'joined_org_ids': jsonEncode(nextIds)}).eq('id', id);
       } catch (inner) {
         debugPrint('Error syncing joined_org_ids: $inner');
       }
@@ -2241,7 +2285,7 @@ class AppState extends ChangeNotifier {
             contact: response['contact'] ?? '',
             facebook: response['facebook'] ?? '',
             avatarUrl: response['avatar_url'] ?? '',
-            joinedOrgIds: _parseJoinedOrgIds(response['joined_org_ids']) ,
+            joinedOrgIds: _parseJoinedOrgIds(response['joined_org_ids']),
           );
 
           // Update SharedPreferences with the latest data
@@ -2278,12 +2322,16 @@ class AppState extends ChangeNotifier {
       if (raw is String && raw.trim().isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
-          return decoded.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+          return decoded
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList();
         }
         // PostgreSQL text[] can sometimes arrive in {id,id} form.
         final trimmed = raw.trim();
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-          return trimmed.substring(1, trimmed.length - 1)
+          return trimmed
+              .substring(1, trimmed.length - 1)
               .split(',')
               .map((e) => e.trim().replaceAll('"', ''))
               .where((e) => e.isNotEmpty)
@@ -2294,7 +2342,8 @@ class AppState extends ChangeNotifier {
     return [];
   }
 
-  Future<void> syncCurrentStudentMemberships() => _syncCurrentStudentMemberships();
+  Future<void> syncCurrentStudentMemberships() =>
+      _syncCurrentStudentMemberships();
 
   Future<void> _syncCurrentStudentMemberships() async {
     final student = currentStudent;
@@ -2323,7 +2372,8 @@ class AppState extends ChangeNotifier {
     // updated.
     Future<void> collectApproved(String column, String value) async {
       try {
-        final rows = await client.from('applications').select('*').eq(column, value);
+        final rows =
+            await client.from('applications').select('*').eq(column, value);
         for (final row in (rows as List)) {
           final status = row['status']?.toString().trim().toLowerCase();
           if (status != 'approved' && status != 'accepted') continue;
@@ -2358,22 +2408,25 @@ class AppState extends ChangeNotifier {
     final changed = nextIds.length != existing.length ||
         nextIds.asMap().entries.any((e) => e.value != existing[e.key]);
 
-    if (changed) {
-      currentStudent = student.copyWith(joinedOrgIds: nextIds);
-      await _saveStudentProfileLocalOnly();
-    }
+    if (!changed) return; // nothing to write -> no realtime echo
+
+    currentStudent = student.copyWith(joinedOrgIds: nextIds);
+    await _saveStudentProfileLocalOnly();
 
     try {
-      await client.from('profiles').update({'joined_org_ids': nextIds}).eq('id', student.id);
+      await client
+          .from('profiles')
+          .update({'joined_org_ids': nextIds}).eq('id', student.id);
     } catch (e) {
       try {
-        await client.from('profiles').update({'joined_org_ids': jsonEncode(nextIds)}).eq('id', student.id);
+        await client.from('profiles').update(
+            {'joined_org_ids': jsonEncode(nextIds)}).eq('id', student.id);
       } catch (inner) {
         debugPrint('Error saving joined_org_ids: $inner');
       }
     }
 
-    if (changed) notifyListeners();
+    notifyListeners();
   }
 
   Future<void> _saveStudentProfile() async {
@@ -2441,4 +2494,3 @@ class AppState extends ChangeNotifier {
     }
   }
 }
-

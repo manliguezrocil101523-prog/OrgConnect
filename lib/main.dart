@@ -10,10 +10,20 @@ import 'screens/Student_Role/student_dashboard_events.dart';
 import 'screens/auth/unified_login_page.dart';
 import 'screens/auth/auth_gate.dart';
 import 'screens/auth/forgot_password_page.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // ✅ ADDITION 1 — navigator key declared at top level
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Applies one font (Plus Jakarta Sans) to a theme, including AppBar titles.
+ThemeData _withFont(ThemeData base) => base.copyWith(
+      textTheme: GoogleFonts.plusJakartaSansTextTheme(base.textTheme),
+      appBarTheme: base.appBarTheme.copyWith(
+        titleTextStyle: GoogleFonts.plusJakartaSans(
+          textStyle: base.appBarTheme.titleTextStyle,
+        ),
+      ),
+    );
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -75,7 +85,7 @@ class _MyAppState extends State<MyApp> {
 
       themeMode: AppState.instance.isDark ? ThemeMode.dark : ThemeMode.light,
 
-      theme: ThemeData(
+      theme: _withFont(ThemeData(
         brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF128058)),
         useMaterial3: true,
@@ -96,11 +106,12 @@ class _MyAppState extends State<MyApp> {
           thumbColor: WidgetStatePropertyAll(Color(0xFF6BBF98)),
           trackColor: WidgetStatePropertyAll(Color(0xFFE3F1EA)),
         ),
-      ),
+      )),
 
-      darkTheme: ThemeData(
+      darkTheme: _withFont(ThemeData(
         brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF19A974), brightness: Brightness.dark),
+        colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF19A974), brightness: Brightness.dark),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF12382B),
@@ -119,7 +130,7 @@ class _MyAppState extends State<MyApp> {
           thumbColor: WidgetStatePropertyAll(Color(0xFF1B6D4D)),
           trackColor: WidgetStatePropertyAll(Color(0xFF143326)),
         ),
-      ),
+      )),
 
       initialRoute: '/',
       routes: {
@@ -135,4 +146,3 @@ class _MyAppState extends State<MyApp> {
     );
   }
 }
-

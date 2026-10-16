@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_state.dart';
 import '../Student_Role/student_dashboard_screen.dart';
@@ -9,12 +11,22 @@ import '../Admin_Role/admin_dashboard_screen.dart';
 import '../Adviser_Role/adviser_dashboard_screen.dart';
 import '../auth/forgot_password_page.dart';
 
-const _kPrimaryBlue = Color(0xFF128058);
-const _kBorderColor = Color(0xFFDCEBE4);
-const _kHintColor = Color(0xFF6B8178);
-const _kTextColor = Color(0xFF17352A);
-const _kBackground = Color(0xFFF1F8F4);
-const _kError = Color(0xFFDC2626);
+const _green = Color(0xFF1F7A45);
+const _ink = Color(0xFF17352A);
+const _muted = Color(0xFF6B7280);
+const _line = Color(0xFFDCEBE4);
+const _tint = Color(0xFFF1F8F4);
+const _error = Color(0xFFDC2626);
+const _logo = 'assets/icon/login_logo.png';
+
+/// One font family (Plus Jakarta Sans) used everywhere on this screen.
+TextStyle _t(double size, {FontWeight w = FontWeight.w500, Color c = _ink}) =>
+    GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: w, color: c);
+
+OutlineInputBorder _border(Color c, [double w = 1.2]) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: c, width: w),
+    );
 
 class UnifiedLoginPage extends StatefulWidget {
   const UnifiedLoginPage({super.key});
@@ -23,606 +35,401 @@ class UnifiedLoginPage extends StatefulWidget {
   State<UnifiedLoginPage> createState() => _UnifiedLoginPageState();
 }
 
-class _UnifiedLoginPageState extends State<UnifiedLoginPage>
-    with SingleTickerProviderStateMixin {
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-
-  bool _isFormValid = false;
-  bool _isLoading = false;
+class _UnifiedLoginPageState extends State<UnifiedLoginPage> {
+  final _email = TextEditingController();
+  final _pass = TextEditingController();
+  bool _loading = false;
   bool _obscure = true;
-
-  late final AnimationController _animationController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 600),
-  )..forward();
-
-  late final Animation<double> _fadeAnimation = CurvedAnimation(
-    parent: _animationController,
-    curve: Curves.easeOut,
-  );
-
-  late final Animation<Offset> _slideAnimation = Tween<Offset>(
-    begin: const Offset(0, 0.04),
-    end: Offset.zero,
-  ).animate(CurvedAnimation(
-    parent: _animationController,
-    curve: Curves.easeOut,
-  ));
-
-  @override
-  void initState() {
-    super.initState();
-    _emailCtrl.addListener(_validate);
-    _passCtrl.addListener(_validate);
-  }
 
   @override
   void dispose() {
-    _animationController.dispose();
-    _emailCtrl
-      ..removeListener(_validate)
-      ..dispose();
-    _passCtrl
-      ..removeListener(_validate)
-      ..dispose();
+    _email.dispose();
+    _pass.dispose();
     super.dispose();
   }
 
-  void _validate() {
-    final valid =
-        _emailCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
-    if (valid != _isFormValid) setState(() => _isFormValid = valid);
+  // ───────────────────────── LOGIN LOGIC ─────────────────────────
+
+  Future<void> _reject(String msg) async {
+    await Supabase.instance.client.auth.signOut();
+    _snack(msg, error: true);
   }
 
   Future<void> _signIn() async {
-    if (!_isFormValid || _isLoading) return;
-    setState(() => _isLoading = true);
+    final email = _email.text.trim();
+    final password = _pass.text.trim();
+    if (email.isEmpty || password.isEmpty || _loading) return;
+    setState(() => _loading = true);
 
-    final email = _emailCtrl.text.trim();
-    final password = _passCtrl.text.trim();
+    final db = Supabase.instance.client;
+    final app = AppState.instance;
 
     try {
-      final res = await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-
+      final res =
+          await db.auth.signInWithPassword(email: email, password: password);
       if (!mounted) return;
 
-      if (res.user == null) {
-        _snack('Invalid email or password.', isError: true);
-        return;
+      final user = res.user;
+      if (user == null) return _reject('Invalid email or password.');
+
+      final p = await db.from('profiles').select().eq('id', user.id).single();
+      if (p['active'] == false) {
+        return _reject('Your account has been deactivated. Contact admin.');
       }
 
-      final profileData = await Supabase.instance.client
-          .from('profiles')
-          .select()
-          .eq('id', res.user!.id)
-          .single();
-
-      final isActive = profileData['active'] ?? true;
-
-      if (!isActive) {
-        await Supabase.instance.client.auth.signOut();
-        _snack('Your account has been deactivated. Contact admin.',
-            isError: true);
-        return;
-      }
-
-      final role = profileData['role']?.toString() ?? 'student';
-
+      final role = p['role']?.toString() ?? 'student';
+      final orgId = p['assigned_org_id']?.toString() ?? '';
       if (!mounted) return;
 
+      final Widget page;
       if (role == 'admin') {
-        AppState.instance.setRole(UserRole.admin);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AdminDashboard()),
-        );
-      } else if (role == 'adviser') {
-        final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
-        if (assignedOrgId.isEmpty) {
-          await Supabase.instance.client.auth.signOut();
-          _snack('You have not been assigned to an organization yet.', isError: true);
-          return;
+        app.setRole(UserRole.admin);
+        page = const AdminDashboard();
+      } else if (role == 'adviser' || role == 'officer') {
+        if (orgId.isEmpty) {
+          return _reject('You have not been assigned to an organization yet.');
         }
-        final orgs = AppState.instance.organizations;
-        final orgIndex = orgs.indexWhere((o) => o.id == assignedOrgId);
-        if (orgIndex == -1) {
-          await Supabase.instance.client.auth.signOut();
-          _snack('Assigned organization not found. Contact admin.', isError: true);
-          return;
+        final orgs = app.organizations;
+        final i = orgs.indexWhere((o) => o.id == orgId);
+        if (i == -1) {
+          return _reject('Assigned organization not found. Contact admin.');
         }
-        AppState.instance.setRole(UserRole.adviser);
-        AppState.instance.setCurrentOfficerOrgId(assignedOrgId);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => AdviserDashboard(orgId: assignedOrgId, orgName: orgs[orgIndex].name)),
-        );
-      } else if (role == 'officer') {
-        final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
-        // Officer accounts are individual accounts. Only the President, Vice
-        // President, or Secretary of the assigned organization may enter the
-        // officer dashboard. Other members cannot use an old/shared officer
-        // account to gain officer access.
-        final officerMembership = await Supabase.instance.client
-            .from('members')
-            .select('position')
-            .eq('org_id', assignedOrgId)
-            .eq('profile_id', res.user!.id)
-            .maybeSingle();
-        final officerPosition = officerMembership?['position']?.toString().toLowerCase().trim() ?? '';
-        if (!{'president', 'vice president', 'secretary'}.contains(officerPosition)) {
-          await Supabase.instance.client.auth.signOut();
-          _snack('Officer access is limited to the President, Vice President, or Secretary account.', isError: true);
-          return;
+        final org = orgs[i];
+
+        if (role == 'officer') {
+          // Only the President, Vice President, or Secretary may enter.
+          final m = await db
+              .from('members')
+              .select('position')
+              .eq('org_id', orgId)
+              .eq('profile_id', user.id)
+              .maybeSingle();
+          final pos = m?['position']?.toString().toLowerCase().trim() ?? '';
+          if (!{'president', 'vice president', 'secretary'}.contains(pos)) {
+            return _reject(
+                'Officer access is limited to the President, Vice President, or Secretary account.');
+          }
+          app.setRole(UserRole.officer);
+          app.setCurrentOfficerOrgId(orgId);
+          await app.fetchApplications();
+          await app.fetchMembers();
+          page = BaseOfficerDashboard(orgId: org.id, orgName: org.name);
+        } else {
+          app.setRole(UserRole.adviser);
+          app.setCurrentOfficerOrgId(orgId);
+          page = AdviserDashboard(orgId: orgId, orgName: org.name);
         }
-
-        if (assignedOrgId.isEmpty) {
-          await Supabase.instance.client.auth.signOut();
-          _snack('You have not been assigned to an organization yet.',
-              isError: true);
-          return;
-        }
-
-        final orgs = AppState.instance.organizations;
-        final orgIndex = orgs.indexWhere((o) => o.id == assignedOrgId);
-
-        if (orgIndex == -1) {
-          await Supabase.instance.client.auth.signOut();
-          _snack('Assigned organization not found. Contact admin.',
-              isError: true);
-          return;
-        }
-
-        AppState.instance.setRole(UserRole.officer);
-        AppState.instance.setCurrentOfficerOrgId(assignedOrgId);
-
-        await AppState.instance.fetchApplications();
-        await AppState.instance.fetchMembers();
-
-        if (!mounted) return;
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => BaseOfficerDashboard(
-              orgId: orgs[orgIndex].id,
-              orgName: orgs[orgIndex].name,
-            ),
-          ),
-        );
       } else {
-        final rawJoined = profileData['joined_org_ids'];
-        final joinedOrgIds = switch (rawJoined) {
+        final raw = p['joined_org_ids'];
+        final joined = switch (raw) {
           null => <String>[],
           String s => List<String>.from(jsonDecode(s) as List),
           List l => List<String>.from(l),
           _ => <String>[],
         };
-
-        final profile = StudentProfile(
-          id: profileData['id'],
-          name: profileData['name'] ?? '',
-          email: profileData['email'] ?? '',
-          studentId: profileData['student_id'] ?? '',
-          contact: profileData['contact'] ?? '',
-          facebook: profileData['facebook'] ?? '',
-          avatarUrl: profileData['avatar_url'] ?? '',
-          joinedOrgIds: joinedOrgIds,
-        );
-
-        AppState.instance.setRole(UserRole.student);
-        await AppState.instance.setStudentProfile(profile);
-        await AppState.instance.fetchNotifications();
-        if (!mounted) return;
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
-        );
+        app.setRole(UserRole.student);
+        await app.setStudentProfile(StudentProfile(
+          id: p['id'],
+          name: p['name'] ?? '',
+          email: p['email'] ?? '',
+          studentId: p['student_id'] ?? '',
+          contact: p['contact'] ?? '',
+          facebook: p['facebook'] ?? '',
+          avatarUrl: p['avatar_url'] ?? '',
+          joinedOrgIds: joined,
+        ));
+        await app.fetchNotifications();
+        page = const StudentDashboardScreen();
       }
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (_) => page));
     } on AuthException catch (e) {
       if (e.message.toLowerCase().contains('email not confirmed')) {
-        _showEmailConfirmationDialog(email);
+        _showConfirmDialog(email);
       } else {
-        _snack(e.message, isError: true);
+        _snack(e.message, error: true);
       }
-    } catch (e) {
-      _snack('Something went wrong. Please try again.', isError: true);
+    } catch (_) {
+      _snack('Something went wrong. Please try again.', error: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _snack(String msg, {bool isError = false}) {
+  void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? _kError : const Color(0xFF059669),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: _t(13.5, c: Colors.white)),
+      backgroundColor: error ? _error : const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
   }
 
-  void _showEmailConfirmationDialog(String email) {
+  void _showConfirmDialog(String email) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Text('Email Not Confirmed'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Email not confirmed', style: _t(18, w: FontWeight.w700)),
         content: Text(
           'Your email ($email) has not been confirmed yet. '
-          'Please check your inbox for a verification link.',
+          'Check your inbox for a verification link.',
+          style: _t(14, c: _muted),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
-          ),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK')),
           TextButton(
             onPressed: () async {
               try {
-                await Supabase.instance.client.auth.resend(
-                  type: OtpType.signup,
-                  email: email,
-                );
+                await Supabase.instance.client.auth
+                    .resend(type: OtpType.signup, email: email);
                 if (!ctx.mounted) return;
                 _snack('Confirmation email sent!');
                 Navigator.of(ctx).pop();
               } catch (e) {
-                _snack('Failed to resend: $e', isError: true);
+                _snack('Failed to resend: $e', error: true);
               }
             },
-            child: const Text('Resend Email'),
+            child: const Text('Resend email'),
           ),
         ],
       ),
     );
   }
 
-  void _showForgotPasswordDialog() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
-    );
-  }
+  // ───────────────────────── UI ─────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final screenW = mq.size.width;
-    final screenH = mq.size.height;
-
-    // ── Unified scale: 390 pt is baseline, clamp for very small/large screens
-    final scale = (screenW / 390).clamp(0.80, 1.20);
-
-    // ── Adaptive spacing – proportional to screen height, tightly clamped
-    final hPad = (screenW * 0.055).clamp(14.0, 28.0);
-
-    // Logo takes up a fixed proportion of height; kept smaller to reduce total height
-    final logoSize = (screenH * 0.16).clamp(110.0, 180.0);
-
-    // Field gap and section gap shrink on short screens
-    final fieldSpacing = (screenH * 0.018).clamp(10.0, 18.0);
-    final sectionSpacing = (screenH * 0.015).clamp(8.0, 16.0);
-
-    // Button height: consistent, not bloated
-    final btnHeight = (screenH * 0.064).clamp(48.0, 58.0);
-
-    // Card padding – horizontal = generous, vertical = compact
-    final cardHPad = (screenW * 0.055).clamp(14.0, 26.0);
-    final cardVPad = (screenH * 0.030).clamp(20.0, 32.0);
-
-    // Border radius scales slightly with screen width
-    final cardRadius = (screenW * 0.075).clamp(20.0, 32.0);
-
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) {},
       child: Scaffold(
-        // Resize when keyboard appears so content doesn't overflow
-        resizeToAvoidBottomInset: true,
-        backgroundColor: _kBackground,
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.symmetric(
-                horizontal: hPad,
-                // Top/bottom: shrinks proportionally on short screens
-                vertical: (screenH * 0.025).clamp(12.0, 28.0),
-              ),
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: cardHPad,
-                        vertical: cardVPad,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(cardRadius),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 20,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min, // ← shrink-wraps content
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // ── LOGO ──────────────────────────────────────────
-                          // Fixed height from the responsive formula above;
-                          // no Transform.translate hacks that cause overflow.
-                          Image.asset(
-                            'assets/OrgConnectLogo.png',
-                            height: logoSize,
-                            fit: BoxFit.contain,
-                          ),
-
-                          SizedBox(height: sectionSpacing * 0.5),
-
-                          // ── TITLE ─────────────────────────────────────────
-                          Text(
-                            'Welcome!',
-                            style: TextStyle(
-                              fontSize: (30 * scale).clamp(24.0, 34.0),
-                              fontWeight: FontWeight.w800,
-                              color: _kTextColor,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-
-                          SizedBox(height: (6 * scale).clamp(4.0, 8.0)),
-
-                          Text(
-                            'Log in to your existing account',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: (14 * scale).clamp(11.0, 15.0),
-                              color: const Color(0xFF6B7280),
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-
-                          SizedBox(height: sectionSpacing),
-
-                          // ── EMAIL ─────────────────────────────────────────
-                          _ModernField(
-                            controller: _emailCtrl,
-                            hint: 'Email',
-                            icon: Icons.person_outline_rounded,
-                            keyboardType: TextInputType.emailAddress,
-                            scale: scale,
-                          ),
-
-                          SizedBox(height: fieldSpacing),
-
-                          // ── PASSWORD ──────────────────────────────────────
-                          _ModernField(
-                            controller: _passCtrl,
-                            hint: 'Password',
-                            icon: Icons.lock_outline_rounded,
-                            obscure: _obscure,
-                            scale: scale,
-                            onToggle: () => setState(() => _obscure = !_obscure),
-                            onSubmitted: (_) => _signIn(),
-                          ),
-
-                          SizedBox(height: (fieldSpacing * 0.7).clamp(6.0, 14.0)),
-
-                          // ── FORGOT PASSWORD ───────────────────────────────
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: GestureDetector(
-                              onTap: _showForgotPasswordDialog,
-                              child: Text(
-                                'Forgot Password?',
-                                style: TextStyle(
-                                  fontSize: (13 * scale).clamp(10.0, 14.0),
-                                  fontWeight: FontWeight.w500,
-                                  color: _kTextColor,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          SizedBox(height: sectionSpacing),
-
-                          // ── LOGIN BUTTON ──────────────────────────────────
-                          SizedBox(
-                            width: double.infinity,
-                            height: btnHeight,
-                            child: ElevatedButton(
-                              onPressed:
-                                  _isFormValid && !_isLoading ? _signIn : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _kPrimaryBlue,
-                                disabledBackgroundColor:
-                                    _kPrimaryBlue.withValues(alpha: 0.4),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(40),
-                                ),
-                              ),
-                              child: _isLoading
-                                  ? SizedBox(
-                                      width: (22 * scale).clamp(16.0, 24.0),
-                                      height: (22 * scale).clamp(16.0, 24.0),
-                                      child: const CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : Text(
-                                      'LOG IN',
-                                      style: TextStyle(
-                                        fontSize: (16 * scale).clamp(13.0, 18.0),
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                            ),
-                          ),
-
-                          SizedBox(height: fieldSpacing),
-
-                          // ── SIGN UP ───────────────────────────────────────
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                "Don't have an account? ",
-                                style: TextStyle(
-                                  color: const Color(0xFF6B7280),
-                                  fontSize: (13 * scale).clamp(10.0, 14.0),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () =>
-                                    Navigator.pushNamed(context, '/signup'),
-                                child: Text(
-                                  'Sign Up',
-                                  style: TextStyle(
-                                    color: const Color(0xFF16A34A),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: (13 * scale).clamp(10.0, 14.0),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          // Extra bottom padding so card clears the keyboard
-                          SizedBox(height: (sectionSpacing * 0.5).clamp(4.0, 10.0)),
-                        ],
-                      ),
+        backgroundColor: _tint,
+        body: LayoutBuilder(builder: (context, c) {
+          // Desktop / laptop / large tablet: split layout.
+          if (c.maxWidth >= 900) {
+            return Row(children: [
+              Expanded(flex: 5, child: _brandPanel()),
+              Expanded(
+                flex: 4,
+                child: Container(
+                  color: Colors.white,
+                  alignment: Alignment.center,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(48),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 400),
+                      child: _form(wide: true, screenH: c.maxHeight),
                     ),
                   ),
                 ),
               ),
+            ]);
+          }
+          // Phone / mini phone / small tablet: centered card.
+          return SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Container(
+                    padding: EdgeInsets.all(c.maxWidth < 360 ? 20 : 28),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _green.withValues(alpha: 0.08),
+                          blurRadius: 32,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: _form(wide: false, screenH: c.maxHeight),
+                  ),
+                ),
+              ),
             ),
-          ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _brandPanel() {
+    const points = [
+      (Icons.groups_outlined, 'Organizations and memberships'),
+      (Icons.event_outlined, 'Events and announcements'),
+      (Icons.receipt_long_outlined, 'Reports and liquidation'),
+    ];
+    return Container(
+      color: const Color(0xFFE3F1E8),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(48),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Image.asset(_logo,
+                height: 120,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high),
+            const SizedBox(height: 20),
+            Text('OrgConnect', style: _t(38, w: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Text(
+              'One place to manage student organizations, events, and members.',
+              style: _t(16, c: _muted).copyWith(height: 1.5),
+            ),
+            const SizedBox(height: 32),
+            for (final p in points)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(p.$1, size: 20, color: _green),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                      child: Text(p.$2, style: _t(14.5, w: FontWeight.w600))),
+                ]),
+              ),
+          ],
         ),
       ),
     );
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _ModernField – unchanged behaviour, slightly tighter vertical padding
-// ─────────────────────────────────────────────────────────────────────────────
-class _ModernField extends StatefulWidget {
-  const _ModernField({
-    required this.controller,
-    required this.hint,
-    required this.icon,
-    this.obscure = false,
-    this.keyboardType = TextInputType.text,
-    this.onToggle,
-    this.onSubmitted,
-    this.scale = 1.0,
-  });
-
-  final TextEditingController controller;
-  final String hint;
-  final IconData icon;
-  final bool obscure;
-  final TextInputType keyboardType;
-  final VoidCallback? onToggle;
-  final ValueChanged<String>? onSubmitted;
-  final double scale;
-
-  @override
-  State<_ModernField> createState() => _ModernFieldState();
-}
-
-class _ModernFieldState extends State<_ModernField> {
-  final FocusNode _focusNode = FocusNode();
-  bool _focused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(() => setState(() => _focused = _focusNode.hasFocus));
+  Widget _form({required bool wide, required double screenH}) {
+    final ta = wide ? TextAlign.start : TextAlign.center;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!wide) ...[
+          Image.asset(_logo,
+              height: (screenH * 0.1).clamp(60.0, 96.0),
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high),
+          const SizedBox(height: 10),
+          Text('OrgConnect', textAlign: ta, style: _t(22, w: FontWeight.w800)),
+          const SizedBox(height: 24),
+        ],
+        Text('Welcome back',
+            textAlign: ta, style: _t(wide ? 30 : 26, w: FontWeight.w800)),
+        const SizedBox(height: 6),
+        Text('Log in to your account to continue.',
+            textAlign: ta, style: _t(14, c: _muted)),
+        const SizedBox(height: 28),
+        _field(_email, 'Email', Icons.person_outline_rounded),
+        const SizedBox(height: 14),
+        _field(_pass, 'Password', Icons.lock_outline_rounded, password: true),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
+            ),
+            child: Text('Forgot password?',
+                style: _t(13, w: FontWeight.w600, c: _green)),
+          ),
+        ),
+        const SizedBox(height: 6),
+        ListenableBuilder(
+          listenable: Listenable.merge([_email, _pass]),
+          builder: (_, __) {
+            final ready = _email.text.trim().isNotEmpty &&
+                _pass.text.trim().isNotEmpty &&
+                !_loading;
+            return SizedBox(
+              height: 52,
+              child: FilledButton(
+                onPressed: ready ? _signIn : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _green,
+                  disabledBackgroundColor: _green.withValues(alpha: 0.4),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: _loading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2.5, color: Colors.white),
+                      )
+                    : Text('Log in',
+                        style: _t(15, w: FontWeight.w700, c: Colors.white)),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 20),
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text("Don't have an account? ", style: _t(13.5, c: _muted)),
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/signup'),
+              child: Text('Sign up',
+                  style: _t(13.5, w: FontWeight.w700, c: _green)),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = widget.scale;
-
-    // Tighter vertical padding → shorter field height on all screens
-    final vertPad = (14 * s).clamp(12.0, 18.0);
-    final horzPad = (18 * s).clamp(14.0, 22.0);
-    final fontSize = (14 * s).clamp(12.0, 15.0);
-    final iconSize = (20 * s).clamp(17.0, 22.0);
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(
-          color: _focused ? _kPrimaryBlue : _kBorderColor,
-          width: _focused ? 2 : 1.2,
-        ),
-        color: Colors.white,
-      ),
-      child: TextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        obscureText: widget.obscure,
-        keyboardType: widget.keyboardType,
-        onSubmitted: widget.onSubmitted,
-        style: TextStyle(
-          fontSize: fontSize,
-          color: _kTextColor,
-          fontWeight: FontWeight.w500,
-        ),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: horzPad,
-            vertical: vertPad,
-          ),
-          hintText: widget.hint,
-          hintStyle: TextStyle(color: _kHintColor, fontSize: fontSize),
-          prefixIcon: Icon(
-            widget.icon,
-            color: _focused ? _kPrimaryBlue : _kHintColor,
-            size: iconSize,
-          ),
-          suffixIcon: widget.onToggle != null
-              ? GestureDetector(
-                  onTap: widget.onToggle,
-                  child: Icon(
-                    widget.obscure
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: _focused ? _kPrimaryBlue : _kHintColor,
-                    size: iconSize,
-                  ),
-                )
-              : null,
-        ),
+  Widget _field(TextEditingController ctrl, String hint, IconData icon,
+      {bool password = false}) {
+    return TextField(
+      controller: ctrl,
+      obscureText: password && _obscure,
+      keyboardType:
+          password ? TextInputType.visiblePassword : TextInputType.emailAddress,
+      textInputAction: password ? TextInputAction.done : TextInputAction.next,
+      autofillHints: [password ? AutofillHints.password : AutofillHints.email],
+      onSubmitted: password ? (_) => _signIn() : null,
+      style: _t(15),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: _t(15, c: _muted),
+        filled: true,
+        fillColor: const Color(0xFFF7FAF8),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        prefixIcon: Icon(icon, size: 20),
+        prefixIconColor: WidgetStateColor.resolveWith(
+            (s) => s.contains(WidgetState.focused) ? _green : _muted),
+        suffixIcon: password
+            ? IconButton(
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 20,
+                  color: _muted,
+                ),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              )
+            : null,
+        border: _border(_line),
+        enabledBorder: _border(_line),
+        focusedBorder: _border(_green, 1.8),
       ),
     );
   }

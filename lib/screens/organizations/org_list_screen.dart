@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'org_profile_screen.dart';
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 
 class _AppColors {
   static const background = Color(0xFFF1FAF6);
@@ -71,158 +72,58 @@ class _OrgListScreenState extends State<OrgListScreen> {
         final organizations = _filtered;
         return Scaffold(
           backgroundColor: _AppColors.background,
-          body: SafeArea(
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(child: _HeaderSection(showBackButton: widget.showBackButton)),
-                SliverToBoxAdapter(
-                  child: _SearchBar(controller: _searchController),
-                ),
-                SliverToBoxAdapter(
-                  child: _ResultHeader(count: organizations.length),
-                ),
-                if (organizations.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _EmptyState(),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 24),
-                    sliver: SliverGrid(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => _OrgCard(org: organizations[index]),
-                        childCount: organizations.length,
-                      ),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 0.73,
-                      ),
+          body: Column(
+            children: [
+              AppHeader(
+                title: 'Organizations',
+                subtitle: 'Find your campus community',
+                status:
+                    '${AppState.instance.organizations.length} ORGANIZATIONS',
+                icon: Icons.groups_rounded,
+                onBack: widget.showBackButton
+                    ? () => Navigator.of(context).maybePop()
+                    : null,
+              ),
+              Expanded(
+                child: CustomScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _SearchBar(controller: _searchController),
                     ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _HeaderSection extends StatelessWidget {
-  final bool showBackButton;
-  const _HeaderSection({this.showBackButton = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 138,
-      width: double.infinity,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_AppColors.accent, _AppColors.accentDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              top: -48,
-              right: -34,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: .07),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: -58,
-              left: -30,
-              child: Container(
-                width: 115,
-                height: 115,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: .045),
-                ),
-              ),
-            ),
-            SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    if (showBackButton) ...[
-                      IconButton(
-                        tooltip: 'Back',
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .14),
-                        borderRadius: BorderRadius.circular(17),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: .22),
+                    SliverToBoxAdapter(
+                      child: _ResultHeader(count: organizations.length),
+                    ),
+                    if (organizations.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _EmptyState(),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 24),
+                        sliver: SliverGrid(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) =>
+                                _OrgCard(org: organizations[index]),
+                            childCount: organizations.length,
+                          ),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.73,
+                          ),
                         ),
                       ),
-                      child: const Icon(
-                        Icons.groups_rounded,
-                        color: Colors.white,
-                        size: 27,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Organizations',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 21,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.4,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Find your campus community',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -395,7 +296,8 @@ class _OrgCard extends StatelessWidget {
               if (org.category.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: _AppColors.mint,
                     borderRadius: BorderRadius.circular(10),
@@ -417,7 +319,9 @@ class _OrgCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      org.shortDesc.isEmpty ? 'Campus community' : org.shortDesc,
+                      org.shortDesc.isEmpty
+                          ? 'Campus community'
+                          : org.shortDesc,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -560,4 +464,3 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
-

@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'admin_manage_accounts.dart';
 import 'admin_organization_detail_screen.dart';
 import 'admin_profile_screen.dart';
+
+import '../../widgets/app_header.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -38,30 +41,71 @@ class _AdminDashboardState extends State<AdminDashboard> {
   String _userName = '';
   RealtimeChannel? _realtimeChannel;
 
+  Timer? _reloadTimer;
+  bool _isLoadingNow = false;
+  bool _reloadQueued = false;
+
+  void _scheduleReload() {
+    if (!mounted) return;
+    _reloadTimer?.cancel();
+    _reloadTimer =
+        Timer(const Duration(milliseconds: 600), () => _load(silent: true));
+  }
+
   @override
   void initState() {
     super.initState();
     _load();
     _realtimeChannel = db
         .channel('admin-dashboard-realtime')
-        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'organizations', callback: (_) => _load())
-        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'members', callback: (_) => _load())
-        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'events', callback: (_) => _load())
-        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'profiles', callback: (_) => _load())
-        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'event_requests', callback: (_) => _load())
-        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'event_comments', callback: (_) => _load())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'organizations',
+            callback: (_) => _scheduleReload())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'members',
+            callback: (_) => _scheduleReload())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'events',
+            callback: (_) => _scheduleReload())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'profiles',
+            callback: (_) => _scheduleReload())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'event_requests',
+            callback: (_) => _scheduleReload())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'event_comments',
+            callback: (_) => _scheduleReload())
         .subscribe();
   }
 
   @override
   void dispose() {
+    _reloadTimer?.cancel();
     final channel = _realtimeChannel;
     if (channel != null) db.removeChannel(channel);
     super.dispose();
   }
 
-  Future<void> _load() async {
-    if (mounted) setState(() => loading = true);
+  Future<void> _load({bool silent = false}) async {
+    if (_isLoadingNow) {
+      _reloadQueued = true;
+      return;
+    }
+    _isLoadingNow = true;
+    if (!silent && mounted) setState(() => loading = true);
     try {
       final results = await Future.wait<dynamic>([
         db.from('organizations').select('*').order('name'),
@@ -79,7 +123,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             .order('created_at', ascending: false),
       ]);
 
-      final organizationRows = List<Map<String, dynamic>>.from(results[0] as List);
+      final organizationRows =
+          List<Map<String, dynamic>>.from(results[0] as List);
       final memberRows = List<Map<String, dynamic>>.from(results[1] as List);
       final eventRows = List<Map<String, dynamic>>.from(results[2] as List);
       final profileRows = List<Map<String, dynamic>>.from(results[3] as List);
@@ -136,14 +181,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }
       for (final row in proposalRows) {
         final id = row['org_id']?.toString() ?? '';
-        if (id.isNotEmpty) nextOrgProposals[id] = (nextOrgProposals[id] ?? 0) + 1;
+        if (id.isNotEmpty) {
+          nextOrgProposals[id] = (nextOrgProposals[id] ?? 0) + 1;
+        }
       }
       for (final row in comments) {
         final eventId = row['event_id']?.toString();
-        final matches = eventRows.where((event) => event['id']?.toString() == eventId);
+        final matches =
+            eventRows.where((event) => event['id']?.toString() == eventId);
         if (matches.isNotEmpty) {
           final id = matches.first['org_id']?.toString() ?? '';
-          if (id.isNotEmpty) nextOrgComments[id] = (nextOrgComments[id] ?? 0) + 1;
+          if (id.isNotEmpty) {
+            nextOrgComments[id] = (nextOrgComments[id] ?? 0) + 1;
+          }
         }
       }
 
@@ -163,10 +213,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final profile = results[4] as Map<String, dynamic>?;
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
-      final futureEvents = eventRows.where((x) {
-        final date = DateTime.tryParse(x['date']?.toString() ?? '');
-        return date == null || !DateTime(date.year, date.month, date.day).isBefore(today);
-      }).take(6).toList();
+      final futureEvents = eventRows
+          .where((x) {
+            final date = DateTime.tryParse(x['date']?.toString() ?? '');
+            return date == null ||
+                !DateTime(date.year, date.month, date.day).isBefore(today);
+          })
+          .take(6)
+          .toList();
 
       if (!mounted) return;
       setState(() {
@@ -192,6 +246,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not load admin data: $error')),
       );
+    } finally {
+      _isLoadingNow = false;
+      if (_reloadQueued) {
+        _reloadQueued = false;
+        _scheduleReload();
+      }
     }
   }
 
@@ -200,6 +260,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Scaffold(
       backgroundColor: bg,
       body: SafeArea(
+        top: false,
         child: loading
             ? const Center(child: CircularProgressIndicator(color: green))
             : IndexedStack(
@@ -253,18 +314,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
       );
 
   String _headerName(String fullName, String fallback) {
-    final parts = fullName.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
     return parts.isEmpty ? fallback : parts.take(2).join(' ');
   }
 
   Widget _home() => _pageBackground(
         onRefresh: _load,
+        header: AppHeader(
+          title: 'Good day, ${_headerName(_userName, 'Admin')} 👋',
+          subtitle: 'Your organization network at a glance',
+          status: 'ADMIN / CSO WORKSPACE',
+          avatarUrl: _avatarUrl,
+        ),
         children: [
-          _hero(
-            title: 'Good day, ${_headerName(_userName, 'Admin')} 👋',
-            subtitle: 'Your organization network at a glance',
-            status: 'ADMIN / CSO WORKSPACE',
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
             child: Column(
@@ -272,10 +338,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 _homeStatsGrid(),
                 const SizedBox(height: 24),
-                _sectionHeader('Upcoming Events', 'Events already posted across organizations'),
+                _sectionHeader('Upcoming Events',
+                    'Events already posted across organizations'),
                 const SizedBox(height: 10),
                 if (homeEvents.isEmpty)
-                  _emptyCard('No upcoming events posted yet.', Icons.event_busy_rounded)
+                  _emptyCard('No upcoming events posted yet.',
+                      Icons.event_busy_rounded)
                 else
                   ...homeEvents.take(4).map(_eventCard),
                 const SizedBox(height: 24),
@@ -290,30 +358,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ],
       );
-
   Widget _analytics() => _pageBackground(
         onRefresh: _load,
+        header: const AppHeader(
+          title: 'Analytics',
+          subtitle: 'Organization activity, participation, and momentum',
+          status: 'ADMIN ANALYTICS',
+          icon: Icons.insights_rounded,
+        ),
         children: [
-          _hero(
-            title: 'Analytics',
-            subtitle: 'A clear view of organization activity, participation, and momentum',
-            status: 'ADMIN ANALYTICS',
-            icon: Icons.insights_rounded,
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _sectionHeader('Most Active Organizations', 'Activity is based on members, events, proposals, and comments'),
+                _sectionHeader('Most Active Organizations',
+                    'Activity is based on members, events, proposals, and comments'),
                 const SizedBox(height: 10),
-                ..._ranked().take(5).map((row) => _analyticsOrgCard(row, active: true)),
+                ..._ranked()
+                    .take(5)
+                    .map((row) => _analyticsOrgCard(row, active: true)),
                 if (_ranked().isNotEmpty) const SizedBox(height: 18),
-                _sectionHeader('Organizations Needing Attention', 'Lower activity surfaces areas worth checking'),
+                _sectionHeader('Organizations Needing Attention',
+                    'Lower activity surfaces areas worth checking'),
                 const SizedBox(height: 10),
-                ..._ranked().reversed.take(5).map((row) => _analyticsOrgCard(row, active: false)),
+                ..._ranked()
+                    .reversed
+                    .take(5)
+                    .map((row) => _analyticsOrgCard(row, active: false)),
                 const SizedBox(height: 24),
-                _sectionHeader('Member Count Comparison', 'Compare the current number of members across all organizations'),
+                _sectionHeader('Member Count Comparison',
+                    'Compare the current number of members across all organizations'),
                 const SizedBox(height: 10),
                 ..._memberComparison().map(_memberComparisonCard),
               ],
@@ -321,25 +396,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ],
       );
-
   Widget _organizations() => _pageBackground(
         onRefresh: _load,
+        header: AppHeader(
+          title: 'Organizations',
+          subtitle: 'Browse every organization and its activity report',
+          status: '${orgs.length} ORGANIZATIONS',
+          icon: Icons.apartment_rounded,
+        ),
         children: [
-          _hero(
-            title: 'Organizations',
-            subtitle: 'Browse every organization and open its complete activity report',
-            status: '${orgs.length} ORGANIZATIONS',
-            icon: Icons.apartment_rounded,
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _sectionHeader('Organization Network', 'Select an organization to explore its people, events, proposals, and finances'),
+                _sectionHeader('Organization Network',
+                    'Select an organization to explore its people, events, proposals, and finances'),
                 const SizedBox(height: 10),
                 if (orgs.isEmpty)
-                  _emptyCard('No organizations found.', Icons.apartment_outlined)
+                  _emptyCard(
+                      'No organizations found.', Icons.apartment_outlined)
                 else
                   ...orgs.map(_orgCard),
               ],
@@ -347,103 +423,39 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ],
       );
-
-  Widget _pageBackground({required Future<void> Function() onRefresh, required List<Widget> children}) {
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      color: green,
-      backgroundColor: const Color(0xFFF5FFF9),
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFE6F7EE), Color(0xFFDDF4E8), Color(0xFFF5FFF9)],
-          ),
-        ),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-          padding: EdgeInsets.zero,
-          children: children,
-        ),
-      ),
-    );
-  }
-
-  Widget _hero({required String title, required String subtitle, required String status, IconData? icon}) {
+  Widget _pageBackground({
+    required Future<void> Function() onRefresh,
+    required Widget header,
+    required List<Widget> children,
+  }) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 30),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF064E3B), Color(0xFF128058), Color(0xFF22C55E)],
+          colors: [Color(0xFFE6F7EE), Color(0xFFDDF4E8), Color(0xFFF5FFF9)],
         ),
-        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(30)),
       ),
-      child: Stack(
+      child: Column(
         children: [
-          Positioned(right: -45, top: -70, child: _orb(170)),
-          Positioned(right: 45, bottom: -70, child: _orb(125)),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (icon != null)
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(22)),
-                  child: Icon(icon, color: Colors.white, size: 34),
-                )
-              else
-                _profileAvatar(),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900, height: 1.1, letterSpacing: -0.6)),
-                    const SizedBox(height: 8),
-                    Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: .86), fontSize: 13, height: 1.4, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFF86EFAC), shape: BoxShape.circle)),
-                        const SizedBox(width: 7),
-                        Flexible(child: Text(status, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .6))),
-                      ],
-                    ),
-                  ],
-                ),
+          header, // stays fixed at the top
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: onRefresh,
+              color: green,
+              backgroundColor: const Color(0xFFF5FFF9),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics()),
+                padding: EdgeInsets.zero,
+                children: children,
               ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
-
-  Widget _profileAvatar() {
-    return Container(
-      width: 68,
-      height: 68,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: .20)),
-      child: Container(
-        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-        padding: const EdgeInsets.all(3),
-        child: CircleAvatar(
-          backgroundColor: const Color(0xFFE0F5E8),
-          backgroundImage: _avatarUrl.isNotEmpty ? NetworkImage(_avatarUrl) : null,
-          child: _avatarUrl.isEmpty ? const Icon(Icons.person_rounded, color: green, size: 31) : null,
-        ),
-      ),
-    );
-  }
-
-  Widget _orb(double size) => Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: .07)));
 
   Widget _homeStatsGrid() => GridView.count(
         crossAxisCount: 2,
@@ -461,61 +473,123 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _stat(IconData icon, String label, int value) => Container(
         padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF0F8F62), Color(0xFF20B77D)]),
+          gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0F8F62), Color(0xFF20B77D)]),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withValues(alpha: .18)),
-          boxShadow: [BoxShadow(color: green.withValues(alpha: .14), blurRadius: 18, offset: const Offset(0, 8))],
+          boxShadow: [
+            BoxShadow(
+                color: green.withValues(alpha: .14),
+                blurRadius: 18,
+                offset: const Offset(0, 8))
+          ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: Colors.white, size: 16)),
+          Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .14),
+                  borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: Colors.white, size: 16)),
           const Spacer(),
-          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Colors.white)),
+          Text('$value',
+              style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white)),
           const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 10.5, color: Colors.white.withValues(alpha: .82), fontWeight: FontWeight.w800)),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 10.5,
+                  color: Colors.white.withValues(alpha: .82),
+                  fontWeight: FontWeight.w800)),
         ]),
       );
 
   Widget _sectionHeader(String title, String subtitle) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: dark)),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 19, fontWeight: FontWeight.w900, color: dark)),
           const SizedBox(height: 3),
-          Text(subtitle, style: const TextStyle(fontSize: 11.5, color: muted, height: 1.35)),
+          Text(subtitle,
+              style:
+                  const TextStyle(fontSize: 11.5, color: muted, height: 1.35)),
         ],
       );
 
   Widget _eventCard(Map<String, dynamic> e) {
-    final imgs = (e['image_urls'] is List ? e['image_urls'] as List : const <dynamic>[]).whereType<String>().toList();
+    final imgs =
+        (e['image_urls'] is List ? e['image_urls'] as List : const <dynamic>[])
+            .whereType<String>()
+            .toList();
     final single = e['image_url']?.toString();
-    if (single != null && single.isNotEmpty && !imgs.contains(single)) imgs.insert(0, single);
+    if (single != null && single.isNotEmpty && !imgs.contains(single)) {
+      imgs.insert(0, single);
+    }
     final date = DateTime.tryParse(e['date']?.toString() ?? '');
-    final dateText = date == null ? 'Date to be announced' : '${date.month}/${date.day}/${date.year}';
+    final dateText = date == null
+        ? 'Date to be announced'
+        : '${date.month}/${date.day}/${date.year}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFE9FFF2), Color(0xFFBDF3D0)]),
+        gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFE9FFF2), Color(0xFFBDF3D0)]),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: line),
-        boxShadow: [BoxShadow(color: green.withValues(alpha: .08), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [
+          BoxShadow(
+              color: green.withValues(alpha: .08),
+              blurRadius: 16,
+              offset: const Offset(0, 6))
+        ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (imgs.isNotEmpty)
-          SizedBox(height: 220, width: double.infinity, child: Image.network(imgs.first, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _eventPlaceholder()))
+          SizedBox(
+              height: 220,
+              width: double.infinity,
+              child: Image.network(imgs.first,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _eventPlaceholder()))
         else
           _eventPlaceholder(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(e['title']?.toString() ?? 'Untitled event', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: dark)),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(e['title']?.toString() ?? 'Untitled event',
+                style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w900, color: dark)),
             const SizedBox(height: 6),
-            Row(children: [const Icon(Icons.calendar_month_rounded, size: 15, color: green), const SizedBox(width: 6), Text(dateText, style: const TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w700))]),
+            Row(children: [
+              const Icon(Icons.calendar_month_rounded, size: 15, color: green),
+              const SizedBox(width: 6),
+              Text(dateText,
+                  style: const TextStyle(
+                      color: muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700))
+            ]),
             const SizedBox(height: 5),
-            Text(e['org_name']?.toString() ?? 'Organization', style: const TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w700)),
+            Text(e['org_name']?.toString() ?? 'Organization',
+                style: const TextStyle(
+                    color: muted, fontSize: 11.5, fontWeight: FontWeight.w700)),
             if ((e['description'] ?? '').toString().isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(e['description'].toString(), maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, height: 1.35, fontSize: 12)),
+              Text(e['description'].toString(),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: muted, height: 1.35, fontSize: 12)),
             ],
           ]),
         ),
@@ -523,52 +597,110 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _eventPlaceholder() => Container(height: 220, width: double.infinity, color: green.withValues(alpha: .08), child: const Center(child: Icon(Icons.image_outlined, color: green, size: 40)));
+  Widget _eventPlaceholder() => Container(
+      height: 220,
+      width: double.infinity,
+      color: green.withValues(alpha: .08),
+      child: const Center(
+          child: Icon(Icons.image_outlined, color: green, size: 40)));
 
   Widget _pendingPreview() => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
+          gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
           borderRadius: BorderRadius.circular(22),
           border: Border.all(color: line),
-          boxShadow: [BoxShadow(color: green.withValues(alpha: .06), blurRadius: 15, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: green.withValues(alpha: .06),
+                blurRadius: 15,
+                offset: const Offset(0, 6))
+          ],
         ),
         child: proposals.isEmpty
-            ? const Row(children: [Icon(Icons.check_circle_outline_rounded, color: green), SizedBox(width: 10), Expanded(child: Text('No proposals are waiting for CSO review.', style: TextStyle(color: muted, fontWeight: FontWeight.w700)))])
+            ? const Row(children: [
+                Icon(Icons.check_circle_outline_rounded, color: green),
+                SizedBox(width: 10),
+                Expanded(
+                    child: Text('No proposals are waiting for CSO review.',
+                        style: TextStyle(
+                            color: muted, fontWeight: FontWeight.w700)))
+              ])
             : Column(children: [
                 Row(children: [
-                  Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: green.withValues(alpha: .10), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.assignment_turned_in_rounded, color: green, size: 19)),
+                  Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                          color: green.withValues(alpha: .10),
+                          borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.assignment_turned_in_rounded,
+                          color: green, size: 19)),
                   const SizedBox(width: 10),
-                  const Expanded(child: Text('Waiting for CSO review', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: dark))),
+                  const Expanded(
+                      child: Text('Waiting for CSO review',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                              color: dark))),
                   _badge('${proposals.length}'),
                 ]),
                 const SizedBox(height: 10),
                 ...proposals.take(4).map(_pendingRow),
                 const SizedBox(height: 8),
-                Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: proposals.isEmpty ? null : () => _openProposalOrganization(proposals.first), icon: const Icon(Icons.open_in_new_rounded, size: 16), label: const Text('Open proposals'))),
+                Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                        onPressed: proposals.isEmpty
+                            ? null
+                            : () => _openProposalOrganization(proposals.first),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const Text('Open proposals'))),
               ]),
       );
 
   Widget _pendingRow(Map<String, dynamic> p) {
     final orgName = _orgNameFor(p['org_id']?.toString());
-    final submitter = proposalSubmitters[p['requested_by']?.toString()] ?? 'Submitter not available';
+    final submitter = proposalSubmitters[p['requested_by']?.toString()] ??
+        'Submitter not available';
     return InkWell(
       onTap: () => _openProposalOrganization(p),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .78), borderRadius: BorderRadius.circular(16), border: Border.all(color: line.withValues(alpha: .8))),
+        decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .78),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: line.withValues(alpha: .8))),
         child: Row(children: [
           const Icon(Icons.description_outlined, color: green, size: 18),
           const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(p['title']?.toString() ?? 'Proposal', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, color: dark)),
-            const SizedBox(height: 3),
-            Text(orgName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: muted, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text('Submitted by $submitter', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: muted)),
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(p['title']?.toString() ?? 'Proposal',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, color: dark)),
+                const SizedBox(height: 3),
+                Text(orgName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 10.5,
+                        color: muted,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text('Submitted by $submitter',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10.5, color: muted)),
+              ])),
           const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
         ]),
       ),
@@ -576,10 +708,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _openProposalOrganization(Map<String, dynamic> proposal) {
-    final org = orgs.where((row) => row['id']?.toString() == proposal['org_id']?.toString()).toList();
+    final org = orgs
+        .where((row) => row['id']?.toString() == proposal['org_id']?.toString())
+        .toList();
     if (org.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The organization for this proposal could not be found.')),
+        const SnackBar(
+            content:
+                Text('The organization for this proposal could not be found.')),
       );
       return;
     }
@@ -630,14 +766,35 @@ class _AdminDashboardState extends State<AdminDashboard> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: line),
-        boxShadow: [BoxShadow(color: green.withValues(alpha: .045), blurRadius: 12, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+              color: green.withValues(alpha: .045),
+              blurRadius: 12,
+              offset: const Offset(0, 5))
+        ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           _orgLogo(org['logo_asset']?.toString() ?? '', size: 42),
           const SizedBox(width: 10),
-          Expanded(child: Text(org['name']?.toString() ?? 'Organization', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: dark, fontWeight: FontWeight.w900, fontSize: 13.5))),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6), decoration: BoxDecoration(color: green.withValues(alpha: .10), borderRadius: BorderRadius.circular(30)), child: Text('$count member${count == 1 ? '' : 's'}', style: const TextStyle(color: green, fontWeight: FontWeight.w900, fontSize: 10.5))),
+          Expanded(
+              child: Text(org['name']?.toString() ?? 'Organization',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: dark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13.5))),
+          Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                  color: green.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(30)),
+              child: Text('$count member${count == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                      color: green,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10.5))),
         ]),
         const SizedBox(height: 10),
         ClipRRect(
@@ -667,17 +824,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: line),
-          boxShadow: [BoxShadow(color: green.withValues(alpha: .05), blurRadius: 14, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: green.withValues(alpha: .05),
+                blurRadius: 14,
+                offset: const Offset(0, 6))
+          ],
         ),
         child: Row(children: [
           _orgLogo(org['logo_asset']?.toString() ?? '', size: 50),
           const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: dark)),
-            const SizedBox(height: 4),
-            Text('${row['members']} members • ${row['events']} events • ${row['proposals']} proposals', style: const TextStyle(color: muted, fontSize: 11.5)),
-          ])),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7), decoration: BoxDecoration(color: labelColor.withValues(alpha: .10), borderRadius: BorderRadius.circular(30)), child: Text('$score pts', style: TextStyle(color: labelColor, fontWeight: FontWeight.w900, fontSize: 10.5))),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(org['name']?.toString() ?? 'Organization',
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: dark)),
+                const SizedBox(height: 4),
+                Text(
+                    '${row['members']} members • ${row['events']} events • ${row['proposals']} proposals',
+                    style: const TextStyle(color: muted, fontSize: 11.5)),
+              ])),
+          Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                  color: labelColor.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(30)),
+              child: Text('$score pts',
+                  style: TextStyle(
+                      color: labelColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10.5))),
         ]),
       ),
     );
@@ -692,27 +872,51 @@ class _AdminDashboardState extends State<AdminDashboard> {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
+          gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
           borderRadius: BorderRadius.circular(22),
           border: Border.all(color: line),
-          boxShadow: [BoxShadow(color: green.withValues(alpha: .07), blurRadius: 15, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: green.withValues(alpha: .07),
+                blurRadius: 15,
+                offset: const Offset(0, 6))
+          ],
         ),
         child: Row(children: [
           _orgLogo(org['logo_asset']?.toString() ?? '', size: 64),
           const SizedBox(width: 13),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(org['name']?.toString() ?? 'Organization', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: dark)),
-            if ((org['category']?.toString() ?? '').isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(org['category'].toString(), style: const TextStyle(color: green, fontSize: 11.5, fontWeight: FontWeight.w800)),
-            ],
-            const SizedBox(height: 7),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              _miniChip(Icons.groups_rounded, '${orgMembers[id] ?? 0} members'),
-              _miniChip(Icons.event_rounded, '${orgEvents[id] ?? 0} events'),
-              _miniChip(Icons.assignment_rounded, '${orgProposals[id] ?? 0} proposals'),
-            ]),
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(org['name']?.toString() ?? 'Organization',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: dark)),
+                if ((org['category']?.toString() ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(org['category'].toString(),
+                      style: const TextStyle(
+                          color: green,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800)),
+                ],
+                const SizedBox(height: 7),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  _miniChip(
+                      Icons.groups_rounded, '${orgMembers[id] ?? 0} members'),
+                  _miniChip(
+                      Icons.event_rounded, '${orgEvents[id] ?? 0} events'),
+                  _miniChip(Icons.assignment_rounded,
+                      '${orgProposals[id] ?? 0} proposals'),
+                ]),
+              ])),
           const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
         ]),
       ),
@@ -721,17 +925,34 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _miniChip(IconData icon, String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .80), borderRadius: BorderRadius.circular(30), border: Border.all(color: line.withValues(alpha: .7))),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 12, color: green), const SizedBox(width: 4), Text(text, style: const TextStyle(fontSize: 9.5, color: muted, fontWeight: FontWeight.w800))]),
+        decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .80),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: line.withValues(alpha: .7))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: green),
+          const SizedBox(width: 4),
+          Text(text,
+              style: const TextStyle(
+                  fontSize: 9.5, color: muted, fontWeight: FontWeight.w800))
+        ]),
       );
 
   Widget _orgLogo(String asset, {double size = 64}) {
     final value = asset.trim();
     Widget image;
     if (value.startsWith('http://') || value.startsWith('https://')) {
-      image = Image.network(value, width: size, height: size, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _logoFallback(size));
+      image = Image.network(value,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _logoFallback(size));
     } else if (value.isNotEmpty) {
-      image = Image.asset(value.startsWith('assets/') ? value : 'assets/$value', width: size, height: size, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _logoFallback(size));
+      image = Image.asset(value.startsWith('assets/') ? value : 'assets/$value',
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _logoFallback(size));
     } else {
       image = _logoFallback(size);
     }
@@ -739,27 +960,58 @@ class _AdminDashboardState extends State<AdminDashboard> {
       width: size,
       height: size,
       padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white, border: Border.all(color: Colors.white.withValues(alpha: .9)), boxShadow: [BoxShadow(color: green.withValues(alpha: .08), blurRadius: 12)]),
+      decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+          border: Border.all(color: Colors.white.withValues(alpha: .9)),
+          boxShadow: [
+            BoxShadow(color: green.withValues(alpha: .08), blurRadius: 12)
+          ]),
       child: ClipOval(child: image),
     );
   }
 
-  Widget _logoFallback(double size) => Container(color: const Color(0xFFE8F7ED), child: Icon(Icons.groups_rounded, color: green, size: size * .48));
+  Widget _logoFallback(double size) => Container(
+      color: const Color(0xFFE8F7ED),
+      child: Icon(Icons.groups_rounded, color: green, size: size * .48));
 
   Widget _emptyCard(String text, IconData icon) => Container(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 220),
         padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]), borderRadius: BorderRadius.circular(22), border: Border.all(color: line)),
-        child: Column(children: [Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: green.withValues(alpha: .09), shape: BoxShape.circle), child: Icon(icon, color: green, size: 26)), const SizedBox(height: 10), Text(text, textAlign: TextAlign.center, style: const TextStyle(color: muted, height: 1.4))]),
+        decoration: BoxDecoration(
+            gradient: const LinearGradient(
+                colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: line)),
+        child: Column(children: [
+          Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: green.withValues(alpha: .09), shape: BoxShape.circle),
+              child: Icon(icon, color: green, size: 26)),
+          const SizedBox(height: 10),
+          Text(text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: muted, height: 1.4))
+        ]),
       );
 
-  Widget _badge(String text) => Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: green.withValues(alpha: .10), borderRadius: BorderRadius.circular(30)), child: Text(text, style: const TextStyle(color: dark, fontSize: 10.5, fontWeight: FontWeight.w900)));
+  Widget _badge(String text) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+          color: green.withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(30)),
+      child: Text(text,
+          style: const TextStyle(
+              color: dark, fontSize: 10.5, fontWeight: FontWeight.w900)));
 
   String _orgNameFor(String? id) {
     if (id == null || id.isEmpty) return 'Organization';
     for (final org in orgs) {
-      if (org['id']?.toString() == id) return org['name']?.toString() ?? 'Organization';
+      if (org['id']?.toString() == id) {
+        return org['name']?.toString() ?? 'Organization';
+      }
     }
     return 'Organization';
   }

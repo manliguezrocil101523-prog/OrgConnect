@@ -9,6 +9,7 @@ import '../auth/unified_login_page.dart';
 import '../analytics/event_comments_sheet.dart';
 import '../organizations/org_list_screen.dart';
 import '../organizations/org_profile_screen.dart';
+import '../../widgets/app_header.dart';
 
 class PublicEventsScreen extends StatefulWidget {
   const PublicEventsScreen({super.key});
@@ -36,8 +37,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   void initState() {
     super.initState();
     _load();
-    _eventsChannel = Supabase.instance.client
-        .channel('public-events-screen')
+    _eventsChannel = Supabase.instance.client.channel('public-events-screen')
       ..onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',
@@ -91,8 +91,9 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           orgId: row['org_id']?.toString(),
           imageUrl: row['image_url']?.toString(),
           imageUrls: imageUrls,
-          createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '')?.toLocal()
-              ?? eventDate.toLocal(),
+          createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '')
+                  ?.toLocal() ??
+              eventDate.toLocal(),
         ));
       }
 
@@ -107,15 +108,20 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       if (mounted) setState(() => _loading = false);
     }
 
-    await AnalyticsService.instance.logUsage('guest_open', route: 'guest/events');
+    await AnalyticsService.instance
+        .logUsage('guest_open', route: 'guest/events');
   }
 
   void _openLogin() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const UnifiedLoginPage()));
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const UnifiedLoginPage()));
   }
 
   void _openOrganizations() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const OrgListScreen(showBackButton: true)));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => const OrgListScreen(showBackButton: true)));
   }
 
   @override
@@ -137,35 +143,42 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-              SliverToBoxAdapter(child: _hero()),
-              const SliverToBoxAdapter(child: _InterestMatchCard()),
-              SliverToBoxAdapter(child: _sectionHeader()),
-              if (_loading)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator(color: _green)),
-                )
-              else if (_upcomingEvents.isEmpty && !_showAllEvents)
-                SliverToBoxAdapter(child: _emptyState())
-              else ...[
-                ..._buildUpcomingSlivers(),
-                if (_showAllEvents) ...[
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                      child: Text('Event history', style: const TextStyle(color: _ink, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -.3)),
+                SliverToBoxAdapter(child: _hero()),
+                const SliverToBoxAdapter(child: _InterestMatchCard()),
+                SliverToBoxAdapter(child: _sectionHeader()),
+                if (_loading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child:
+                        Center(child: CircularProgressIndicator(color: _green)),
+                  )
+                else if (_upcomingEvents.isEmpty && !_showAllEvents)
+                  SliverToBoxAdapter(child: _emptyState())
+                else ...[
+                  ..._buildUpcomingSlivers(),
+                  if (_showAllEvents) ...[
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                        child: Text('Event history',
+                            style: const TextStyle(
+                                color: _ink,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -.3)),
+                      ),
                     ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-                    sliver: SliverList.builder(
-                      itemCount: _pastEvents.length,
-                      itemBuilder: (_, index) => _eventCard(_pastEvents[index], false),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                      sliver: SliverList.builder(
+                        itemCount: _pastEvents.length,
+                        itemBuilder: (_, index) =>
+                            _eventCard(_pastEvents[index], false),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
-              const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
               ],
             ),
           ),
@@ -179,22 +192,29 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_greenDark, _green, _greenBright],
-          stops: [0, .52, 1],
-        ),
+        gradient: AppHeader.brandGradient,
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
-          BoxShadow(color: _green.withValues(alpha: .24), blurRadius: 28, offset: const Offset(0, 14)),
+          BoxShadow(
+              color: const Color(0xFF0B6B4D).withValues(alpha: .24),
+              blurRadius: 28,
+              offset: const Offset(0, 14)),
         ],
       ),
       child: Stack(
         children: [
-          Positioned(top: -45, right: -35, child: _orb(150, Colors.white.withValues(alpha: .09))),
-          Positioned(top: 95, right: 35, child: _orb(52, Colors.white.withValues(alpha: .07))),
-          Positioned(bottom: -70, left: -45, child: _orb(145, Colors.black.withValues(alpha: .08))),
+          Positioned(
+              top: -45,
+              right: -35,
+              child: _orb(150, Colors.white.withValues(alpha: .09))),
+          Positioned(
+              top: 95,
+              right: 35,
+              child: _orb(52, Colors.white.withValues(alpha: .07))),
+          Positioned(
+              bottom: -70,
+              left: -45,
+              child: _orb(145, Colors.black.withValues(alpha: .08))),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
             child: Column(
@@ -205,22 +225,46 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                     Container(
                       width: 48,
                       height: 48,
-                      padding: const EdgeInsets.all(9),
+                      padding: const EdgeInsets.all(7),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .13),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withValues(alpha: .22)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: .12),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: Image.asset('assets/OrgConnectLogo.png', fit: BoxFit.contain),
+                      child: Image.asset(
+                        'assets/icon/login_logo.png',
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.groups_rounded,
+                          size: 24,
+                          color: _green,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('ORGCONNECT', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                          Text('ORGCONNECT',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.5)),
                           SizedBox(height: 2),
-                          Text('Campus community hub', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600)),
+                          Text('Campus community hub',
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -228,28 +272,40 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                       onPressed: _openLogin,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
-                        side: BorderSide(color: Colors.white.withValues(alpha: .5)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
+                        side: BorderSide(
+                            color: Colors.white.withValues(alpha: .5)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 17, vertical: 10),
                       ),
-                      child: const Text('Log in', style: TextStyle(fontWeight: FontWeight.w900)),
+                      child: const Text('Log in',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                     ),
                   ],
                 ),
                 const SizedBox(height: 31),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: .12),
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.white.withValues(alpha: .17)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: .17)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.auto_awesome_rounded, size: 14, color: Colors.white),
+                      Icon(Icons.auto_awesome_rounded,
+                          size: 14, color: Colors.white),
                       SizedBox(width: 6),
-                      Text('OPEN CAMPUS ACCESS', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .7)),
+                      Text('OPEN CAMPUS ACCESS',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .7)),
                     ],
                   ),
                 ),
@@ -267,14 +323,23 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                 const SizedBox(height: 11),
                 Text(
                   'Find organizations, discover what is happening next, and choose where you want to belong.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: .84), height: 1.42, fontSize: 14),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: .84),
+                      height: 1.42,
+                      fontSize: 14),
                 ),
                 const SizedBox(height: 21),
                 Row(
                   children: [
-                    Expanded(child: _heroAction(Icons.event_available_rounded, 'Explore events', filled: true, onTap: _scrollToEvents)),
+                    Expanded(
+                        child: _heroAction(
+                            Icons.event_available_rounded, 'Explore events',
+                            filled: true, onTap: _scrollToEvents)),
                     const SizedBox(width: 9),
-                    Expanded(child: _heroAction(Icons.groups_rounded, 'Organizations', filled: false, onTap: _openOrganizations)),
+                    Expanded(
+                        child: _heroAction(
+                            Icons.groups_rounded, 'Organizations',
+                            filled: false, onTap: _openOrganizations)),
                   ],
                 ),
                 const SizedBox(height: 15),
@@ -294,7 +359,10 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   }
 
   Widget _orb(double size, Color color) {
-    return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: color));
+    return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color));
   }
 
   static const Duration _postLifetime = Duration(days: 30);
@@ -351,8 +419,10 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _greenDark,
                   side: const BorderSide(color: _green),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                 ),
               ),
             ),
@@ -361,7 +431,8 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     ];
   }
 
-  Widget _heroAction(IconData icon, String label, {required bool filled, required VoidCallback onTap}) {
+  Widget _heroAction(IconData icon, String label,
+      {required bool filled, required VoidCallback onTap}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -372,14 +443,21 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           decoration: BoxDecoration(
             color: filled ? Colors.white : Colors.white.withValues(alpha: .11),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: filled ? .1 : .2)),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: filled ? .1 : .2)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 16, color: filled ? _greenDark : Colors.white),
               const SizedBox(width: 7),
-              Flexible(child: Text(label, overflow: TextOverflow.ellipsis, style: TextStyle(color: filled ? _greenDark : Colors.white, fontSize: 12, fontWeight: FontWeight.w900))),
+              Flexible(
+                  child: Text(label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: filled ? _greenDark : Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900))),
             ],
           ),
         ),
@@ -393,7 +471,11 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       children: [
         Icon(icon, size: 13, color: Colors.white.withValues(alpha: .72)),
         const SizedBox(width: 5),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: .72), fontSize: 10.5, fontWeight: FontWeight.w700)),
+        Text(label,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: .72),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -422,10 +504,17 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Upcoming events', style: TextStyle(color: _ink, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -.3)),
+                const Text('Upcoming events',
+                    style: TextStyle(
+                        color: _ink,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.3)),
                 const SizedBox(height: 4),
                 Text(
-                  _showAllEvents ? 'Showing all posted events.' : 'Latest posts from campus organizations.',
+                  _showAllEvents
+                      ? 'Showing all posted events.'
+                      : 'Latest posts from campus organizations.',
                   style: const TextStyle(color: _muted, fontSize: 13),
                 ),
               ],
@@ -439,8 +528,14 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           else
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFFE2F6ED), borderRadius: BorderRadius.circular(18)),
-              child: Text('$count', style: const TextStyle(color: _greenDark, fontWeight: FontWeight.w900, fontSize: 11.5)),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFE2F6ED),
+                  borderRadius: BorderRadius.circular(18)),
+              child: Text('$count',
+                  style: const TextStyle(
+                      color: _greenDark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11.5)),
             ),
         ],
       ),
@@ -448,14 +543,20 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   }
 
   Widget _eventCard(Event event, bool featured) {
-    final image = event.imageUrl ?? (event.imageUrls.isNotEmpty ? event.imageUrls.first : null);
+    final image = event.imageUrl ??
+        (event.imageUrls.isNotEmpty ? event.imageUrls.first : null);
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: _line),
-        boxShadow: [BoxShadow(color: _greenDark.withValues(alpha: .06), blurRadius: 18, offset: const Offset(0, 7))],
+        boxShadow: [
+          BoxShadow(
+              color: _greenDark.withValues(alpha: .06),
+              blurRadius: 18,
+              offset: const Offset(0, 7))
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -465,7 +566,9 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
             SizedBox(
               height: featured ? 180 : 145,
               width: double.infinity,
-              child: Image.network(image, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _imagePlaceholder()),
+              child: Image.network(image,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _imagePlaceholder()),
             )
           else
             _imagePlaceholder(height: featured ? 130 : 105),
@@ -476,38 +579,72 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: Text(event.orgName.isEmpty ? 'Campus organization' : event.orgName, style: const TextStyle(color: _green, fontSize: 12, fontWeight: FontWeight.w900))),
+                    Expanded(
+                        child: Text(
+                            event.orgName.isEmpty
+                                ? 'Campus organization'
+                                : event.orgName,
+                            style: const TextStyle(
+                                color: _green,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900))),
                     if (featured)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(color: const Color(0xFFE4F4EC), borderRadius: BorderRadius.circular(10)),
-                        child: const Text('Featured', style: TextStyle(color: _greenDark, fontSize: 10, fontWeight: FontWeight.w800)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 5),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFE4F4EC),
+                            borderRadius: BorderRadius.circular(10)),
+                        child: const Text('Featured',
+                            style: TextStyle(
+                                color: _greenDark,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800)),
                       ),
                   ],
                 ),
                 const SizedBox(height: 7),
-                Text(event.title, style: const TextStyle(color: _ink, fontSize: 18, fontWeight: FontWeight.w900, height: 1.15)),
+                Text(event.title,
+                    style: const TextStyle(
+                        color: _ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15)),
                 if (event.description.isNotEmpty) ...[
                   const SizedBox(height: 7),
-                  Text(event.description, maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _muted, height: 1.4, fontSize: 13)),
+                  Text(event.description,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: _muted, height: 1.4, fontSize: 13)),
                 ],
                 const SizedBox(height: 8),
                 EventReactionBar(eventId: event.id),
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today_rounded, size: 16, color: _green),
+                    const Icon(Icons.calendar_today_rounded,
+                        size: 16, color: _green),
                     const SizedBox(width: 7),
-                    Expanded(child: Text(DateFormat('MMM d, yyyy • h:mm a').format(event.date), style: const TextStyle(color: _ink, fontSize: 12, fontWeight: FontWeight.w700))),
+                    Expanded(
+                        child: Text(
+                            DateFormat('MMM d, yyyy • h:mm a')
+                                .format(event.date),
+                            style: const TextStyle(
+                                color: _ink,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700))),
                     IconButton(
                       tooltip: 'Comments',
                       onPressed: () async {
                         await AnalyticsService.instance.logEventView(event.id);
                         if (!context.mounted) return;
                         final dialogContext = context;
-                        await showEventComments(dialogContext, eventId: event.id, eventTitle: event.title);
+                        await showEventComments(dialogContext,
+                            eventId: event.id, eventTitle: event.title);
                       },
-                      icon: const Icon(Icons.forum_outlined, size: 19, color: _green),
+                      icon: const Icon(Icons.forum_outlined,
+                          size: 19, color: _green),
                     ),
                   ],
                 ),
@@ -524,9 +661,11 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       height: height,
       width: double.infinity,
       decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFFDDF5E9), Color(0xFFB6E5D0)]),
+        gradient:
+            LinearGradient(colors: [Color(0xFFDDF5E9), Color(0xFFB6E5D0)]),
       ),
-      child: const Center(child: Icon(Icons.auto_awesome_rounded, color: _greenDark, size: 30)),
+      child: const Center(
+          child: Icon(Icons.auto_awesome_rounded, color: _greenDark, size: 30)),
     );
   }
 
@@ -543,11 +682,19 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           ),
           borderRadius: BorderRadius.circular(26),
           border: Border.all(color: const Color(0xFFB8E3D0)),
-          boxShadow: [BoxShadow(color: _greenDark.withValues(alpha: .09), blurRadius: 20, offset: const Offset(0, 8))],
+          boxShadow: [
+            BoxShadow(
+                color: _greenDark.withValues(alpha: .09),
+                blurRadius: 20,
+                offset: const Offset(0, 8))
+          ],
         ),
         child: Stack(
           children: [
-            Positioned(right: -35, top: -35, child: _orb(115, const Color(0xFFE4F7EE))),
+            Positioned(
+                right: -35,
+                top: -35,
+                child: _orb(115, const Color(0xFFE4F7EE))),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 26, 24, 25),
               child: Column(
@@ -556,30 +703,54 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                     width: 68,
                     height: 68,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [_green, _greenBright]),
+                      gradient:
+                          const LinearGradient(colors: [_green, _greenBright]),
                       borderRadius: BorderRadius.circular(22),
-                      boxShadow: [BoxShadow(color: _green.withValues(alpha: .18), blurRadius: 15, offset: const Offset(0, 7))],
+                      boxShadow: [
+                        BoxShadow(
+                            color: _green.withValues(alpha: .18),
+                            blurRadius: 15,
+                            offset: const Offset(0, 7))
+                      ],
                     ),
-                    child: const Icon(Icons.event_available_rounded, color: Colors.white, size: 31),
+                    child: const Icon(Icons.event_available_rounded,
+                        color: Colors.white, size: 31),
                   ),
                   const SizedBox(height: 15),
-                  const Text('No upcoming events', textAlign: TextAlign.center, style: TextStyle(color: _ink, fontWeight: FontWeight.w900, fontSize: 18, height: 1.15)),
+                  const Text('No upcoming events',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: _ink,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          height: 1.15)),
                   const SizedBox(height: 7),
-                  const Text('There are no upcoming events right now. Please check back later.', textAlign: TextAlign.center, style: TextStyle(color: _muted, height: 1.45, fontSize: 13)),
+                  const Text(
+                      'There are no upcoming events right now. Please check back later.',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(color: _muted, height: 1.45, fontSize: 13)),
                   const SizedBox(height: 18),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: .45),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withValues(alpha: .65)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: .65)),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.auto_awesome_rounded, size: 15, color: _greenDark),
+                        Icon(Icons.auto_awesome_rounded,
+                            size: 15, color: _greenDark),
                         SizedBox(width: 7),
-                        Text('New campus events will appear here', style: TextStyle(color: _greenDark, fontSize: 11, fontWeight: FontWeight.w800)),
+                        Text('New campus events will appear here',
+                            style: TextStyle(
+                                color: _greenDark,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800)),
                       ],
                     ),
                   ),
@@ -592,7 +763,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     );
   }
 }
-
 
 class _InterestMatchCard extends StatefulWidget {
   const _InterestMatchCard();
@@ -618,7 +788,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
 
   final _questions = const <Map<String, dynamic>>[
     {
-      'question': 'When you picture your ideal campus experience, which moment would make you feel most fulfilled?',
+      'question':
+          'When you picture your ideal campus experience, which moment would make you feel most fulfilled?',
       'options': <String>[
         'Leading a project that helps students or the campus',
         'Creating a performance, artwork, or music people remember',
@@ -633,7 +804,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       ],
     },
     {
-      'question': 'When a group needs someone to step forward, which kind of role feels most natural to you?',
+      'question':
+          'When a group needs someone to step forward, which kind of role feels most natural to you?',
       'options': <String>[
         'Organizing people, projects, and community activities',
         'Performing, rehearsing, or directing a creative production',
@@ -648,7 +820,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       ],
     },
     {
-      'question': 'If you could spend your free time doing one thing on campus, what would leave you feeling that your time mattered?',
+      'question':
+          'If you could spend your free time doing one thing on campus, what would leave you feeling that your time mattered?',
       'options': <String>[
         'Advocating for students and helping improve campus life',
         'Making art, music, theater, dance, or crafts',
@@ -663,7 +836,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       ],
     },
     {
-      'question': 'After a difficult week, what kind of campus activity would you naturally want to return to?',
+      'question':
+          'After a difficult week, what kind of campus activity would you naturally want to return to?',
       'options': <String>[
         'An active group where I can train, compete, or stay healthy',
         'A creative space where I can express myself through performance',
@@ -678,7 +852,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       ],
     },
     {
-      'question': 'Which community would you still choose to belong to even if nobody asked you to join?',
+      'question':
+          'Which community would you still choose to belong to even if nobody asked you to join?',
       'options': <String>[
         'A community that creates change and serves students',
         'A community that celebrates creativity and expression',
@@ -710,7 +885,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFFF1FAF6),
           surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
           titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
           contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
           title: Column(
@@ -727,7 +903,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                       ),
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: const Icon(Icons.psychology_alt_rounded, color: Colors.white, size: 19),
+                    child: const Icon(Icons.psychology_alt_rounded,
+                        color: Colors.white, size: 19),
                   ),
                   const SizedBox(width: 9),
                   Text(
@@ -754,7 +931,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
               const SizedBox(height: 7),
               const Text(
                 'Choose the option that feels most like you.',
-                style: TextStyle(color: Color(0xFF6B8178), fontSize: 11.5, height: 1.35),
+                style: TextStyle(
+                    color: Color(0xFF6B8178), fontSize: 11.5, height: 1.35),
               ),
             ],
           ),
@@ -773,10 +951,12 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                           onTap: () => Navigator.pop(context, option),
                           borderRadius: BorderRadius.circular(15),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 13, vertical: 13),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(15),
-                              border: Border.all(color: const Color(0xFFCBE8DC)),
+                              border:
+                                  Border.all(color: const Color(0xFFCBE8DC)),
                             ),
                             child: Row(
                               children: [
@@ -787,7 +967,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                                     color: const Color(0xFFE4F7EF),
                                     borderRadius: BorderRadius.circular(9),
                                   ),
-                                  child: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F8A61), size: 15),
+                                  child: const Icon(Icons.arrow_forward_rounded,
+                                      color: Color(0xFF0F8A61), size: 15),
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
@@ -836,7 +1017,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       for (final dimension in _dimensions) dimension: 0.0,
     };
     for (final category in _answerCategories) {
-      if (profile.containsKey(category)) profile[category] = profile[category]! + 1.0;
+      if (profile.containsKey(category))
+        profile[category] = profile[category]! + 1.0;
     }
     return profile;
   }
@@ -850,20 +1032,47 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
     const categoryMap = <String, Map<String, double>>{
       'arts & performance': {'Arts & Performance': 1.0},
       'arts & crafts': {'Arts & Performance': 1.0},
-      'arts & lifestyle': {'Arts & Performance': .72, 'Media & Creativity': .30},
+      'arts & lifestyle': {
+        'Arts & Performance': .72,
+        'Media & Creativity': .30
+      },
       'media & publications': {'Media & Creativity': 1.0},
-      'literary & creative': {'Media & Creativity': .92, 'Arts & Performance': .35},
-      'academic & literary': {'Academic & Technology': .75, 'Media & Creativity': .55},
-      'academic & communication': {'Academic & Technology': .65, 'Media & Creativity': .75},
-      'technology & innovation': {'Academic & Technology': 1.0, 'Media & Creativity': .25},
-      'academic & leadership': {'Academic & Technology': .60, 'Leadership & Service': .90},
+      'literary & creative': {
+        'Media & Creativity': .92,
+        'Arts & Performance': .35
+      },
+      'academic & literary': {
+        'Academic & Technology': .75,
+        'Media & Creativity': .55
+      },
+      'academic & communication': {
+        'Academic & Technology': .65,
+        'Media & Creativity': .75
+      },
+      'technology & innovation': {
+        'Academic & Technology': 1.0,
+        'Media & Creativity': .25
+      },
+      'academic & leadership': {
+        'Academic & Technology': .60,
+        'Leadership & Service': .90
+      },
       'leadership & governance': {'Leadership & Service': 1.0},
-      'advocacy & social': {'Leadership & Service': .95, 'Faith & Community': .20},
-      'support & mentoring': {'Support & Mentoring': 1.0, 'Leadership & Service': .30},
+      'advocacy & social': {
+        'Leadership & Service': .95,
+        'Faith & Community': .20
+      },
+      'support & mentoring': {
+        'Support & Mentoring': 1.0,
+        'Leadership & Service': .30
+      },
       'faith & spirituality': {'Faith & Community': 1.0},
       'health & wellness': {'Sports & Wellness': .92, 'Faith & Community': .18},
       'sports & recreation': {'Sports & Wellness': 1.0},
-      'cultural & heritage': {'Arts & Performance': .62, 'Media & Creativity': .50},
+      'cultural & heritage': {
+        'Arts & Performance': .62,
+        'Media & Creativity': .50
+      },
     };
 
     for (final entry in categoryMap.entries) {
@@ -872,15 +1081,89 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       }
     }
 
-    final text = '${org.name} ${org.category} ${org.shortDesc} ${org.about} ${org.missionVision} ${org.activitiesHighlights.map((e) => '${e.type} ${e.content} ${e.caption}').join(' ')}'.toLowerCase();
+    final text =
+        '${org.name} ${org.category} ${org.shortDesc} ${org.about} ${org.missionVision} ${org.activitiesHighlights.map((e) => '${e.type} ${e.content} ${e.caption}').join(' ')}'
+            .toLowerCase();
     const keywordMap = <String, List<String>>{
-      'Leadership & Service': ['student government', 'student council', 'governance', 'leadership', 'advocacy', 'volunteer', 'community service', 'student voice', 'campus improvement', 'academic programs'],
-      'Arts & Performance': ['theater', 'theatre', 'music', 'dance', 'performance', 'drama', 'marching band', 'drum', 'lyre', 'arts', 'craft', 'fashion'],
-      'Media & Creativity': ['publication', 'journalism', 'newsletter', 'writing', 'literary', 'poetry', 'photography', 'media', 'storytelling', 'creative writing'],
-      'Academic & Technology': ['academic', 'study', 'tutoring', 'research', 'coding', 'programming', 'technology', 'innovation', 'hackathon', 'workshop'],
-      'Faith & Community': ['christian', 'faith', 'spiritual', 'ministry', 'bible', 'fellowship', 'worship'],
-      'Support & Mentoring': ['peer support', 'mentoring', 'support group', 'facilitator', 'student support', 'peer'],
-      'Sports & Wellness': ['sport', 'sports', 'fitness', 'wellness', 'athletic', 'recreation', 'motorcycle', 'riding', 'competition', 'training'],
+      'Leadership & Service': [
+        'student government',
+        'student council',
+        'governance',
+        'leadership',
+        'advocacy',
+        'volunteer',
+        'community service',
+        'student voice',
+        'campus improvement',
+        'academic programs'
+      ],
+      'Arts & Performance': [
+        'theater',
+        'theatre',
+        'music',
+        'dance',
+        'performance',
+        'drama',
+        'marching band',
+        'drum',
+        'lyre',
+        'arts',
+        'craft',
+        'fashion'
+      ],
+      'Media & Creativity': [
+        'publication',
+        'journalism',
+        'newsletter',
+        'writing',
+        'literary',
+        'poetry',
+        'photography',
+        'media',
+        'storytelling',
+        'creative writing'
+      ],
+      'Academic & Technology': [
+        'academic',
+        'study',
+        'tutoring',
+        'research',
+        'coding',
+        'programming',
+        'technology',
+        'innovation',
+        'hackathon',
+        'workshop'
+      ],
+      'Faith & Community': [
+        'christian',
+        'faith',
+        'spiritual',
+        'ministry',
+        'bible',
+        'fellowship',
+        'worship'
+      ],
+      'Support & Mentoring': [
+        'peer support',
+        'mentoring',
+        'support group',
+        'facilitator',
+        'student support',
+        'peer'
+      ],
+      'Sports & Wellness': [
+        'sport',
+        'sports',
+        'fitness',
+        'wellness',
+        'athletic',
+        'recreation',
+        'motorcycle',
+        'riding',
+        'competition',
+        'training'
+      ],
     };
 
     for (final entry in keywordMap.entries) {
@@ -888,7 +1171,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       for (final keyword in entry.value) {
         if (text.contains(keyword)) hits++;
       }
-      scores[entry.key] = scores[entry.key]! + (hits * .12).clamp(0.0, .42).toDouble();
+      scores[entry.key] =
+          scores[entry.key]! + (hits * .12).clamp(0.0, .42).toDouble();
     }
 
     return scores;
@@ -944,21 +1228,19 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
 
   @override
   Widget build(BuildContext context) {
-    final recs = _answers == null ? const <MapEntry<Organization, int>>[] : _recommendations();
+    final recs = _answers == null
+        ? const <MapEntry<Organization, int>>[]
+        : _recommendations();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF075A42), Color(0xFF0F8A61), Color(0xFF20B77D)],
-          ),
+          gradient: AppHeader.brandGradient,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF0F8A61).withValues(alpha: .14),
+              color: const Color(0xFF0B6B4D).withValues(alpha: .14),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -977,25 +1259,35 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: .12),
                       borderRadius: BorderRadius.circular(13),
-                      border: Border.all(color: Colors.white.withValues(alpha: .16)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: .16)),
                     ),
-                    child: const Icon(Icons.psychology_alt_rounded, color: Colors.white, size: 20),
+                    child: const Icon(Icons.psychology_alt_rounded,
+                        color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Discover what fits you', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                        Text('Discover what fits you',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900)),
                         SizedBox(height: 2),
-                        Text('Discover your fit through 5 thoughtful questions.', style: TextStyle(color: Colors.white70, fontSize: 11.5)),
+                        Text(
+                            'Discover your fit through 5 thoughtful questions.',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 11.5)),
                       ],
                     ),
                   ),
                   if (_answers != null)
                     IconButton(
                       onPressed: _startQuiz,
-                      icon: const Icon(Icons.replay_rounded, color: Colors.white70),
+                      icon: const Icon(Icons.replay_rounded,
+                          color: Colors.white70),
                       tooltip: 'Retake quiz',
                     ),
                 ],
@@ -1008,7 +1300,10 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                     Expanded(
                       child: Text(
                         'Your answers create an interest profile and surface organizations whose purpose and activities are closest to what you chose.',
-                        style: TextStyle(color: Colors.white.withValues(alpha: .88), fontSize: 12.5, height: 1.4),
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: .88),
+                            fontSize: 12.5,
+                            height: 1.4),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1017,17 +1312,27 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: const Color(0xFF075A42),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: const Text('Discover My Fit', style: TextStyle(fontWeight: FontWeight.w900)),
+                      child: const Text('Discover My Fit',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                     ),
                   ],
                 )
               else ...[
-                const Text('Closest matches to your answers', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
+                const Text('Closest matches to your answers',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13)),
                 const SizedBox(height: 4),
-                const Text('Match score is based on your answer pattern and the organization’s category, description, mission, and activities.', style: TextStyle(color: Colors.white70, fontSize: 10.5, height: 1.3)),
+                const Text(
+                    'Match score is based on your answer pattern and the organization’s category, description, mission, and activities.',
+                    style: TextStyle(
+                        color: Colors.white70, fontSize: 10.5, height: 1.3)),
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 116,
@@ -1039,7 +1344,11 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                       final org = recs[i].key;
                       final percent = recs[i].value;
                       return InkWell(
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrgDetailScreen(orgId: org.id))),
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    OrgDetailScreen(orgId: org.id))),
                         borderRadius: BorderRadius.circular(16),
                         child: Container(
                           width: 190,
@@ -1047,7 +1356,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: .12),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withValues(alpha: .18)),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: .18)),
                           ),
                           child: Row(
                             children: [
@@ -1056,8 +1366,17 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                                 height: 46,
                                 child: ClipOval(
                                   child: org.logoAsset.startsWith('http')
-                                      ? Image.network(org.logoAsset, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _smallLogo())
-                                      : Image.asset(org.logoAsset.isEmpty ? 'assets/primerabida.jpg' : org.logoAsset, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _smallLogo()),
+                                      ? Image.network(org.logoAsset,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              _smallLogo())
+                                      : Image.asset(
+                                          org.logoAsset.isEmpty
+                                              ? 'assets/primerabida.jpg'
+                                              : org.logoAsset,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              _smallLogo()),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1066,11 +1385,30 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Text('$percent% match', style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
+                                    Text('$percent% match',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w900)),
                                     const SizedBox(height: 3),
-                                    Text(org.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                                    Text(org.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w800)),
                                     const SizedBox(height: 3),
-                                    Text(org.category.isEmpty ? 'Campus organization' : org.category, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 9.5, fontWeight: FontWeight.w600)),
+                                    Text(
+                                        org.category.isEmpty
+                                            ? 'Campus organization'
+                                            : org.category,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w600)),
                                   ],
                                 ),
                               ),
@@ -1089,7 +1427,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
     );
   }
 
-  Widget _smallLogo() => Container(color: const Color(0xFFE4F7EF), child: const Icon(Icons.groups_rounded, color: Color(0xFF0F8A61), size: 22));
+  Widget _smallLogo() => Container(
+      color: const Color(0xFFE4F7EF),
+      child:
+          const Icon(Icons.groups_rounded, color: Color(0xFF0F8A61), size: 22));
 }
-
-

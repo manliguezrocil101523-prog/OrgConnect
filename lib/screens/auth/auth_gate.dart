@@ -15,7 +15,7 @@ import 'forgot_password_page.dart';
 ///
 /// Checks for a cached Supabase session on launch and routes the user
 /// directly to their correct dashboard without showing the login page again.
-/// If no session exists, routes to [UnifiedLoginPage].
+/// If no session exists, routes to [PublicEventsScreen] (guest view).
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -24,6 +24,9 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
+  // ── Assets ────────────────────────────────────────────────────────────────
+  static const String _kLogoAsset = 'assets/icon/app_logo.png';
+
   // ── Palette ───────────────────────────────────────────────────────────────
   static const Color _kBg = Color(0xFFF1F8F4);
   static const Color _kTitle = Color(0xFF17352A);
@@ -39,11 +42,23 @@ class _AuthGateState extends State<AuthGate> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkSession());
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Preload the logo so it appears instantly instead of popping in late.
+    // The empty onError means a missing file never crashes the loading screen.
+    precacheImage(
+      const AssetImage(_kLogoAsset),
+      context,
+      onError: (_, __) {},
+    );
+  }
+
   // ── Session Check ─────────────────────────────────────────────────────────
   Future<void> _checkSession() async {
     final session = Supabase.instance.client.auth.currentSession;
 
-// ✅ Intercept password recovery sessions BEFORE anything else
+    // Intercept password recovery sessions BEFORE anything else
     if (session != null) {
       final type = Uri.base.queryParameters['type'];
       if (type == 'recovery') {
@@ -52,10 +67,7 @@ class _AuthGateState extends State<AuthGate> {
       }
     }
 
-// Scenario A — No active session → go to login
-// Scenario A — No active session → show calendar as guest
-// ✅ Correct
-// After
+    // Scenario A — No active session → show public events as guest
     if (session == null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('is_first_launch', false);
@@ -105,7 +117,8 @@ class _AuthGateState extends State<AuthGate> {
         }
         AppState.instance.setRole(UserRole.adviser);
         AppState.instance.setCurrentOfficerOrgId(assignedOrgId);
-        _goTo(AdviserDashboard(orgId: assignedOrgId, orgName: orgs[orgIndex].name));
+        _goTo(AdviserDashboard(
+            orgId: assignedOrgId, orgName: orgs[orgIndex].name));
       } else if (role == 'officer') {
         // ── Officer ────────────────────────────────────────────────────────
         final assignedOrgId = profileData['assigned_org_id']?.toString() ?? '';
@@ -115,8 +128,11 @@ class _AuthGateState extends State<AuthGate> {
             .eq('org_id', assignedOrgId)
             .eq('profile_id', userId)
             .maybeSingle();
-        final officerPosition = officerMembership?['position']?.toString().toLowerCase().trim() ?? '';
-        if (!{'president', 'vice president', 'secretary'}.contains(officerPosition)) {
+        final officerPosition =
+            officerMembership?['position']?.toString().toLowerCase().trim() ??
+                '';
+        if (!{'president', 'vice president', 'secretary'}
+            .contains(officerPosition)) {
           await Supabase.instance.client.auth.signOut();
           _goTo(const UnifiedLoginPage());
           return;
@@ -217,8 +233,16 @@ class _AuthGateState extends State<AuthGate> {
               ),
               padding: const EdgeInsets.all(18),
               child: Image.asset(
-                'assets/OrgConnectLogo.png',
+                _kLogoAsset,
                 fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                // Fallback icon so a missing/corrupt logo never shows a red
+                // error box on the loading screen.
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.groups_rounded,
+                  size: 48,
+                  color: _kLoader,
+                ),
               ),
             ),
 
@@ -275,4 +299,3 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 }
-

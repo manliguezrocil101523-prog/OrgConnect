@@ -1,5 +1,4 @@
 name: my_app
-
 description: A new Flutter project.
 
 publish_to: 'none'
@@ -32,8 +31,10 @@ dependencies:
   url_launcher: ^6.3.2
   printing: ^5.14.2
   pdf: ^3.11.3
+  google_fonts: ^6.2.1
 
 dev_dependencies:
+  flutter_launcher_icons: ^0.14.4
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
@@ -43,8 +44,17 @@ flutter:
 
   assets:
     - assets/
+    - assets/icon/
 
   fonts:
     - family: MaterialIcons
       fonts:
         - asset: fonts/MaterialIcons-Regular.ttf
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/app_logo.png"
+  remove_alpha_ios: true

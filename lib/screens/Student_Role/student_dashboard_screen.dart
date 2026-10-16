@@ -10,6 +10,7 @@ import '/screens/Student_Role/student_dashboard_events.dart';
 import '/screens/profile/profile_screen.dart';
 import '../community/org_community_chat_screen.dart';
 import '/screens/organizations/org_list_screen.dart';
+import '../../widgets/app_header.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
@@ -52,16 +53,31 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     });
   }
 
+  Future<void> _refreshNotifications() async {
+    try {
+      await AppState.instance.fetchNotifications();
+    } catch (e) {
+      debugPrint('Could not refresh notifications: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-
-    // Unread count for the notification badge
-    final unreadCount = AppState.instance.notifications
-        .where((n) =>
-            (n.studentId == AppState.instance.currentStudent?.id ||
-                n.studentId == AppState.instance.currentStudent?.studentId) &&
-            !n.read)
-        .length;
+    final student = AppState.instance.currentStudent;
+    final unreadCount = student == null
+        ? 0
+        : AppState.instance.notifications.where((n) {
+            final title = n.title.toLowerCase();
+            final message = n.message.toLowerCase();
+            final isInterview = title.contains('interview') ||
+                message.contains('scheduled interview');
+            final isMember = title.contains('congratulations') ||
+                message.contains('officially a member');
+            return (n.studentId == student.id ||
+                    n.studentId == student.studentId) &&
+                (isInterview || isMember) &&
+                !n.read;
+          }).length;
 
     return PopScope(
       canPop: false,
@@ -110,6 +126,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             _HomeTab(),
             OrgListScreen(),
             StudentDashboard(),
+            NotificationScreen(showBackButton: false),
             ProfileScreen(),
           ],
         ),
@@ -172,14 +189,28 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 onTap: () => setState(() => _selectedIndex = 2),
               ),
               _NavItem(
-                icon: Icons.person_rounded,
-                label: 'Profile',
+                icon: Icons.notifications_rounded,
+                label: 'Notifs',
                 index: 3,
                 selectedIndex: _selectedIndex,
                 iconSize: iconSize,
                 fontSize: fontSize,
+                primaryColor: _eventsAccent,
+                badgeCount: unreadCount,
+                onTap: () {
+                  setState(() => _selectedIndex = 3);
+                  _refreshNotifications();
+                },
+              ),
+              _NavItem(
+                icon: Icons.person_rounded,
+                label: 'Profile',
+                index: 4,
+                selectedIndex: _selectedIndex,
+                iconSize: iconSize,
+                fontSize: fontSize,
                 primaryColor: _profileAccent,
-                onTap: () => setState(() => _selectedIndex = 3),
+                onTap: () => setState(() => _selectedIndex = 4),
               ),
             ],
           ),
@@ -190,207 +221,16 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 }
 
 // =============================================================================
-// _CalendarCard
-// Embeds the StudentDashboard (student_dashboard_events.dart) calendar widget
-// directly into the dashboard page as a card.
+// _QuickActionsRow — Applications / Joined Orgs / Notifications
+// Sits BELOW the green header, on the light background.
 // =============================================================================
-
-// =============================================================================
-// _HeroHeader  (UNCHANGED)
-// =============================================================================
-class _HeroHeader extends StatelessWidget {
-  final Color primary;
-  final Color secondary;
-
-  const _HeroHeader({
-    required this.primary,
-    required this.secondary,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final avatarSize = 64.0;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [primary, secondary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Stack(
-        children: [
-          // Decorative orb — top right
-          Positioned(
-            top: -30,
-            right: -20,
-            child: Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.07),
-              ),
-            ),
-          ),
-          // Decorative orb — bottom left
-          Positioned(
-            bottom: 10,
-            left: -40,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.05),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Avatar ring
-                  Container(
-                    width: avatarSize + 10,
-                    height: avatarSize + 10,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.18),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(3),
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(3),
-                          child: _buildAvatar(avatarSize),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 16),
-
-                  // Name + subtitle
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ListenableBuilder(
-                          listenable: AppState.instance,
-                          builder: (context, _) {
-                            final fullName =
-                                AppState.instance.currentStudent?.name ?? '';
-                            final nameParts = fullName.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
-                            final firstName = nameParts.take(2).join(' ');
-                            final greeting = firstName.isNotEmpty
-                                ? 'Welcome Back, $firstName 👋'
-                                : 'Welcome Back 👋';
-                            return Text(
-                              greeting,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.1,
-                                height: 1.15,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          'Manage your organizations and campus life',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.75),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: 0.1,
-                            height: 1.45,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // paste here ↓
-  Widget _buildAvatar(double avatarSize) {
-    return ListenableBuilder(
-      listenable: AppState.instance,
-      builder: (context, _) {
-        final student = AppState.instance.currentStudent;
-        final avatarUrl = student?.avatarUrl ?? '';
-
-        ImageProvider? bgImage;
-        Widget? fallbackChild;
-
-        if (avatarUrl.startsWith('data:')) {
-          try {
-            final base64Str = avatarUrl.substring(avatarUrl.indexOf(',') + 1);
-            bgImage = MemoryImage(base64Decode(base64Str));
-          } catch (_) {}
-        } else if (avatarUrl.isNotEmpty) {
-          bgImage = NetworkImage(avatarUrl);
-        }
-
-        fallbackChild = bgImage == null
-            ? Icon(
-                Icons.person_rounded,
-                size: avatarSize * 0.50,
-                color: const Color(0xFF16A34A),
-              )
-            : null;
-
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
-          child: CircleAvatar(
-            key: ValueKey(avatarUrl),
-            radius: avatarSize / 2,
-            backgroundColor: const Color(0xFFE0E7FF),
-            backgroundImage: bgImage,
-            child: fallbackChild,
-          ),
-        );
-      },
-    );
-  }
-} // ← this is the original closing brace of _HeroHeader
-
-// =============================================================================
-// _HeroBottomStrip — scrolls away with the page (NOT inside SliverAppBar)
-// =============================================================================
-class _HeroBottomStrip extends StatelessWidget {
-  final Color primary;
-  final Color secondary;
-
-  const _HeroBottomStrip({
-    required this.primary,
-    required this.secondary,
-  });
+class _QuickActionsRow extends StatelessWidget {
+  const _QuickActionsRow();
 
   @override
   Widget build(BuildContext context) {
     final student = AppState.instance.currentStudent;
-    final applicationCount = AppState.instance.applications
-        .where((a) => a.userId == student?.id || a.studentId == student?.studentId)
-        .length;
+
     final unreadOrgUpdates = AppState.instance.notifications
         .where((n) =>
             n.orgId != null &&
@@ -399,48 +239,57 @@ class _HeroBottomStrip extends StatelessWidget {
             !_isWorkflowOrganizationNotification(n) &&
             !_isStudentPersonalNotification(n))
         .length;
-    final updateCount = AppState.instance.notifications
+
+    final unreadNotifications = AppState.instance.notifications
         .where((n) =>
-            (n.studentId == student?.id ||
-                n.studentId == student?.studentId) &&
+            (n.studentId == student?.id || n.studentId == student?.studentId) &&
             !n.read)
         .length;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [primary, secondary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Row(
         children: [
-          Expanded(child: _HeroStatChip(
-            label: 'Applications',
-            value: applicationCount.toString(),
-            icon: Icons.assignment_rounded,
-            showBadge: false,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const _MyApplicationsScreen())),
-          )),
-          _VerticalDividerChip(),
-          Expanded(child: _HeroStatChip(
-            label: 'Joined Orgs',
-            value: unreadOrgUpdates.toString(),
-            icon: Icons.groups_rounded,
-            showBadge: true,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const _JoinedOrganizationsScreen())),
-          )),
-          _VerticalDividerChip(),
-          Expanded(child: _HeroStatChip(
-            label: 'Notifications',
-            value: updateCount.toString(),
-            icon: Icons.notifications_active_rounded,
-            showBadge: true,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
-          )),
+          Expanded(
+            child: _QuickActionCard(
+              label: 'Applications',
+              icon: Icons.assignment_rounded,
+              accent: const Color(0xFF16A34A),
+              badgeCount: 0,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const _MyApplicationsScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _QuickActionCard(
+              label: 'Joined Orgs',
+              icon: Icons.groups_rounded,
+              accent: const Color(0xFF0F766E),
+              badgeCount: unreadOrgUpdates,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const _JoinedOrganizationsScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _QuickActionCard(
+              label: 'Notifications',
+              icon: Icons.notifications_active_rounded,
+              accent: const Color(0xFF15803D),
+              badgeCount: unreadNotifications,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationScreen()),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -448,82 +297,104 @@ class _HeroBottomStrip extends StatelessWidget {
 }
 
 // =============================================================================
-// _HeroStatChip  (UNCHANGED)
+// _QuickActionCard — one white rounded card with icon + label + red badge
 // =============================================================================
-class _HeroStatChip extends StatelessWidget {
+class _QuickActionCard extends StatelessWidget {
   final String label;
-  final String value;
   final IconData icon;
-  final bool showBadge;
+  final Color accent;
   final VoidCallback onTap;
+  final int badgeCount;
 
-  const _HeroStatChip({
+  const _QuickActionCard({
     required this.label,
-    required this.value,
     required this.icon,
+    required this.accent,
     required this.onTap,
-    this.showBadge = true,
+    this.badgeCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFCBE8DC)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120F8A61),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Icon(icon, color: Colors.white, size: 17),
-                    if (showBadge && value != '0') Positioned(
-                      right: -1, top: -3,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-                        child: Text(value, style: const TextStyle(color: Color(0xFF0F766E), fontSize: 8, fontWeight: FontWeight.w900)),
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
                       ),
+                      child: Icon(icon, color: accent, size: 23),
                     ),
+                    if (badgeCount > 0)
+                      Positioned(
+                        right: -5,
+                        top: -4,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 18),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDC2626),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: Text(
+                            badgeCount > 99 ? '99+' : '$badgeCount',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 5),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              const Text('Tap to open', style: TextStyle(color: Colors.white70, fontSize: 8.5, fontWeight: FontWeight.w600)),
-            ],
+                const SizedBox(height: 9),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF173B30),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    );
-  }
-}
-
-// =============================================================================
-// _VerticalDividerChip  (UNCHANGED)
-// =============================================================================
-class _VerticalDividerChip extends StatelessWidget {
-  const _VerticalDividerChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 36,
-      color: Colors.white.withValues(alpha: 0.20),
     );
   }
 }
@@ -539,94 +410,112 @@ class _MyApplicationsScreen extends StatefulWidget {
 }
 
 class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
-  bool _loading = true;
+  bool _refreshing = true;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshApplications());
+    _refreshApplications();
   }
 
   Future<void> _refreshApplications() async {
-    if (mounted) setState(() => _loading = true);
+    if (mounted)
+      setState(() {
+        _refreshing = true;
+        _failed = false;
+      });
     try {
-      // Always refresh the profile, organizations, and applications when this
-      // screen opens. This is important for students who have applications
-      // in more than one organization and for renamed organizations.
-      await AppState.instance.loadStudentProfile();
-      await AppState.instance.fetchOrganizations();
-      await AppState.instance.fetchApplications();
-      // My Applications must stay in sync with the same membership and
-      // student-facing approval data used by Joined Organizations and
-      // Notifications. This also restores older approved memberships whose
-      // original applications row is no longer present.
-      await AppState.instance.fetchMembers();
-      await AppState.instance.fetchNotifications();
-      await AppState.instance.syncCurrentStudentMemberships();
+      final app = AppState.instance;
+      if (app.currentStudent == null) await app.loadStudentProfile();
+
+      // Only what this screen needs, and in parallel.
+      await Future.wait<void>([
+        app.fetchApplications(),
+        if (app.organizations.isEmpty) app.fetchOrganizations(),
+      ]);
     } catch (e) {
       debugPrint('Could not refresh My Applications: $e');
+      if (mounted) _failed = true;
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final student = AppState.instance.currentStudent;
-    final authUserId = supabase.Supabase.instance.client.auth.currentUser?.id;
-    final studentId = student?.studentId.trim() ?? '';
-    final studentEmail = student?.email.trim().toLowerCase() ?? '';
-    final appsById = <String, Application>{};
+    // Rebuilds automatically when AppState changes (fetch finishes).
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        final authUserId =
+            supabase.Supabase.instance.client.auth.currentUser?.id;
 
-    for (final application in AppState.instance.applications) {
-      final matchesUser = authUserId != null &&
-          application.userId != null &&
-          application.userId!.trim() == authUserId;
-      final matchesProfile = student != null && application.userId == student.id;
-      final matchesStudentId = studentId.isNotEmpty &&
-          application.studentId.trim() == studentId;
-      final matchesEmail = studentEmail.isNotEmpty &&
-          application.email.trim().toLowerCase() == studentEmail;
-      if (matchesUser || matchesProfile || matchesStudentId || matchesEmail) {
-        appsById[application.id] = application;
-      }
-    }
+        // SECURITY: match ONLY on the authenticated user id (see section 3).
+        final apps = AppState.instance.applications
+            .where((a) => authUserId != null && a.userId == authUserId)
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    // My Applications must contain only real application rows from Supabase.
-    // Do not derive application cards from memberships, joinedOrgIds, or
-    // notifications. A membership/notification is not an application record.
-    final apps = appsById.values.toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        Widget body;
+        if (apps.isEmpty && _refreshing) {
+          body = const Center(
+              child: CircularProgressIndicator(color: Color(0xFF0F8A61)));
+        } else if (apps.isEmpty && _failed) {
+          body = _QuickEmpty(
+            icon: Icons.wifi_off_rounded,
+            title: 'Could not load applications',
+            subtitle: 'Check your connection and pull down to try again.',
+          );
+        } else if (apps.isEmpty) {
+          body = const _QuickEmpty(
+            icon: Icons.assignment_outlined,
+            title: 'No applications yet',
+            subtitle:
+                'Organizations you apply to will appear here with their current status.',
+          );
+        } else {
+          body = ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+            itemCount: apps.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (_, i) => _ApplicationCard(application: apps[i]),
+          );
+        }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF1FAF6),
-      body: Column(children: [
-        const _StudentSectionHeader(
-          title: 'My Applications',
-          subtitle: 'Track your organization applications',
-          icon: Icons.assignment_rounded,
-          showBackButton: true,
-        ),
-        Expanded(
-          child: _loading && apps.isEmpty
-              ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF0F8A61)),
-                )
-              : apps.isEmpty
-                  ? const _QuickEmpty(
-                      icon: Icons.assignment_outlined,
-                      title: 'No applications yet',
-                      subtitle:
-                          'Organizations you apply to will appear here with their current status.',
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                      itemCount: apps.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (_, i) => _ApplicationCard(application: apps[i]),
-                    ),
-        ),
-      ]),
+        return Scaffold(
+          backgroundColor: const Color(0xFFF1FAF6),
+          body: Column(children: [
+            AppHeader(
+              title: 'My Applications',
+              subtitle: 'Track your organization applications',
+              status: apps.isEmpty
+                  ? 'NO APPLICATIONS YET'
+                  : '${apps.length} APPLICATION${apps.length == 1 ? '' : 'S'}',
+              icon: Icons.assignment_rounded,
+              onBack: () => Navigator.of(context).maybePop(),
+            ),
+            // Thin bar: old data stays visible while fresh data loads.
+            if (_refreshing && apps.isNotEmpty)
+              const LinearProgressIndicator(
+                  minHeight: 2, color: Color(0xFF0F8A61)),
+            Expanded(
+              child: RefreshIndicator(
+                color: const Color(0xFF0F8A61),
+                onRefresh: _refreshApplications,
+                child: apps.isEmpty
+                    ? ListView(children: [
+                        SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.5,
+                            child: body)
+                      ])
+                    : body,
+              ),
+            ),
+          ]),
+        );
+      },
     );
   }
 }
@@ -640,17 +529,25 @@ class _ApplicationCard extends StatelessWidget {
     final color = _statusColor(application.status);
     final rawApplicationOrgName = application.orgName.trim();
     final normalizedApplicationOrgName = rawApplicationOrgName.toLowerCase();
-    final org = AppState.instance.organizations.cast<Organization?>().firstWhere(
-      (candidate) => candidate != null &&
-          ((application.orgId != null && candidate.id == application.orgId) ||
-              candidate.name.trim().toLowerCase() == normalizedApplicationOrgName ||
-              candidate.acronym.trim().toLowerCase() == normalizedApplicationOrgName ||
-              (normalizedApplicationOrgName == 'scap' &&
-                  candidate.acronym.trim().toLowerCase() == 'scap') ||
-              (normalizedApplicationOrgName.contains('el teatro') &&
-                  candidate.name.trim().toLowerCase().contains('el teatro'))),
-      orElse: () => null,
-    );
+    final org =
+        AppState.instance.organizations.cast<Organization?>().firstWhere(
+              (candidate) =>
+                  candidate != null &&
+                  ((application.orgId != null &&
+                          candidate.id == application.orgId) ||
+                      candidate.name.trim().toLowerCase() ==
+                          normalizedApplicationOrgName ||
+                      candidate.acronym.trim().toLowerCase() ==
+                          normalizedApplicationOrgName ||
+                      (normalizedApplicationOrgName == 'scap' &&
+                          candidate.acronym.trim().toLowerCase() == 'scap') ||
+                      (normalizedApplicationOrgName.contains('el teatro') &&
+                          candidate.name
+                              .trim()
+                              .toLowerCase()
+                              .contains('el teatro'))),
+              orElse: () => null,
+            );
 
     // The organization was renamed from SCAP to Student Catholic Action.
     // Prefer the current organization record everywhere on the card so an
@@ -666,7 +563,10 @@ class _ApplicationCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFCBE8DC)),
-        boxShadow: const [BoxShadow(color: Color(0x090F8A61), blurRadius: 15, offset: Offset(0, 6))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x090F8A61), blurRadius: 15, offset: Offset(0, 6))
+        ],
       ),
       child: Row(
         children: [
@@ -676,7 +576,9 @@ class _ApplicationCard extends StatelessWidget {
             Container(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(color: const Color(0xFFE4F7EF), borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFE4F7EF),
+                  borderRadius: BorderRadius.circular(14)),
               child: const Icon(Icons.groups_rounded, color: Color(0xFF0F8A61)),
             ),
           const SizedBox(width: 12),
@@ -684,23 +586,39 @@ class _ApplicationCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(displayName, style: const TextStyle(color: Color(0xFF173B30), fontSize: 15, fontWeight: FontWeight.w900)),
+                Text(displayName,
+                    style: const TextStyle(
+                        color: Color(0xFF173B30),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900)),
                 const SizedBox(height: 4),
                 Text(
                   'Applied ${application.createdAt.month}/${application.createdAt.day}/${application.createdAt.year}',
-                  style: const TextStyle(color: Color(0xFF6B8178), fontSize: 11.5),
+                  style:
+                      const TextStyle(color: Color(0xFF6B8178), fontSize: 11.5),
                 ),
-                if (application.status == ApplicationStatus.declined && application.declineReason.isNotEmpty) ...[
+                if (application.status == ApplicationStatus.declined &&
+                    application.declineReason.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text('Reason: ${application.declineReason}', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 11.5, height: 1.35)),
+                  Text('Reason: ${application.declineReason}',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Color(0xFFB91C1C),
+                          fontSize: 11.5,
+                          height: 1.35)),
                 ],
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-            decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(12)),
-            child: Text(_statusLabel(application.status), style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w900)),
+            decoration: BoxDecoration(
+                color: color.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(12)),
+            child: Text(_statusLabel(application.status),
+                style: TextStyle(
+                    color: color, fontSize: 10.5, fontWeight: FontWeight.w900)),
           ),
         ],
       ),
@@ -722,13 +640,16 @@ class _ApplicationCard extends StatelessWidget {
   }
 
   static String _statusLabel(ApplicationStatus status) {
-    if (status == ApplicationStatus.approved || status == ApplicationStatus.accepted) {
+    if (status == ApplicationStatus.approved ||
+        status == ApplicationStatus.accepted) {
       return 'Approved';
     }
     return status.name
         .replaceAll('_', ' ')
         .split(' ')
-        .map((word) => word.isEmpty ? word : '${word[0].toUpperCase()}${word.substring(1)}')
+        .map((word) => word.isEmpty
+            ? word
+            : '${word[0].toUpperCase()}${word.substring(1)}')
         .join(' ');
   }
 }
@@ -737,10 +658,12 @@ class _JoinedOrganizationsScreen extends StatefulWidget {
   const _JoinedOrganizationsScreen();
 
   @override
-  State<_JoinedOrganizationsScreen> createState() => _JoinedOrganizationsScreenState();
+  State<_JoinedOrganizationsScreen> createState() =>
+      _JoinedOrganizationsScreenState();
 }
 
-class _JoinedOrganizationsScreenState extends State<_JoinedOrganizationsScreen> {
+class _JoinedOrganizationsScreenState
+    extends State<_JoinedOrganizationsScreen> {
   final Set<String> _joinedOrgIds = <String>{};
   final Set<String> _joinedOrgNames = <String>{};
   bool _loading = true;
@@ -748,7 +671,8 @@ class _JoinedOrganizationsScreenState extends State<_JoinedOrganizationsScreen> 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadJoinedOrganizations());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _loadJoinedOrganizations());
   }
 
   Future<void> _loadJoinedOrganizations() async {
@@ -776,7 +700,8 @@ class _JoinedOrganizationsScreenState extends State<_JoinedOrganizationsScreen> 
         final profileMatch = member.profileId == student?.id;
         final legacyNameMatch = student != null &&
             student.name.trim().isNotEmpty &&
-            member.name.trim().toLowerCase() == student.name.trim().toLowerCase();
+            member.name.trim().toLowerCase() ==
+                student.name.trim().toLowerCase();
         if (!profileMatch && !legacyNameMatch) continue;
         final memberId = member.orgId?.trim();
         if (memberId != null && memberId.isNotEmpty) ids.add(memberId);
@@ -792,7 +717,8 @@ class _JoinedOrganizationsScreenState extends State<_JoinedOrganizationsScreen> 
         if (status != 'approved' && status != 'accepted') continue;
 
         final matchesUser = student != null &&
-            application.userId != null && application.userId == student.id;
+            application.userId != null &&
+            application.userId == student.id;
         final matchesStudentId = student != null &&
             student.studentId.trim().isNotEmpty &&
             application.studentId.trim() == student.studentId.trim();
@@ -842,24 +768,37 @@ class _JoinedOrganizationsScreenState extends State<_JoinedOrganizationsScreen> 
           backgroundColor: const Color(0xFFF1FAF6),
           body: Column(
             children: [
-              _StudentSectionHeader(title: 'Joined Organizations', subtitle: 'Your organization communities', icon: Icons.groups_rounded, showBackButton: true),
-              Expanded(child: _loading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF0F8A61)),
-                )
-              : joined.isEmpty
-                  ? const _QuickEmpty(
-                      icon: Icons.groups_outlined,
-                      title: 'No organizations joined yet',
-                      subtitle: 'When an application is accepted, your organization will appear here.',
-                    )
-                  : ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                      itemCount: joined.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (_, i) => _JoinedOrgCard(org: joined[i]),
-                    ),
+              AppHeader(
+                title: 'Joined Organizations',
+                subtitle: 'Your organization communities',
+                status: joined.isEmpty
+                    ? 'NO ORGANIZATIONS YET'
+                    : '${joined.length} JOINED',
+                icon: Icons.groups_rounded,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: _loading
+                    ? const Center(
+                        child:
+                            CircularProgressIndicator(color: Color(0xFF0F8A61)),
+                      )
+                    : joined.isEmpty
+                        ? const _QuickEmpty(
+                            icon: Icons.groups_outlined,
+                            title: 'No organizations joined yet',
+                            subtitle:
+                                'When an application is accepted, your organization will appear here.',
+                          )
+                        : ListView.separated(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+                            itemCount: joined.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (_, i) =>
+                                _JoinedOrgCard(org: joined[i]),
+                          ),
               ),
             ],
           ),
@@ -867,43 +806,6 @@ class _JoinedOrganizationsScreenState extends State<_JoinedOrganizationsScreen> 
       },
     );
   }
-}
-
-class _StudentSectionHeader extends StatelessWidget {
-  final String title, subtitle;
-  final IconData icon;
-  final bool showBackButton;
-  const _StudentSectionHeader({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    this.showBackButton = false,
-  });
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 150, width: double.infinity,
-    child: Container(
-      decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF0F766E), Color(0xFF16A34A)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-      child: Stack(children: [
-        Positioned(right: -35, top: -45, child: Container(width: 150, height: 150, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: .08)))),
-        SafeArea(bottom: false, child: Padding(padding: EdgeInsets.fromLTRB(showBackButton ? 64 : 20, 12, 20, 0), child: Row(children: [
-          Container(width: 58, height: 58, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .16), shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: .28))), child: Icon(icon, color: Colors.white, size: 28)),
-          const SizedBox(width: 14),
-          Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)), const SizedBox(height: 4), Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: .82), fontSize: 12.5, fontWeight: FontWeight.w600))]))
-        ]))),
-        if (showBackButton)
-          Positioned(
-            left: 8,
-            top: MediaQuery.of(context).padding.top + 4,
-            child: IconButton(
-              tooltip: 'Back',
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-            ),
-          ),
-      ]),
-    ),
-  );
 }
 
 bool _isStudentPersonalNotification(Notification n) {
@@ -934,7 +836,8 @@ bool _isWorkflowOrganizationNotification(Notification n) {
     'has been approved and published',
     'final pictures',
   ];
-  return workflowWords.any((word) => title.contains(word) || message.contains(word)) ||
+  return workflowWords
+          .any((word) => title.contains(word) || message.contains(word)) ||
       title == 'new event';
 }
 
@@ -945,20 +848,32 @@ class _JoinedOrgCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final updates = AppState.instance.notifications
-        .where((n) => n.orgId == org.id && !n.read && !_isWorkflowOrganizationNotification(n) && !_isStudentPersonalNotification(n))
+        .where((n) =>
+            n.orgId == org.id &&
+            !n.read &&
+            !_isWorkflowOrganizationNotification(n) &&
+            !_isStudentPersonalNotification(n))
         .length;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _MemberOrganizationSpace(org: org))),
+        onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => _MemberOrganizationSpace(org: org))),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: const Color(0xFFCBE8DC)),
-            boxShadow: const [BoxShadow(color: Color(0x090F8A61), blurRadius: 15, offset: Offset(0, 6))],
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x090F8A61),
+                  blurRadius: 15,
+                  offset: Offset(0, 6))
+            ],
           ),
           child: Row(
             children: [
@@ -968,22 +883,37 @@ class _JoinedOrgCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(org.name, style: const TextStyle(color: Color(0xFF173B30), fontSize: 15, fontWeight: FontWeight.w900)),
+                    Text(org.name,
+                        style: const TextStyle(
+                            color: Color(0xFF173B30),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900)),
                     const SizedBox(height: 4),
                     Text(
-                      org.shortDesc.isEmpty ? 'Your member community' : org.shortDesc,
+                      org.shortDesc.isEmpty
+                          ? 'Your member community'
+                          : org.shortDesc,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF6B8178), fontSize: 11.5, height: 1.35),
+                      style: const TextStyle(
+                          color: Color(0xFF6B8178),
+                          fontSize: 11.5,
+                          height: 1.35),
                     ),
                     const SizedBox(height: 7),
                     Row(
                       children: [
-                        const Icon(Icons.campaign_rounded, size: 14, color: Color(0xFF0F8A61)),
+                        const Icon(Icons.campaign_rounded,
+                            size: 14, color: Color(0xFF0F8A61)),
                         const SizedBox(width: 4),
                         Text(
-                          updates == 0 ? 'No new updates' : '$updates new update${updates == 1 ? '' : 's'}',
-                          style: const TextStyle(color: Color(0xFF0F8A61), fontSize: 10.5, fontWeight: FontWeight.w800),
+                          updates == 0
+                              ? 'No new updates'
+                              : '$updates new update${updates == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                              color: Color(0xFF0F8A61),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800),
                         ),
                       ],
                     ),
@@ -1004,7 +934,8 @@ class _MemberOrganizationSpace extends StatefulWidget {
   const _MemberOrganizationSpace({required this.org});
 
   @override
-  State<_MemberOrganizationSpace> createState() => _MemberOrganizationSpaceState();
+  State<_MemberOrganizationSpace> createState() =>
+      _MemberOrganizationSpaceState();
 }
 
 class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
@@ -1043,7 +974,8 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
       // Read organization notifications directly so adviser announcements are
       // shown even when an older notification row was mistakenly addressed to
       // a student's ID. Personal notification types stay in Notifications.
-      final notificationRows = List<Map<String, dynamic>>.from(results[4] as List);
+      final notificationRows =
+          List<Map<String, dynamic>>.from(results[4] as List);
       final announcements = notificationRows
           .map((row) => Notification(
                 id: row['id']?.toString() ?? '',
@@ -1075,15 +1007,18 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
       }
 
       // Opening the organization space counts as seeing the adviser updates.
-      final unreadAnnouncements =
-          announcements.where((n) => !n.read && !_isWorkflowOrganizationNotification(n)).toList();
+      final unreadAnnouncements = announcements
+          .where((n) => !n.read && !_isWorkflowOrganizationNotification(n))
+          .toList();
       for (final announcement in unreadAnnouncements) {
         await AppState.instance.markNotificationRead(announcement.id);
       }
       if (mounted && unreadAnnouncements.isNotEmpty) {
         setState(() {
           _orgAnnouncements = announcements
-              .map((n) => unreadAnnouncements.any((u) => u.id == n.id) ? n.copyWith(read: true) : n)
+              .map((n) => unreadAnnouncements.any((u) => u.id == n.id)
+                  ? n.copyWith(read: true)
+                  : n)
               .toList();
         });
       }
@@ -1111,7 +1046,9 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
 
   bool _isFeeAnnouncement(Notification n) {
     final text = '${n.title} ${n.message}'.toLowerCase();
-    return RegExp(r'\bfee\b|fees|registration|membership dues|dues|payment|payable|₱|php').hasMatch(text);
+    return RegExp(
+            r'\bfee\b|fees|registration|membership dues|dues|payment|payable|₱|php')
+        .hasMatch(text);
   }
 
   @override
@@ -1125,7 +1062,10 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
     final org = widget.org;
     final now = DateTime.now();
     final events = AppState.instance.events
-        .where((e) => (e.orgId == org.id || e.orgName == org.name) && !DateTime(e.date.year, e.date.month, e.date.day).isBefore(DateTime(now.year, now.month, now.day)))
+        .where((e) =>
+            (e.orgId == org.id || e.orgName == org.name) &&
+            !DateTime(e.date.year, e.date.month, e.date.day)
+                .isBefore(DateTime(now.year, now.month, now.day)))
         .toList()
       ..sort((a, b) => a.date.compareTo(b.date));
 
@@ -1133,7 +1073,8 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
         .where((m) => m.orgId == org.id || m.orgName == org.name)
         .toList();
 
-    final regularAnnouncements = _orgAnnouncements.where((n) => !_isFeeAnnouncement(n)).toList();
+    final regularAnnouncements =
+        _orgAnnouncements.where((n) => !_isFeeAnnouncement(n)).toList();
     final officers = _orgPeople
         .where((p) => p['role']?.toString().toLowerCase() == 'officer')
         .toList();
@@ -1145,62 +1086,317 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
       backgroundColor: const Color(0xFFF1FAF6),
       body: Column(children: [
         _StudentOrgHeader(org: org),
-        Expanded(child: RefreshIndicator(
-        onRefresh: _loadCommunityData,
-        color: const Color(0xFF0F8A61),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-          children: [
-            // Organization announcements only: meetings, reminders, deadlines,
-            // rehearsals, orientations, and other messages sent to all members.
-            _CommunitySection(
-              title: 'Organization announcements',
-              icon: Icons.campaign_rounded,
-              child: _loadingCommunity
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : regularAnnouncements.isEmpty
-                      ? const Text(
-                          'No organization announcements have been posted yet. Meeting notices, reminders, deadlines, and other member updates will appear here.',
-                          style: TextStyle(color: Color(0xFF6B8178), height: 1.45),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadCommunityData,
+            color: const Color(0xFF0F8A61),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              children: [
+                // Organization announcements only: meetings, reminders, deadlines,
+                // rehearsals, orientations, and other messages sent to all members.
+                _CommunitySection(
+                  title: 'Organization announcements',
+                  icon: Icons.campaign_rounded,
+                  child: _loadingCommunity
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Center(
+                              child: CircularProgressIndicator(strokeWidth: 2)),
                         )
+                      : regularAnnouncements.isEmpty
+                          ? const Text(
+                              'No organization announcements have been posted yet. Meeting notices, reminders, deadlines, and other member updates will appear here.',
+                              style: TextStyle(
+                                  color: Color(0xFF6B8178), height: 1.45),
+                            )
+                          : Column(
+                              children: regularAnnouncements.take(10).map((n) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(13),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF7FCF9),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                        color: const Color(0xFFDCEFE6)),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFE4F7EF),
+                                          borderRadius:
+                                              BorderRadius.circular(13),
+                                        ),
+                                        child: const Icon(
+                                            Icons.campaign_rounded,
+                                            color: Color(0xFF0F8A61)),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(n.title,
+                                                style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.w800)),
+                                            const SizedBox(height: 4),
+                                            Text(n.message,
+                                                style: const TextStyle(
+                                                    color: Color(0xFF4E665E),
+                                                    height: 1.35)),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              '${n.date.month}/${n.date.day}/${n.date.year}',
+                                              style: const TextStyle(
+                                                  color: Color(0xFF0F8A61),
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                ),
+                const SizedBox(height: 14),
+
+                // Adviser first, then officers. Their saved profile photos are shown
+                // as clean square organization cards rather than circular login avatars.
+                _CommunitySection(
+                  title: 'Adviser & officers',
+                  icon: Icons.badge_rounded,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (advisers.isNotEmpty) ...[
+                        const Text('Adviser',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF24463C))),
+                        const SizedBox(height: 10),
+                        _OrganizationPersonTile(
+                          person: advisers.first,
+                          fallbackIcon: Icons.school_rounded,
+                          wide: true,
+                        ),
+                      ] else if (org.adviser.trim().isNotEmpty) ...[
+                        const Text('Adviser',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF24463C))),
+                        const SizedBox(height: 10),
+                        _OrganizationFallbackPersonTile(
+                          name: org.adviser.trim(),
+                          label: 'Adviser',
+                          icon: Icons.school_rounded,
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      const Text('Officers',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF24463C))),
+                      const SizedBox(height: 10),
+                      if (officers.isEmpty)
+                        const Text(
+                          'No officer profiles have been posted for this organization yet.',
+                          style: TextStyle(color: Color(0xFF6B8178)),
+                        )
+                      else
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 12,
+                          children: officers
+                              .map((person) => _OrganizationPersonTile(
+                                    person: person,
+                                    fallbackIcon: Icons.badge_rounded,
+                                  ))
+                              .toList(),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                const SizedBox(height: 14),
+
+                // Fee/payment notices are pulled from the organization's own
+                // organization-wide announcements. Nothing is invented here.
+
+                _CommunitySection(
+                  title: 'Upcoming events',
+                  icon: Icons.event_rounded,
+                  child: events.isEmpty
+                      ? const Text('No upcoming events posted yet.',
+                          style: TextStyle(color: Color(0xFF6B8178)))
                       : Column(
-                          children: regularAnnouncements.take(10).map((n) {
+                          children: events.take(8).map((e) {
+                            final image = e.imageUrl ??
+                                (e.imageUrls.isNotEmpty
+                                    ? e.imageUrls.first
+                                    : '');
                             return Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.all(13),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              clipBehavior: Clip.antiAlias,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF7FCF9),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFFDCEFE6)),
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                border:
+                                    Border.all(color: const Color(0xFFCBE8DC)),
+                                boxShadow: const [
+                                  BoxShadow(
+                                      color: Color(0x090F8A61),
+                                      blurRadius: 16,
+                                      offset: Offset(0, 6)),
+                                ],
                               ),
-                              child: Row(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFE4F7EF),
-                                      borderRadius: BorderRadius.circular(13),
+                                  if (image.isNotEmpty)
+                                    SizedBox(
+                                      height: 175,
+                                      width: double.infinity,
+                                      child: Stack(
+                                        children: [
+                                          Positioned.fill(
+                                            child: Image.network(
+                                              image,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) =>
+                                                  Container(
+                                                color: const Color(0xFFDDF4E8),
+                                                child: const Icon(
+                                                    Icons.event_rounded,
+                                                    color: Color(0xFF0F8A61),
+                                                    size: 40),
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            left: 12,
+                                            top: 12,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 9,
+                                                      vertical: 6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white
+                                                    .withValues(alpha: .92),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                      Icons
+                                                          .event_available_rounded,
+                                                      size: 14,
+                                                      color: Color(0xFF0F8A61)),
+                                                  SizedBox(width: 5),
+                                                  Text('Upcoming',
+                                                      style: TextStyle(
+                                                          color:
+                                                              Color(0xFF0F8A61),
+                                                          fontSize: 10.5,
+                                                          fontWeight:
+                                                              FontWeight.w900)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    child: const Icon(Icons.campaign_rounded, color: Color(0xFF0F8A61)),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        14, 13, 14, 14),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text(n.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                        const SizedBox(height: 4),
-                                        Text(n.message, style: const TextStyle(color: Color(0xFF4E665E), height: 1.35)),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          '${n.date.month}/${n.date.day}/${n.date.year}',
-                                          style: const TextStyle(color: Color(0xFF0F8A61), fontSize: 10.5, fontWeight: FontWeight.w700),
+                                        Text(e.title,
+                                            style: const TextStyle(
+                                                color: Color(0xFF173B30),
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w900)),
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 7),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFE4F7EF),
+                                            borderRadius:
+                                                BorderRadius.circular(11),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                  Icons.calendar_month_rounded,
+                                                  size: 14,
+                                                  color: Color(0xFF0F8A61)),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                  '${e.date.month}/${e.date.day}/${e.date.year}',
+                                                  style: const TextStyle(
+                                                      color: Color(0xFF0F8A61),
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w800)),
+                                            ],
+                                          ),
+                                        ),
+                                        if (e.description.isNotEmpty) ...[
+                                          const SizedBox(height: 9),
+                                          Text(e.description,
+                                              maxLines: 3,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  color: Color(0xFF6B8178),
+                                                  fontSize: 12,
+                                                  height: 1.4)),
+                                        ],
+                                        const SizedBox(height: 10),
+                                        EventReactionBar(eventId: e.id),
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: FilledButton.icon(
+                                            onPressed: () => showEventComments(
+                                                context,
+                                                eventId: e.id,
+                                                eventTitle: e.title),
+                                            icon: const Icon(
+                                                Icons.forum_outlined,
+                                                size: 15),
+                                            label: const Text('Comments'),
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor:
+                                                  const Color(0xFFE4F7EF),
+                                              foregroundColor:
+                                                  const Color(0xFF0F8A61),
+                                              elevation: 0,
+                                              minimumSize: Size.zero,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -1210,218 +1406,69 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
                             );
                           }).toList(),
                         ),
-            ),
-            const SizedBox(height: 14),
-
-            // Adviser first, then officers. Their saved profile photos are shown
-            // as clean square organization cards rather than circular login avatars.
-            _CommunitySection(
-              title: 'Adviser & officers',
-              icon: Icons.badge_rounded,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (advisers.isNotEmpty) ...[
-                    const Text('Adviser', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF24463C))),
-                    const SizedBox(height: 10),
-                    _OrganizationPersonTile(
-                      person: advisers.first,
-                      fallbackIcon: Icons.school_rounded,
-                      wide: true,
-                    ),
-                  ] else if (org.adviser.trim().isNotEmpty) ...[
-                    const Text('Adviser', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF24463C))),
-                    const SizedBox(height: 10),
-                    _OrganizationFallbackPersonTile(
-                      name: org.adviser.trim(),
-                      label: 'Adviser',
-                      icon: Icons.school_rounded,
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  const Text('Officers', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF24463C))),
-                  const SizedBox(height: 10),
-                  if (officers.isEmpty)
-                    const Text(
-                      'No officer profiles have been posted for this organization yet.',
-                      style: TextStyle(color: Color(0xFF6B8178)),
-                    )
-                  else
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 12,
-                      children: officers.map((person) => _OrganizationPersonTile(
-                        person: person,
-                        fallbackIcon: Icons.badge_rounded,
-                      )).toList(),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            const SizedBox(height: 14),
-
-            // Fee/payment notices are pulled from the organization's own
-            // organization-wide announcements. Nothing is invented here.
-
-            _CommunitySection(
-              title: 'Upcoming events',
-              icon: Icons.event_rounded,
-              child: events.isEmpty
-                  ? const Text('No upcoming events posted yet.', style: TextStyle(color: Color(0xFF6B8178)))
-                  : Column(
-                      children: events.take(8).map((e) {
-                        final image = e.imageUrl ?? (e.imageUrls.isNotEmpty ? e.imageUrls.first : '');
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFFCBE8DC)),
-                            boxShadow: const [
-                              BoxShadow(color: Color(0x090F8A61), blurRadius: 16, offset: Offset(0, 6)),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (image.isNotEmpty) SizedBox(
-                                height: 175,
-                                width: double.infinity,
-                                child: Stack(
-                                  children: [
-                                    Positioned.fill(
-                                      child: Image.network(
-                                        image,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Container(
-                                          color: const Color(0xFFDDF4E8),
-                                          child: const Icon(Icons.event_rounded, color: Color(0xFF0F8A61), size: 40),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      left: 12,
-                                      top: 12,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: .92),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.event_available_rounded, size: 14, color: Color(0xFF0F8A61)),
-                                            SizedBox(width: 5),
-                                            Text('Upcoming', style: TextStyle(color: Color(0xFF0F8A61), fontSize: 10.5, fontWeight: FontWeight.w900)),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(e.title, style: const TextStyle(color: Color(0xFF173B30), fontSize: 16, fontWeight: FontWeight.w900)),
-                                    const SizedBox(height: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE4F7EF),
-                                        borderRadius: BorderRadius.circular(11),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.calendar_month_rounded, size: 14, color: Color(0xFF0F8A61)),
-                                          const SizedBox(width: 6),
-                                          Text('${e.date.month}/${e.date.day}/${e.date.year}', style: const TextStyle(color: Color(0xFF0F8A61), fontSize: 11, fontWeight: FontWeight.w800)),
-                                        ],
-                                      ),
-                                    ),
-                                    if (e.description.isNotEmpty) ...[
-                                      const SizedBox(height: 9),
-                                      Text(e.description, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF6B8178), fontSize: 12, height: 1.4)),
-                                    ],
-                                    const SizedBox(height: 10),
-                                    EventReactionBar(eventId: e.id),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: FilledButton.icon(
-                                        onPressed: () => showEventComments(context, eventId: e.id, eventTitle: e.title),
-                                        icon: const Icon(Icons.forum_outlined, size: 15),
-                                        label: const Text('Comments'),
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(0xFFE4F7EF),
-                                          foregroundColor: const Color(0xFF0F8A61),
-                                          elevation: 0,
-                                          minimumSize: Size.zero,
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-            ),
-            const SizedBox(height: 14),
-
-            _CommunitySection(
-              title: 'Members',
-              icon: Icons.groups_rounded,
-              child: members.isEmpty
-                  ? const Text(
-                      'Member list will appear when membership records are available.',
-                      style: TextStyle(color: Color(0xFF6B8178)),
-                    )
-                  : Column(
-                      children: members.map((m) {
-                        final profile = _orgPeople.cast<Map<String, dynamic>?>().firstWhere(
-                          (p) => p?['id']?.toString() == m.profileId,
-                          orElse: () => null,
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _OrganizationMemberCard(
-                            name: m.name,
-                            role: m.position,
-                            avatarUrl: profile?['avatar_url']?.toString() ?? '',
-                          ),
-                        );
-                      }).toList(),
-                    ),
-            ),
-            const SizedBox(height: 14),
-
-            _CommunitySection(
-              title: 'Community Chat',
-              icon: Icons.forum_rounded,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Text('Open your organization community. Messages are shared with members, officers, and the adviser in the same organization.', style: TextStyle(color: Color(0xFF496A5D), fontSize: 12, height: 1.4)),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrgCommunityChatScreen(orgId: org.id, orgName: org.name))),
-                  icon: const Icon(Icons.forum_rounded),
-                  label: const Text('Open Community Chat'),
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F8A61), foregroundColor: Colors.white),
                 ),
-              ]),
+                const SizedBox(height: 14),
+
+                _CommunitySection(
+                  title: 'Members',
+                  icon: Icons.groups_rounded,
+                  child: members.isEmpty
+                      ? const Text(
+                          'Member list will appear when membership records are available.',
+                          style: TextStyle(color: Color(0xFF6B8178)),
+                        )
+                      : Column(
+                          children: members.map((m) {
+                            final profile = _orgPeople
+                                .cast<Map<String, dynamic>?>()
+                                .firstWhere(
+                                  (p) => p?['id']?.toString() == m.profileId,
+                                  orElse: () => null,
+                                );
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _OrganizationMemberCard(
+                                name: m.name,
+                                role: m.position,
+                                avatarUrl:
+                                    profile?['avatar_url']?.toString() ?? '',
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                ),
+                const SizedBox(height: 14),
+
+                _CommunitySection(
+                  title: 'Community Chat',
+                  icon: Icons.forum_rounded,
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                            'Open your organization community. Messages are shared with members, officers, and the adviser in the same organization.',
+                            style: TextStyle(
+                                color: Color(0xFF496A5D),
+                                fontSize: 12,
+                                height: 1.4)),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => OrgCommunityChatScreen(
+                                      orgId: org.id, orgName: org.name))),
+                          icon: const Icon(Icons.forum_rounded),
+                          label: const Text('Open Community Chat'),
+                          style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF0F8A61),
+                              foregroundColor: Colors.white),
+                        ),
+                      ]),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
         ),
       ]),
     );
@@ -1433,28 +1480,58 @@ class _StudentOrgHeader extends StatelessWidget {
   const _StudentOrgHeader({required this.org});
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 150, width: double.infinity,
-    child: Container(
-      decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF0F766E), Color(0xFF16A34A)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-      child: Stack(children: [
-        SafeArea(bottom: false, child: Padding(padding: const EdgeInsets.fromLTRB(76, 12, 20, 0), child: Row(children: [
-          _OrgLogo(asset: org.logoAsset, size: 60), const SizedBox(width: 14), Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Member Space', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800, height: 1.1)),
-            const SizedBox(height: 4), const Text('Stay connected with el teatro', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
-          ]))
-        ]))),
-        Positioned(
-          left: 8,
-          top: MediaQuery.of(context).padding.top + 4,
-          child: IconButton(
-            tooltip: 'Back',
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-          ),
+        height: 150,
+        width: double.infinity,
+        child: Container(
+          decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                  colors: [Color(0xFF0F766E), Color(0xFF16A34A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight)),
+          child: Stack(children: [
+            SafeArea(
+                bottom: false,
+                child: Padding(
+                    padding: const EdgeInsets.fromLTRB(76, 12, 20, 0),
+                    child: Row(children: [
+                      _OrgLogo(asset: org.logoAsset, size: 60),
+                      const SizedBox(width: 14),
+                      Expanded(
+                          child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            const Text('Member Space',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.1)),
+                            const SizedBox(height: 4),
+                            const Text('Stay connected with el teatro',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600)),
+                          ]))
+                    ]))),
+            Positioned(
+              left: 8,
+              top: MediaQuery.of(context).padding.top + 4,
+              child: IconButton(
+                tooltip: 'Back',
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white),
+              ),
+            ),
+          ]),
         ),
-      ]),
-    ),
-  );
+      );
 }
 
 class _OrgLogo extends StatelessWidget {
@@ -1727,11 +1804,22 @@ class _OrganizationFallbackPersonTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF24463C), fontSize: 14, fontWeight: FontWeight.w900)),
+                Text(name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Color(0xFF24463C),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900)),
                 const SizedBox(height: 4),
-                Text(label, style: const TextStyle(color: Color(0xFF0F8A61), fontSize: 11, fontWeight: FontWeight.w800)),
+                Text(label,
+                    style: const TextStyle(
+                        color: Color(0xFF0F8A61),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
-                const Text('Organization adviser', style: TextStyle(color: Color(0xFF6B8178), fontSize: 11)),
+                const Text('Organization adviser',
+                    style: TextStyle(color: Color(0xFF6B8178), fontSize: 11)),
               ],
             ),
           ),
@@ -1774,11 +1862,15 @@ class _OrganizationMemberCard extends StatelessWidget {
             ),
             clipBehavior: Clip.antiAlias,
             child: avatarUrl.isEmpty
-                ? const Icon(Icons.person_rounded, color: Color(0xFF0F8A61), size: 25)
+                ? const Icon(Icons.person_rounded,
+                    color: Color(0xFF0F8A61), size: 25)
                 : Image.network(
                     avatarUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Color(0xFF0F8A61), size: 25),
+                    errorBuilder: (_, __, ___) => const Icon(
+                        Icons.person_rounded,
+                        color: Color(0xFF0F8A61),
+                        size: 25),
                   ),
           ),
           const SizedBox(width: 11),
@@ -1786,13 +1878,24 @@ class _OrganizationMemberCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(cleanName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF24463C), fontSize: 13.5, fontWeight: FontWeight.w900)),
+                Text(cleanName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Color(0xFF24463C),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900)),
                 const SizedBox(height: 3),
-                Text(role.trim().isEmpty ? 'Member' : role.trim(), style: const TextStyle(color: Color(0xFF6B8178), fontSize: 10.8, fontWeight: FontWeight.w600)),
+                Text(role.trim().isEmpty ? 'Member' : role.trim(),
+                    style: const TextStyle(
+                        color: Color(0xFF6B8178),
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
-          const Icon(Icons.verified_rounded, color: Color(0xFF16A34A), size: 18),
+          const Icon(Icons.verified_rounded,
+              color: Color(0xFF16A34A), size: 18),
         ],
       ),
     );
@@ -1803,7 +1906,8 @@ class _CommunitySection extends StatelessWidget {
   final String title;
   final IconData icon;
   final Widget child;
-  const _CommunitySection({required this.title, required this.icon, required this.child});
+  const _CommunitySection(
+      {required this.title, required this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1813,15 +1917,28 @@ class _CommunitySection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFCBE8DC)),
-        boxShadow: const [BoxShadow(color: Color(0x080F8A61), blurRadius: 12, offset: Offset(0, 5))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x080F8A61), blurRadius: 12, offset: Offset(0, 5))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFFE4F7EF), borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: const Color(0xFF0F8A61), size: 18)),
+            Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFE4F7EF),
+                    borderRadius: BorderRadius.circular(11)),
+                child: Icon(icon, color: const Color(0xFF0F8A61), size: 18)),
             const SizedBox(width: 9),
-            Text(title, style: const TextStyle(color: Color(0xFF173B30), fontSize: 15, fontWeight: FontWeight.w900)),
+            Text(title,
+                style: const TextStyle(
+                    color: Color(0xFF173B30),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900)),
           ]),
           const SizedBox(height: 11),
           child,
@@ -1835,7 +1952,8 @@ class _QuickEmpty extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  const _QuickEmpty({required this.icon, required this.title, required this.subtitle});
+  const _QuickEmpty(
+      {required this.icon, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -1845,11 +1963,26 @@ class _QuickEmpty extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(width: 72, height: 72, decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF0F8A61), Color(0xFF20B77D)]), borderRadius: BorderRadius.circular(22)), child: Icon(icon, color: Colors.white, size: 32)),
+            Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                        colors: [Color(0xFF0F8A61), Color(0xFF20B77D)]),
+                    borderRadius: BorderRadius.circular(22)),
+                child: Icon(icon, color: Colors.white, size: 32)),
             const SizedBox(height: 16),
-            Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF173B30), fontSize: 18, fontWeight: FontWeight.w900)),
+            Text(title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Color(0xFF173B30),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900)),
             const SizedBox(height: 7),
-            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B8178), fontSize: 12.5, height: 1.45)),
+            Text(subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Color(0xFF6B8178), fontSize: 12.5, height: 1.45)),
           ],
         ),
       ),
@@ -1877,44 +2010,60 @@ class _HomeTabState extends State<_HomeTab> {
   void initState() {
     super.initState();
     AppState.instance.fetchEvents();
-    AnalyticsService.instance.logUsage('open_student_dashboard', route: 'student/home');
+    AnalyticsService.instance
+        .logUsage('open_student_dashboard', route: 'student/home');
+  }
+
+  ImageProvider? _headerAvatar() {
+    final url = AppState.instance.currentStudent?.avatarUrl ?? '';
+    if (url.startsWith('data:')) {
+      try {
+        return MemoryImage(base64Decode(url.substring(url.indexOf(',') + 1)));
+      } catch (_) {
+        return null;
+      }
+    }
+    return url.isNotEmpty ? NetworkImage(url) : null;
   }
 
   @override
   Widget build(BuildContext context) {
-
     return AnimatedBuilder(
       animation: AppState.instance,
       builder: (context, _) {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
         final cutoff = now.subtract(_postLifetime);
-        final allActiveEvents = AppState.instance.events
-            .where((event) {
-              final eventDay = DateTime(event.date.year, event.date.month, event.date.day);
-              return !eventDay.isBefore(today) && !event.createdAt.isBefore(cutoff);
-            })
-            .toList()
+        final allActiveEvents = AppState.instance.events.where((event) {
+          final eventDay =
+              DateTime(event.date.year, event.date.month, event.date.day);
+          return !eventDay.isBefore(today) && !event.createdAt.isBefore(cutoff);
+        }).toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        final events = _showAllEvents
-            ? allActiveEvents
-            : allActiveEvents.take(3).toList();
+        final events =
+            _showAllEvents ? allActiveEvents : allActiveEvents.take(3).toList();
 
         return Column(
           children: [
             // The profile symbol in the hero is always synced with the
             // student's saved profile through AppState.
-            SizedBox(
-              height: 150,
-              child: _HeroHeader(
-                primary: _primary,
-                secondary: _secondary,
-              ),
+            AppHeader(
+              title: () {
+                final name = (AppState.instance.currentStudent?.name ?? '')
+                    .trim()
+                    .split(RegExp(r'\s+'))
+                    .where((p) => p.isNotEmpty)
+                    .take(2)
+                    .join(' ');
+                return name.isNotEmpty
+                    ? 'Welcome Back, $name 👋'
+                    : 'Welcome Back 👋';
+              }(),
+              subtitle: 'Manage your organizations and campus life',
+              status: 'STUDENT DASHBOARD',
+              avatarImage: _headerAvatar(),
             ),
-            _HeroBottomStrip(
-              primary: _primary,
-              secondary: _secondary,
-            ),
+            const _QuickActionsRow(),
             // Scrolling intentionally starts at Upcoming Events.
             Expanded(
               child: Scrollbar(
@@ -1944,22 +2093,35 @@ class _HomeTabState extends State<_HomeTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Upcoming Events', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F0D2E), letterSpacing: -0.4)),
-                                Text('Latest posts from all campus organizations.', style: TextStyle(fontSize: 11.5, color: Color(0xFF6B6B8E), fontWeight: FontWeight.w400)),
+                                Text('Upcoming Events',
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF0F0D2E),
+                                        letterSpacing: -0.4)),
+                                Text(
+                                    'Latest posts from all campus organizations.',
+                                    style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: Color(0xFF6B6B8E),
+                                        fontWeight: FontWeight.w400)),
                               ],
                             ),
                           ),
                           if (allActiveEvents.length > 3)
                             TextButton(
-                              onPressed: () => setState(() => _showAllEvents = !_showAllEvents),
-                              child: Text(_showAllEvents ? 'Latest 3' : 'View all'),
+                              onPressed: () => setState(
+                                  () => _showAllEvents = !_showAllEvents),
+                              child: Text(
+                                  _showAllEvents ? 'Latest 3' : 'View all'),
                             ),
                         ],
                       ),
                     ),
                     if (events.isEmpty)
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 40),
                         child: Center(
                           child: Column(
                             children: [
@@ -1967,15 +2129,29 @@ class _HomeTabState extends State<_HomeTab> {
                                 width: 72,
                                 height: 72,
                                 decoration: BoxDecoration(
-                                  gradient: const LinearGradient(colors: [_primary, _secondary], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                                  gradient: const LinearGradient(
+                                      colors: [_primary, _secondary],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: const Icon(Icons.event_note_rounded, color: Colors.white, size: 32),
+                                child: const Icon(Icons.event_note_rounded,
+                                    color: Colors.white, size: 32),
                               ),
                               const SizedBox(height: 16),
-                              const Text('No events yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F0D2E))),
+                              const Text('No events yet',
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF0F0D2E))),
                               const SizedBox(height: 6),
-                              const Text('Events from your organizations\nwill appear here.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: Color(0xFF6B6B8E), height: 1.55)),
+                              const Text(
+                                  'Events from your organizations\nwill appear here.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 13.5,
+                                      color: Color(0xFF6B6B8E),
+                                      height: 1.55)),
                             ],
                           ),
                         ),
@@ -1984,7 +2160,9 @@ class _HomeTabState extends State<_HomeTab> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
                         child: Column(
-                          children: events.map((event) => _EventFeedCard(event: event)).toList(),
+                          children: events
+                              .map((event) => _EventFeedCard(event: event))
+                              .toList(),
                         ),
                       ),
                   ],
@@ -2009,6 +2187,7 @@ class _NavItem extends StatelessWidget {
   final double iconSize;
   final double fontSize;
   final Color primaryColor;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -2020,6 +2199,7 @@ class _NavItem extends StatelessWidget {
     required this.fontSize,
     required this.primaryColor,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -2032,18 +2212,49 @@ class _NavItem extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color:
-              isSelected ? primaryColor.withValues(alpha: 0.10) : Colors.transparent,
+          color: isSelected
+              ? primaryColor.withValues(alpha: 0.10)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: iconSize,
-              color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  icon,
+                  size: iconSize,
+                  color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -8,
+                    top: -5,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDC2626),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : '$badgeCount',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(
@@ -2165,7 +2376,8 @@ class _EventFeedCardState extends State<_EventFeedCard> {
             child: InteractiveViewer(
               minScale: 0.8,
               maxScale: 4.0,
-              child: Image(image: _eventImageProvider(url), fit: BoxFit.contain),
+              child:
+                  Image(image: _eventImageProvider(url), fit: BoxFit.contain),
             ),
           ),
         ),
@@ -2177,7 +2389,9 @@ class _EventFeedCardState extends State<_EventFeedCard> {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final isUpcoming = !DateTime(widget.event.date.year, widget.event.date.month, widget.event.date.day).isBefore(today);
+    final isUpcoming = !DateTime(widget.event.date.year,
+            widget.event.date.month, widget.event.date.day)
+        .isBefore(today);
     final urls = _imageUrls;
     final hasImages = urls.isNotEmpty;
     final hasMultiple = urls.length > 1;
@@ -2431,10 +2645,13 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
-                    onPressed: () => showEventComments(context, eventId: widget.event.id, eventTitle: widget.event.title),
+                    onPressed: () => showEventComments(context,
+                        eventId: widget.event.id,
+                        eventTitle: widget.event.title),
                     icon: const Icon(Icons.forum_outlined, size: 17),
                     label: const Text('Comments'),
-                    style: TextButton.styleFrom(foregroundColor: const Color(0xFF15803D)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF15803D)),
                   ),
                 ),
               ],
@@ -2463,4 +2680,3 @@ class _EventFeedCardState extends State<_EventFeedCard> {
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 }
-

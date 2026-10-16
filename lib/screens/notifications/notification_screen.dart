@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart' hide Notification;
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 
 class NotificationScreen extends StatefulWidget {
-  const NotificationScreen({super.key});
+  /// Set to false when this screen is used as a bottom-nav tab.
+  final bool showBackButton;
 
+  const NotificationScreen({super.key, this.showBackButton = true});
   @override
   State<NotificationScreen> createState() => _NotificationScreenState();
 }
@@ -61,9 +64,13 @@ class _NotificationScreenState extends State<NotificationScreen>
         : allNotifications.where((n) {
             final title = n.title.toLowerCase();
             final message = n.message.toLowerCase();
-            final isInterview = title.contains('interview') || message.contains('scheduled interview');
-            final isMember = title.contains('congratulations') || message.contains('officially a member');
-            return (n.studentId == currentStudent.id || n.studentId == currentStudent.studentId) && (isInterview || isMember);
+            final isInterview = title.contains('interview') ||
+                message.contains('scheduled interview');
+            final isMember = title.contains('congratulations') ||
+                message.contains('officially a member');
+            return (n.studentId == currentStudent.id ||
+                    n.studentId == currentStudent.studentId) &&
+                (isInterview || isMember);
           }).toList();
 
     // Keep one student-facing workflow card per organization and category.
@@ -80,7 +87,8 @@ class _NotificationScreenState extends State<NotificationScreen>
     final otherNotifications = notifications.where((n) {
       final title = n.title.toLowerCase();
       final message = n.message.toLowerCase();
-      final membership = title.contains('congratulations') || message.contains('officially a member');
+      final membership = title.contains('congratulations') ||
+          message.contains('officially a member');
       if (!membership) return false;
       final key = n.orgId ?? n.title.toLowerCase();
       return membershipSeen.add(key);
@@ -90,126 +98,86 @@ class _NotificationScreenState extends State<NotificationScreen>
 
     return Scaffold(
       backgroundColor: _background,
-      body: RefreshIndicator(
-        onRefresh: _handleRefresh,
-        color: _primary,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              expandedHeight: MediaQuery.of(context).size.height * 0.18,
-              backgroundColor: _primary,
-              elevation: 0,
-              automaticallyImplyLeading: false,
-              leading: IconButton(
-                tooltip: 'Back',
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-              title: const Text(
-                'Notifications',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              centerTitle: true,
-              actions: [
-                if (unreadCount > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 14),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.20),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.35),
-                            width: 1,
+      body: Column(
+        children: [
+          AppHeader(
+            title: 'Notifications',
+            subtitle: 'Interview and membership updates',
+            status: unreadCount > 0 ? '$unreadCount UNREAD' : 'ALL CAUGHT UP',
+            icon: Icons.notifications_rounded,
+            onBack: widget.showBackButton
+                ? () => Navigator.of(context).maybePop()
+                : null,
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _handleRefresh,
+              color: _primary,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  notifications.isEmpty
+                      ? SliverFillRemaining(
+                          child: _EmptyState(),
+                        )
+                      : SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+                          sliver: SliverList(
+                            delegate: SliverChildListDelegate([
+                              Center(
+                                child: ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 540),
+                                  child: FadeTransition(
+                                    opacity: _fadeAnim,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (interviewNotifications
+                                            .isNotEmpty) ...[
+                                          const _SectionLabel(
+                                              text: 'Interview Notifications'),
+                                          const SizedBox(height: 12),
+                                          ...interviewNotifications
+                                              .asMap()
+                                              .entries
+                                              .map((e) => _InterviewCard(
+                                                    notification: e.value,
+                                                    index: e.key,
+                                                    onTap: () =>
+                                                        _markAsRead(e.value.id),
+                                                  )),
+                                          const SizedBox(height: 24),
+                                        ],
+                                        if (otherNotifications.isNotEmpty) ...[
+                                          const _SectionLabel(
+                                              text: 'Other Notifications'),
+                                          const SizedBox(height: 12),
+                                          ...otherNotifications
+                                              .asMap()
+                                              .entries
+                                              .map((e) => _GeneralCard(
+                                                    notification: e.value,
+                                                    index: e.key,
+                                                    onTap: () =>
+                                                        _markAsRead(e.value.id),
+                                                  )),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ]),
                           ),
                         ),
-                        child: Text(
-                          '$unreadCount unread',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-              flexibleSpace: FlexibleSpaceBar(
-                background: _NotificationHeroHeader(
-                  primary: _primary,
-                  secondary: _secondary,
-                  totalCount: notifications.length,
-                  unreadCount: unreadCount,
-                ),
+                ],
               ),
             ),
-            notifications.isEmpty
-                ? SliverFillRemaining(
-                    child: _EmptyState(),
-                  )
-                : SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 540),
-                            child: FadeTransition(
-                              opacity: _fadeAnim,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (interviewNotifications.isNotEmpty) ...[
-                                    const _SectionLabel(
-                                        text: 'Interview Notifications'),
-                                    const SizedBox(height: 12),
-                                    ...interviewNotifications
-                                        .asMap()
-                                        .entries
-                                        .map((e) => _InterviewCard(
-                                              notification: e.value,
-                                              index: e.key,
-                                              onTap: () =>
-                                                  _markAsRead(e.value.id),
-                                            )),
-                                    const SizedBox(height: 24),
-                                  ],
-                                  if (otherNotifications.isNotEmpty) ...[
-                                    const _SectionLabel(
-                                        text: 'Other Notifications'),
-                                    const SizedBox(height: 12),
-                                    ...otherNotifications
-                                        .asMap()
-                                        .entries
-                                        .map((e) => _GeneralCard(
-                                              notification: e.value,
-                                              index: e.key,
-                                              onTap: () =>
-                                                  _markAsRead(e.value.id),
-                                            )),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ]),
-                    ),
-                  ),
-          ],
-        ), // closes CustomScrollView
-      ), // closes RefreshIndicator
+          ),
+        ],
+      ),
     ); // closes Scaffold
   }
 }
@@ -743,4 +711,3 @@ String _formatTimestamp(DateTime timestamp) {
   }
   return 'Just now';
 }
-

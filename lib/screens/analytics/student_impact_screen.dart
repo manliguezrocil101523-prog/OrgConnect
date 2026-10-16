@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 
 const _impactGreen = Color(0xFF16A34A);
 const _impactTeal = Color(0xFF0F766E);
@@ -12,7 +13,8 @@ class StudentImpactScreen extends StatefulWidget {
   final String? organizationId;
   final String? organizationName;
 
-  const StudentImpactScreen({super.key, this.organizationId, this.organizationName});
+  const StudentImpactScreen(
+      {super.key, this.organizationId, this.organizationName});
 
   @override
   State<StudentImpactScreen> createState() => _StudentImpactScreenState();
@@ -34,16 +36,23 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
   };
   String? _orgId;
   final Map<String, String> _questions = const {
-    'Academic': 'How helpful has this organization been to you in your studies, learning, or academic skills?',
-    'Social': 'How helpful has this organization been to you in building friendships, communication, and a sense of belonging?',
-    'Leadership': 'How helpful has this organization been in developing your leadership, responsibility, and decision-making skills?',
-    'Confidence': 'How helpful has this organization been in building your confidence and personal growth?',
+    'Academic':
+        'How helpful has this organization been to you in your studies, learning, or academic skills?',
+    'Social':
+        'How helpful has this organization been to you in building friendships, communication, and a sense of belonging?',
+    'Leadership':
+        'How helpful has this organization been in developing your leadership, responsibility, and decision-making skills?',
+    'Confidence':
+        'How helpful has this organization been in building your confidence and personal growth?',
   };
 
   @override
   void initState() {
     super.initState();
-    _orgId = widget.organizationId ?? (AppState.instance.organizations.isNotEmpty ? AppState.instance.organizations.first.id : null);
+    _orgId = widget.organizationId ??
+        (AppState.instance.organizations.isNotEmpty
+            ? AppState.instance.organizations.first.id
+            : null);
     if (_orgId != null) _loadImpact();
   }
 
@@ -54,7 +63,8 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
     try {
       final row = await Supabase.instance.client
           .from('student_impact')
-          .select('academic_growth,social_growth,leadership_growth,confidence_growth')
+          .select(
+              'academic_growth,social_growth,leadership_growth,confidence_growth')
           .eq('student_id', user.id)
           .eq('org_id', orgId)
           .maybeSingle();
@@ -69,7 +79,9 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
   }
 
   int _normalizeScore(dynamic value) {
-    final n = value is num ? value.round() : int.tryParse(value?.toString() ?? '') ?? 3;
+    final n = value is num
+        ? value.round()
+        : int.tryParse(value?.toString() ?? '') ?? 3;
     if (n >= 1 && n <= 5) return n;
     if (n <= 0) return 1;
     final scaled = (n / 20).round();
@@ -105,7 +117,8 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Impact tracking is not enabled yet. Run the included Supabase migration.'),
+            content: Text(
+                'Impact tracking is not enabled yet. Run the included Supabase migration.'),
           ),
         );
       }
@@ -122,7 +135,13 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
       backgroundColor: _impactBg,
       body: Column(
         children: [
-          _ImpactHeader(onBack: () => Navigator.of(context).maybePop()),
+          AppHeader(
+            title: 'My Impact',
+            subtitle: 'How is your organization helping you?',
+            status: 'RATE FROM 1 TO 5',
+            icon: Icons.insights_rounded,
+            onBack: () => Navigator.of(context).maybePop(),
+          ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
@@ -130,7 +149,10 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
                 _OrganizationPicker(
                   organizations: organizations,
                   selectedId: _orgId,
-                  onChanged: (value) { setState(() => _orgId = value); _loadImpact(); },
+                  onChanged: (value) {
+                    setState(() => _orgId = value);
+                    _loadImpact();
+                  },
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -144,7 +166,8 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
                 const SizedBox(height: 5),
                 const Text(
                   'Rate each area from 1 to 5. 1 means the organization has not been helpful in this area; 5 means it has been extremely helpful.',
-                  style: TextStyle(color: _impactMuted, fontSize: 12.5, height: 1.4),
+                  style: TextStyle(
+                      color: _impactMuted, fontSize: 12.5, height: 1.4),
                 ),
                 const SizedBox(height: 13),
                 // Keep every impact area in its own full-width card so the
@@ -157,7 +180,8 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
                       label: entry.key,
                       value: entry.value,
                       icon: _icons[entry.key] ?? Icons.insights_rounded,
-                      question: _questions[entry.key] ?? 'How is this organization helping you?',
+                      question: _questions[entry.key] ??
+                          'How is this organization helping you?',
                       onChanged: (value) => setState(
                         () => _scores[entry.key] = value,
                       ),
@@ -253,7 +277,8 @@ class _ImpactHeader extends StatelessWidget {
                     child: IconButton(
                       tooltip: 'Back',
                       onPressed: onBack,
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 21),
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white, size: 21),
                     ),
                   ),
                   const SizedBox(
@@ -269,14 +294,22 @@ class _ImpactHeader extends StatelessWidget {
                               textAlign: TextAlign.center,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white, fontSize: 20, height: 1.1, fontWeight: FontWeight.w800),
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w800),
                             ),
                             SizedBox(height: 6),
                             Text(
                               '1 = Not helpful  •  5 = Extremely helpful',
                               textAlign: TextAlign.center,
                               maxLines: 2,
-                              style: TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.3, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12.5,
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -312,7 +345,8 @@ class _OrganizationPicker extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFDDE7E1)),
         boxShadow: const [
-          BoxShadow(color: Color(0x0A0F172A), blurRadius: 16, offset: Offset(0, 6)),
+          BoxShadow(
+              color: Color(0x0A0F172A), blurRadius: 16, offset: Offset(0, 6)),
         ],
       ),
       child: DropdownButtonFormField<String>(
@@ -371,21 +405,57 @@ class _ImpactCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: const Color(0xFFBFE5D2)),
-        boxShadow: const [BoxShadow(color: Color(0x0A0F8A61), blurRadius: 18, offset: Offset(0, 7))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x0A0F8A61), blurRadius: 18, offset: Offset(0, 7))
+        ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFFE8F7EE), borderRadius: BorderRadius.circular(14)), child: Icon(icon, color: _impactGreen, size: 22)),
+          Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFE8F7EE),
+                  borderRadius: BorderRadius.circular(14)),
+              child: Icon(icon, color: _impactGreen, size: 22)),
           const SizedBox(width: 11),
-          Expanded(child: Text(label, style: const TextStyle(color: _impactInk, fontSize: 16, fontWeight: FontWeight.w900))),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: _impactGreen, borderRadius: BorderRadius.circular(999)), child: Text('$value / 5', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900))),
+          Expanded(
+              child: Text(label,
+                  style: const TextStyle(
+                      color: _impactInk,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900))),
+          Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                  color: _impactGreen,
+                  borderRadius: BorderRadius.circular(999)),
+              child: Text('$value / 5',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900))),
         ]),
         const SizedBox(height: 13),
-        Text(question, style: const TextStyle(color: _impactInk, fontSize: 12.5, height: 1.4, fontWeight: FontWeight.w700)),
+        Text(question,
+            style: const TextStyle(
+                color: _impactInk,
+                fontSize: 12.5,
+                height: 1.4,
+                fontWeight: FontWeight.w700)),
         const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [
-          Text('1 = Not helpful', style: TextStyle(color: _impactMuted, fontSize: 10.5, fontWeight: FontWeight.w700)),
-          Text('5 = Extremely helpful', style: TextStyle(color: _impactMuted, fontSize: 10.5, fontWeight: FontWeight.w700)),
+          Text('1 = Not helpful',
+              style: TextStyle(
+                  color: _impactMuted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700)),
+          Text('5 = Extremely helpful',
+              style: TextStyle(
+                  color: _impactMuted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700)),
         ]),
         const SizedBox(height: 9),
         Row(
@@ -405,14 +475,21 @@ class _ImpactCard extends StatelessWidget {
                       height: 46,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: selected ? _impactGreen : const Color(0xFFF8FCF9),
+                        color:
+                            selected ? _impactGreen : const Color(0xFFF8FCF9),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: selected ? _impactGreen : const Color(0xFFD8E6DC),
+                          color:
+                              selected ? _impactGreen : const Color(0xFFD8E6DC),
                           width: selected ? 1.5 : 1,
                         ),
                         boxShadow: selected
-                            ? const [BoxShadow(color: Color(0x1A16A34A), blurRadius: 8, offset: Offset(0, 3))]
+                            ? const [
+                                BoxShadow(
+                                    color: Color(0x1A16A34A),
+                                    blurRadius: 8,
+                                    offset: Offset(0, 3))
+                              ]
                             : null,
                       ),
                       child: Text(

@@ -9,6 +9,7 @@ import '../auth/unified_login_page.dart';
 import '../analytics/student_impact_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../widgets/app_header.dart';
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 const _kPrimary = Color(0xFF16A34A);
@@ -432,103 +433,197 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
 
   Future<void> _changePassword() async {
+    final client = Supabase.instance.client;
+    final email = client.auth.currentUser?.email ?? '';
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Session expired. Please log in again.')));
+      return;
+    }
+
+    final currentController = TextEditingController();
     final controller = TextEditingController();
     final confirmController = TextEditingController();
+    bool currentObscure = true;
     bool obscure = true;
     bool confirmObscure = true;
+    bool isSaving = false;
+    String? errorText;
 
     final changed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: const Row(
-            children: [
-              Icon(Icons.lock_reset_rounded, color: _kPrimary),
-              SizedBox(width: 10),
-              Text('Change Password'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                obscureText: obscure,
-                decoration: InputDecoration(
-                  labelText: 'New password',
-                  hintText: 'Enter a new password',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded),
-                  suffixIcon: IconButton(
-                    onPressed: () => setDialogState(() => obscure = !obscure),
-                    icon:
-                        Icon(obscure ? Icons.visibility_off : Icons.visibility),
-                  ),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: confirmController,
-                obscureText: confirmObscure,
-                decoration: InputDecoration(
-                  labelText: 'Confirm password',
-                  hintText: 'Re-enter your new password',
-                  prefixIcon: const Icon(Icons.verified_user_outlined),
-                  suffixIcon: IconButton(
-                    onPressed: () =>
-                        setDialogState(() => confirmObscure = !confirmObscure),
-                    icon: Icon(confirmObscure
-                        ? Icons.visibility_off
-                        : Icons.visibility),
-                  ),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: _kPrimary),
-              onPressed: () async {
-                final password = controller.text.trim();
-                final confirm = confirmController.text.trim();
-                if (password.length < 6) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content:
-                          Text('Password must be at least 6 characters.')));
-                  return;
-                }
-                if (password != confirm) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Passwords do not match.')));
-                  return;
-                }
-                try {
-                  await Supabase.instance.client.auth.updateUser(
-                    UserAttributes(password: password),
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx, true);
-                } catch (e) {
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                        content: Text('Could not change password: $e')));
-                  }
-                }
-              },
-              child: const Text('Update Password'),
+        builder: (ctx, setDialogState) {
+          void fail(String msg) => setDialogState(() {
+                isSaving = false;
+                errorText = msg;
+              });
+
+          Future<void> submit() async {
+            final current = currentController.text.trim();
+            final password = controller.text.trim();
+            final confirm = confirmController.text.trim();
+
+            if (current.isEmpty) {
+              fail('Please enter your current password.');
+              return;
+            }
+            if (password.length < 6) {
+              fail('New password must be at least 6 characters.');
+              return;
+            }
+            if (password != confirm) {
+              fail('New passwords do not match.');
+              return;
+            }
+            if (password == current) {
+              fail(
+                  'New password must be different from your current password.');
+              return;
+            }
+
+            setDialogState(() {
+              isSaving = true;
+              errorText = null;
+            });
+
+            // 1) Verify the current password
+            try {
+              await client.auth
+                  .signInWithPassword(email: email, password: current);
+            } on AuthException catch (e) {
+              if (!ctx.mounted) return;
+              final msg = e.message.toLowerCase().contains('invalid')
+                  ? 'Current password is incorrect.'
+                  : e.message;
+              fail(msg);
+              return;
+            } catch (_) {
+              if (!ctx.mounted) return;
+              fail('Could not verify your password. Check your connection.');
+              return;
+            }
+
+            // 2) Only now set the new password
+            try {
+              await client.auth.updateUser(UserAttributes(password: password));
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            } on AuthException catch (e) {
+              if (ctx.mounted) fail(e.message);
+            } catch (_) {
+              if (ctx.mounted) fail('Could not change password. Try again.');
+            }
+          }
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_reset_rounded, color: _kPrimary),
+                SizedBox(width: 10),
+                Text('Change Password'),
+              ],
             ),
-          ],
-        ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: currentController,
+                    obscureText: currentObscure,
+                    enabled: !isSaving,
+                    decoration: InputDecoration(
+                      labelText: 'Current password',
+                      hintText: 'Enter your current password',
+                      prefixIcon: const Icon(Icons.lock_clock_outlined),
+                      suffixIcon: IconButton(
+                        onPressed: () => setDialogState(
+                            () => currentObscure = !currentObscure),
+                        icon: Icon(currentObscure
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                      ),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: controller,
+                    obscureText: obscure,
+                    enabled: !isSaving,
+                    decoration: InputDecoration(
+                      labelText: 'New password',
+                      hintText: 'Enter a new password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
+                        icon: Icon(
+                            obscure ? Icons.visibility_off : Icons.visibility),
+                      ),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: confirmController,
+                    obscureText: confirmObscure,
+                    enabled: !isSaving,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm new password',
+                      hintText: 'Re-enter your new password',
+                      prefixIcon: const Icon(Icons.verified_user_outlined),
+                      suffixIcon: IconButton(
+                        onPressed: () => setDialogState(
+                            () => confirmObscure = !confirmObscure),
+                        icon: Icon(confirmObscure
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                      ),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(errorText!,
+                          style: const TextStyle(
+                              color: _kRed,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: _kPrimary),
+                onPressed: isSaving ? null : submit,
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Text('Update Password'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
+    currentController.dispose();
     controller.dispose();
     confirmController.dispose();
     if (changed == true && mounted) {
@@ -567,116 +662,43 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     }
 
-    const headerHeight = 138.0;
-
     return Scaffold(
       backgroundColor: _kBg,
       body: Stack(
         children: [
           Column(
             children: [
-              SizedBox(
-                height: headerHeight,
-                width: double.infinity,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_kPrimary, _kSecondary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Stack(
-                    children: [
-                      _Orb(top: -45, right: -30, size: 150, opacity: 0.07),
-                      _Orb(bottom: -55, left: -35, size: 115, opacity: 0.05),
-                      SafeArea(
-                        bottom: false,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 10, 14, 0),
-                          child: Row(
-                            children: [
-                              const Text('Profile',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 21,
-                                      fontWeight: FontWeight.w800)),
-                              const Spacer(),
-                              _AppBarActionButton(
-                                isEditing: false,
-                                onTap: () async {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => _EditProfilePage(
-                                        studentIdCtrl: studentIdCtrl,
-                                        nameCtrl: nameCtrl,
-                                        emailCtrl: emailCtrl,
-                                        contactCtrl: contactCtrl,
-                                        facebookCtrl: facebookCtrl,
-                                        avatarImage: _currentAvatarImage(),
-                                        onUploadAvatar: _pickAvatar,
-                                        onTakePhoto: _takeAvatarPhoto,
-                                        onSave: _saveProfile,
-                                      ),
-                                    ),
-                                  );
-                                  if (mounted) setState(() {});
-                                },
-                              ),
-                            ],
-                          ),
+              AppHeader(
+                title: (_profile?['name'] ?? '').toString().isEmpty
+                    ? 'Your Profile'
+                    : (_profile?['name'] ?? '').toString(),
+                subtitle: (_profile?['student_id'] ?? '').toString().isEmpty
+                    ? 'Manage your account'
+                    : (_profile?['student_id'] ?? '').toString(),
+                status: 'STUDENT PROFILE',
+                avatarImage: avatarImage,
+                onAvatarTap: () => setState(() => _showZoom = true),
+                trailing: _AppBarActionButton(
+                  isEditing: false,
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _EditProfilePage(
+                          studentIdCtrl: studentIdCtrl,
+                          nameCtrl: nameCtrl,
+                          emailCtrl: emailCtrl,
+                          contactCtrl: contactCtrl,
+                          facebookCtrl: facebookCtrl,
+                          avatarImage: _currentAvatarImage(),
+                          onUploadAvatar: _pickAvatar,
+                          onTakePhoto: _takeAvatarPhoto,
+                          onSave: _saveProfile,
                         ),
                       ),
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 13,
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => setState(() => _showZoom = true),
-                              child: _CompactAvatar(
-                                  image: avatarImage, showCamera: false),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    (_profile?['name'] ?? '').toString().isEmpty
-                                        ? 'Your Profile'
-                                        : (_profile?['name'] ?? '').toString(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 19,
-                                        fontWeight: FontWeight.w800),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  if ((_profile?['student_id'] ?? '')
-                                      .toString()
-                                      .isNotEmpty)
-                                    Text(
-                                      (_profile?['student_id'] ?? '')
-                                          .toString(),
-                                      style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: .82),
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                    if (mounted) setState(() {});
+                  },
                 ),
               ),
               Expanded(
@@ -714,83 +736,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-}
-
-// Compact identity avatar used by the fixed Profile header.
-class _CompactAvatar extends StatelessWidget {
-  final ImageProvider? image;
-  final bool showCamera;
-
-  const _CompactAvatar({required this.image, required this.showCamera});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 78,
-          height: 78,
-          padding: const EdgeInsets.all(4),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: CircleAvatar(
-            backgroundColor: const Color(0xFFE0E7FF),
-            backgroundImage: image,
-            child: image == null
-                ? const Icon(Icons.person_rounded, color: _kPrimary, size: 38)
-                : null,
-          ),
-        ),
-        if (showCamera)
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: Container(
-              width: 27,
-              height: 27,
-              decoration: const BoxDecoration(
-                color: _kPrimary,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.camera_alt_rounded,
-                color: Colors.white,
-                size: 14,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _Orb extends StatelessWidget {
-  final double? top, bottom, left, right, size, opacity;
-  const _Orb(
-      {this.top,
-      this.bottom,
-      this.left,
-      this.right,
-      required this.size,
-      required this.opacity});
-
-  @override
-  Widget build(BuildContext context) => Positioned(
-        top: top,
-        bottom: bottom,
-        left: left,
-        right: right,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: opacity!)),
-        ),
-      );
 }
 
 // =============================================================================
@@ -1030,9 +975,11 @@ class _ViewCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: .16),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withValues(alpha: .25)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: .25)),
                 ),
-                child: const Icon(Icons.insights_rounded, color: Colors.white, size: 23),
+                child: const Icon(Icons.insights_rounded,
+                    color: Colors.white, size: 23),
               ),
               const SizedBox(width: 13),
               const Expanded(
@@ -1059,7 +1006,8 @@ class _ViewCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 23),
+              const Icon(Icons.chevron_right_rounded,
+                  color: Colors.white, size: 23),
             ],
           ),
         ),
@@ -1688,4 +1636,3 @@ class _SectionLabel extends StatelessWidget {
 // =============================================================================
 // _ChangePasswordSheet
 // =============================================================================
-

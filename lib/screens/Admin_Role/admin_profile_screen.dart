@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/unified_login_page.dart';
+import '../../widgets/app_header.dart';
 
 class AdminProfileScreen extends StatefulWidget {
   const AdminProfileScreen({super.key});
@@ -188,9 +189,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                       () => obscurePassword = !obscurePassword,
                     ),
                     icon: Icon(
-                      obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      obscurePassword ? Icons.visibility_off : Icons.visibility,
                     ),
                   ),
                   border: OutlineInputBorder(
@@ -211,9 +210,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                       () => obscureConfirm = !obscureConfirm,
                     ),
                     icon: Icon(
-                      obscureConfirm
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      obscureConfirm ? Icons.visibility_off : Icons.visibility,
                     ),
                   ),
                   border: OutlineInputBorder(
@@ -369,178 +366,33 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         children: [
           Column(
             children: [
-              SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_secondary, _primary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+              AppHeader(
+                title: 'Profile',
+                subtitle: displayName,
+                status: 'ORGANIZATION ADMIN',
+                avatarUrl: _avatarUrl,
+                trailing: TextButton.icon(
+                  onPressed: () => setState(() {
+                    _editing = !_editing;
+                    if (!_editing) _avatarBytes = null;
+                  }),
+                  icon: Icon(
+                    _editing ? Icons.close_rounded : Icons.edit_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                  label: Text(
+                    _editing ? 'Cancel' : 'Edit',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        right: -30,
-                        top: -50,
-                        child: _orb(150, Colors.white.withValues(alpha: .07)),
-                      ),
-                      Positioned(
-                        left: -35,
-                        bottom: -55,
-                        child: _orb(115, Colors.white.withValues(alpha: .05)),
-                      ),
-                      SafeArea(
-                        bottom: false,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 10, 14, 0),
-                          child: Row(
-                            children: [
-                              const Text(
-                                'Profile',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const Spacer(),
-                              GestureDetector(
-                                onTap: () => setState(() {
-                                  _editing = !_editing;
-                                  if (!_editing) _avatarBytes = null;
-                                }),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: .15),
-                                    borderRadius: BorderRadius.circular(22),
-                                    border: Border.all(
-                                      color: Colors.white.withValues(alpha: .30),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        _editing
-                                            ? Icons.close_rounded
-                                            : Icons.edit_rounded,
-                                        color: Colors.white,
-                                        size: 15,
-                                      ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        _editing ? 'Cancel' : 'Edit',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 12,
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () {
-                                if (_editing) {
-                                  _pickAvatar();
-                                } else if (avatar != null) {
-                                  setState(() => _showZoom = true);
-                                }
-                              },
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Container(
-                                    width: 78,
-                                    height: 78,
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: CircleAvatar(
-                                      backgroundColor: const Color(0xFFE8F5EC),
-                                      backgroundImage: avatar,
-                                      child: avatar == null
-                                          ? const Icon(
-                                              Icons.person_rounded,
-                                              color: _primary,
-                                              size: 38,
-                                            )
-                                          : null,
-                                    ),
-                                  ),
-                                  if (_editing)
-                                    Positioned(
-                                      right: -2,
-                                      bottom: -2,
-                                      child: Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: const BoxDecoration(
-                                          color: _primary,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.camera_alt_rounded,
-                                          color: Colors.white,
-                                          size: 14,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    'Organization Admin',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: .82),
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: .18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                 ),
               ),
@@ -883,8 +735,11 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
           ),
           const SizedBox(width: 8),
           Icon(
-            empty ? Icons.add_circle_outline_rounded : Icons.check_circle_rounded,
-            color: empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
+            empty
+                ? Icons.add_circle_outline_rounded
+                : Icons.check_circle_rounded,
+            color:
+                empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
             size: 18,
           ),
         ],
@@ -897,7 +752,8 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     TextEditingController controller,
     IconData icon,
     Color color,
-  ) => Container(
+  ) =>
+      Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: _cardDecoration(),
         child: TextField(
