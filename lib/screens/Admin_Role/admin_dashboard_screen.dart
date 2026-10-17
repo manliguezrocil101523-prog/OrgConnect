@@ -7,6 +7,7 @@ import 'admin_organization_detail_screen.dart';
 import 'admin_profile_screen.dart';
 
 import '../../widgets/app_header.dart';
+import 'admin_create_organization_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -274,6 +275,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ],
               ),
       ),
+      floatingActionButton: tab == 2
+          ? FloatingActionButton.extended(
+              onPressed: _openCreateOrg,
+              backgroundColor: green,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'New organization',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            )
+          : null,
       bottomNavigationBar: _nav(),
     );
   }
@@ -332,7 +345,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 96),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1014,6 +1027,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }
     }
     return 'Organization';
+  }
+
+  Future<void> _openCreateOrg() async {
+    final created = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AdminCreateOrganizationScreen(),
+      ),
+    );
+    if (created == true) await _load(silent: true);
   }
 
   void _openOrg(

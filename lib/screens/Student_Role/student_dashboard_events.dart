@@ -505,8 +505,9 @@ class _StudentDashboardState extends State<StudentDashboard>
     final nextMonth = DateTime(_focusedDay.year, _focusedDay.month + offset, 1);
     final firstAllowed = DateTime(2020, 1, 1);
     final lastAllowed = DateTime(2030, 12, 1);
-    if (nextMonth.isBefore(firstAllowed) || nextMonth.isAfter(lastAllowed))
+    if (nextMonth.isBefore(firstAllowed) || nextMonth.isAfter(lastAllowed)) {
       return;
+    }
     setState(() {
       _focusedDay = nextMonth;
     });

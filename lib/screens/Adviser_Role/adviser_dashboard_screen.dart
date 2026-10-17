@@ -174,8 +174,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     final now = DateTime.now();
     return _requests.any((r) {
       final status = r['status']?.toString();
-      if (status != 'admin_approved' && status != 'creative_submitted')
+      if (status != 'admin_approved' && status != 'creative_submitted') {
         return false;
+      }
       final stamp = _proposalTimestamp(r);
       if (stamp == null || stamp.isAfter(now)) return false;
       return stamp.isAfter(seen);
@@ -315,11 +316,13 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     final start = r['start_time']?.toString().trim() ?? '';
     final end = r['end_time']?.toString().trim() ?? '';
     if (purpose.isNotEmpty) parts.add('About: $purpose');
-    if (description.isNotEmpty && description != purpose)
+    if (description.isNotEmpty && description != purpose) {
       parts.add(description);
+    }
     if (venue.isNotEmpty) parts.add('Venue: $venue');
-    if (start.isNotEmpty)
+    if (start.isNotEmpty) {
       parts.add('Time: ${end.isNotEmpty ? '$start – $end' : start}');
+    }
     return parts.join('\n');
   }
 
@@ -808,8 +811,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         .whereType<String>()
         .toList();
     final url = e['image_url']?.toString();
-    if (url != null && url.isNotEmpty && !imgs.contains(url))
+    if (url != null && url.isNotEmpty && !imgs.contains(url)) {
       imgs.insert(0, url);
+    }
     final eventId = e['id']?.toString() ?? '';
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1146,7 +1150,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       ]));
 
   Widget _actions(Map<String, dynamic> r, String s) {
-    if (s == 'pending')
+    if (s == 'pending') {
       return Row(children: [
         Expanded(
             child: OutlinedButton.icon(
@@ -1160,23 +1164,26 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 icon: const Icon(Icons.forward_rounded),
                 label: const Text('Forward')))
       ]);
+    }
     if (s == 'admin_approved') {
-      if (_finalBriefSent(r))
+      if (_finalBriefSent(r)) {
         return const _StatusNote(
             icon: Icons.forum_rounded,
             text:
                 'The Officer final-layout request was sent in Community Chat. Waiting for the officer to send the finished event post.');
+      }
       return _statusAction(
           text: 'Tell Officers in Community Chat',
           icon: Icons.forum_rounded,
           onTap: () => _tellOfficerToPrepareFinalLayout(r));
     }
-    if (s == 'adviser_to_officer')
+    if (s == 'adviser_to_officer') {
       return const _StatusNote(
           icon: Icons.forum_rounded,
           text:
               'The officer has been asked in Community Chat to prepare the final event post.');
-    if (s == 'admin_rejected')
+    }
+    if (s == 'admin_rejected') {
       return Row(children: [
         Expanded(
             child: _statusAction(
@@ -1184,7 +1191,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 icon: Icons.reply_rounded,
                 onTap: () => _sendAdminReturnToOfficers(r)))
       ]);
-    if (s == 'creative_submitted')
+    }
+    if (s == 'creative_submitted') {
       return Row(children: [
         Expanded(
             child: OutlinedButton.icon(
@@ -1198,11 +1206,13 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 icon: const Icon(Icons.publish_rounded),
                 label: const Text('Approve & Publish')))
       ]);
-    if (s == 'revision_requested')
+    }
+    if (s == 'revision_requested') {
       return const _StatusNote(
           icon: Icons.edit_note_rounded,
           text:
               'Revision requested. Waiting for officers to resubmit the improved proposal.');
+    }
     if (s == 'forwarded_to_admin') return const SizedBox.shrink();
     return const SizedBox.shrink();
   }
