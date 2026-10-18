@@ -27,10 +27,10 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   // ── Form controllers ──────────────────────────────────────────────────────
   late final TextEditingController _nameCtrl;
   late final TextEditingController _categoryCtrl;
-  late final TextEditingController _shortDescCtrl;
   late final TextEditingController _aboutCtrl;
   late final TextEditingController _missionCtrl;
   late final TextEditingController _visionCtrl;
+  late final TextEditingController _goalsCtrl;
   late final TextEditingController _adviserCtrl;
   late final TextEditingController _socialLinkCtrl;
 
@@ -60,12 +60,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     // Pre-fill all controllers
     _nameCtrl = TextEditingController(text: _org.name);
     _categoryCtrl = TextEditingController(text: _org.category);
-    _shortDescCtrl = TextEditingController(text: _org.shortDesc);
     _aboutCtrl = TextEditingController(text: _org.about);
     _missionCtrl = TextEditingController(text: _org.mission);
     _visionCtrl = TextEditingController(text: _org.vision);
+    _goalsCtrl = TextEditingController(text: _org.goals);
     _adviserCtrl = TextEditingController(text: _org.adviser);
-    _socialLinkCtrl = TextEditingController(text: _org.socialLink);
+    _socialLinkCtrl = TextEditingController(text: _facebookNameFromStoredValue(_org.socialLink));
 
     _officers = List<String>.from(_org.officers);
     _officerProfiles = List<OrgOfficerProfile>.from(_org.officerProfiles);
@@ -110,10 +110,10 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _categoryCtrl.dispose();
-    _shortDescCtrl.dispose();
     _aboutCtrl.dispose();
     _missionCtrl.dispose();
     _visionCtrl.dispose();
+    _goalsCtrl.dispose();
     _adviserCtrl.dispose();
     _socialLinkCtrl.dispose();
     super.dispose();
@@ -198,6 +198,101 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       }
     }
     return '';
+  }
+
+  Future<void> _editAdviserProfile() async {
+    final adviser = _personByRole('adviser');
+    if (adviser == null || adviser['id'] == null) {
+      _snack('The adviser account could not be found for this organization.', isError: true);
+      return;
+    }
+    final nameCtrl = TextEditingController(text: adviser['name']?.toString() ?? _adviserCtrl.text);
+    Uint8List? pickedBytes;
+    String? pickedExt;
+    final currentAvatar = adviser['avatar_url']?.toString() ?? '';
+    final save = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Edit Adviser'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 360,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                GestureDetector(
+                  onTap: () async {
+                    final pick = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+                    if (pick?.files.single.bytes == null) return;
+                    setDialogState(() {
+                      pickedBytes = pick!.files.single.bytes;
+                      pickedExt = pick.files.single.extension ?? 'jpg';
+                    });
+                  },
+                  child: Container(
+                    width: 118,
+                    height: 118,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE7F7EF),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: _primary.withValues(alpha: .35), width: 2),
+                    ),
+                    child: pickedBytes != null
+                        ? Image.memory(pickedBytes!, fit: BoxFit.cover)
+                        : currentAvatar.trim().isNotEmpty
+                            ? CachedNetworkImage(imageUrl: currentAvatar, fit: BoxFit.cover, alignment: Alignment.center,
+                                errorWidget: (_, __, ___) => const Icon(Icons.person_rounded, size: 42, color: _primary))
+                            : const Icon(Icons.add_a_photo_rounded, size: 38, color: _primary),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Tap the picture to choose a new adviser photo.', textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  maxLines: 2,
+                  decoration: InputDecoration(labelText: 'Adviser full name', prefixIcon: const Icon(Icons.person_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                ),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(onPressed: () {
+              final name = nameCtrl.text.trim();
+              if (name.isNotEmpty) Navigator.pop(dialogContext, {'name': name, 'bytes': pickedBytes, 'ext': pickedExt});
+            }, child: const Text('Save Adviser')),
+          ],
+        ),
+      ),
+    );
+    nameCtrl.dispose();
+    if (save == null) return;
+    try {
+      var avatarUrl = currentAvatar;
+      final bytes = save['bytes'] as Uint8List?;
+      if (bytes != null) {
+        avatarUrl = await _uploadOfficerPhoto(bytes, save['ext']?.toString() ?? 'jpg') ?? avatarUrl;
+      }
+      final changes = <String, dynamic>{'name': save['name'], 'avatar_url': avatarUrl};
+      await Supabase.instance.client.from('profiles').update(changes).eq('id', adviser['id'].toString());
+      await Supabase.instance.client.from('organizations')
+          .update({'adviser': save['name'].toString()}).eq('id', widget.orgId);
+      if (!mounted) return;
+      setState(() {
+        adviser.addAll(changes);
+        _adviserCtrl.text = save['name'].toString();
+        _org = _org.copyWith(adviser: save['name'].toString());
+      });
+      await AppState.instance.fetchOrganizations();
+      _snack('Adviser details updated.');
+    } catch (e) {
+      _snack('Could not save adviser details: $e', isError: true);
+    }
   }
 
   Future<OrgOfficerProfile?> _showOfficerEditor({
@@ -378,30 +473,18 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     });
   }
 
-  // Accept a Facebook page URL, username, or organization page name.
-  // A name is saved as a Facebook search URL so we do not guess the wrong page.
-  String? _normalizedFacebookUrl(String input) {
-    final value = input.trim();
+  String _facebookNameFromStoredValue(String raw) {
+    final value = raw.trim();
     if (value.isEmpty) return '';
-
-    final candidate = value.contains('://') ? value : 'https://$value';
-    final uri = Uri.tryParse(candidate);
+    final uri = Uri.tryParse(value.contains('://') ? value : 'https://$value');
     final host = uri?.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
-    if (uri != null && host == 'facebook.com' && uri.path.isNotEmpty && uri.path != '/') {
-      return Uri(scheme: 'https', host: 'www.facebook.com', path: uri.path, query: uri.hasQuery ? uri.query : null).toString();
+    if (uri != null && host == 'facebook.com') {
+      final query = uri.queryParameters['q'];
+      if (query != null && query.trim().isNotEmpty) return query.trim();
+      final path = uri.pathSegments.where((part) => part.isNotEmpty).join(' ');
+      if (path.isNotEmpty) return path.replaceAll(RegExp(r'[-_]'), ' ');
     }
-
-    // A page username can be converted directly into a Facebook page URL.
-    if (!value.contains('/') && !value.contains(' ') && !value.contains('.') && !value.contains(':')) {
-      return 'https://www.facebook.com/$value';
-    }
-
-    // If the officer enters only the organization name, open Facebook search
-    // results rather than assuming a page URL that may belong to someone else.
-    if (!value.contains('://') && !value.contains('/') && !value.contains('@')) {
-      return 'https://www.facebook.com/search/top?q=${Uri.encodeQueryComponent(value)}';
-    }
-    return null;
+    return value;
   }
 
   // ── Save all changes ──────────────────────────────────────────────────────
@@ -413,9 +496,9 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       _snack('Organization name cannot be empty.', isError: true);
       return;
     }
-    final facebookUrl = _normalizedFacebookUrl(_socialLinkCtrl.text);
-    if (facebookUrl == null) {
-      _snack('Enter a valid Facebook page URL or page username.', isError: true);
+    final facebookName = _socialLinkCtrl.text.trim();
+    if (facebookName.contains('://') && !facebookName.toLowerCase().contains('facebook.com')) {
+      _snack('Please enter the organization Facebook name or a Facebook page URL.', isError: true);
       return;
     }
 
@@ -442,12 +525,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         name: name,
         acronym: '',
         category: _categoryCtrl.text.trim(),
-        shortDesc: _shortDescCtrl.text.trim(),
         about: _aboutCtrl.text.trim(),
         mission: _missionCtrl.text.trim(),
         vision: _visionCtrl.text.trim(),
+        goals: _goalsCtrl.text.trim(),
         adviser: _adviserCtrl.text.trim(),
-        socialLink: facebookUrl,
+        socialLink: facebookName,
         officers: _officers,
         officerProfiles: _officerProfiles,
         activitiesHighlights: _highlights,
@@ -601,13 +684,6 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                                 label: 'Category',
                                 icon: Icons.category_rounded,
                               ),
-                              _field(
-                                controller: _shortDescCtrl,
-                                label: 'Short Description',
-                                icon: Icons.notes_rounded,
-                                maxLines: 2,
-                              ),
-
                               const SizedBox(height: 24),
 
                               // ── Details ─────────────────────────────────
@@ -631,6 +707,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                                 icon: Icons.visibility_rounded,
                                 maxLines: 4,
                               ),
+                              _field(
+                                controller: _goalsCtrl,
+                                label: 'Goals',
+                                icon: Icons.flag_circle_rounded,
+                                maxLines: 4,
+                              ),
 
                               const SizedBox(height: 24),
 
@@ -639,13 +721,13 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                               const SizedBox(height: 12),
                               _field(
                                 controller: _socialLinkCtrl,
-                                label: 'Organization Facebook Page',
+                                label: 'Organization Facebook Name',
                                 icon: Icons.facebook_rounded,
-                                keyboardType: TextInputType.url,
+                                keyboardType: TextInputType.text,
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Enter the Facebook page URL, page username, or organization name. A name opens Facebook search results; a URL opens the saved page.',
+                                'Enter the Facebook page name or username. You can also paste the page URL if you have it.',
                                 style: TextStyle(
                                   color: Colors.grey.shade600,
                                   fontSize: 12,
@@ -659,7 +741,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                               _sectionLabel('Adviser & Officers'),
                               const SizedBox(height: 8),
                               Text(
-                                'Profile pictures are taken from the adviser and officer accounts so the public organization profile stays consistent.',
+                                'Edit the adviser name and picture here. Officer names, designations, and pictures can be edited below.',
                                 style: TextStyle(
                                   color: Colors.grey.shade600,
                                   fontSize: 12,
@@ -668,15 +750,16 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              _ProfilePersonEditorCard(
+                              Center(
+                                child: _ProfilePersonEditorCard(
                                 label: 'Adviser',
                                 name: _personByRole('adviser')?['name']?.toString().trim().isNotEmpty == true
                                     ? _personByRole('adviser')!['name'].toString()
                                     : _adviserCtrl.text.trim(),
                                 avatarUrl: _personByRole('adviser')?['avatar_url']?.toString() ?? '',
-                                width: double.infinity,
-                                compact: true,
-                              ),
+                                width: 172,
+                                onEdit: _editAdviserProfile,
+                              )),
                               const SizedBox(height: 14),
                               _OfficerPeopleEditor(
                                 officers: _officers,
@@ -974,171 +1057,70 @@ class _ProfilePersonEditorCard extends StatelessWidget {
   final String name;
   final String avatarUrl;
   final double width;
-  final bool compact;
+  final VoidCallback? onEdit;
 
   const _ProfilePersonEditorCard({
     required this.label,
     required this.name,
     required this.avatarUrl,
     this.width = 172,
-    this.compact = false,
+    this.onEdit,
   });
 
   @override
   Widget build(BuildContext context) {
     final displayName = name.trim().isEmpty ? 'No name added yet' : name.trim();
     final displayRole = label.trim().isEmpty ? 'Officer' : label.trim();
-
-    if (compact) {
-      return Container(
-        width: width,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFB9E4CF), width: 1.1),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0D0F8A61),
-              blurRadius: 12,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 74,
-                height: 74,
-                child: avatarUrl.trim().isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: avatarUrl.trim(),
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _personFallback(),
-                        errorWidget: (_, __, ___) => _personFallback(),
-                      )
-                    : _personFallback(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Adviser',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Color(0xFF15803D),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: .6,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    displayName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 14,
-                      height: 1.15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
+    return SizedBox(
       width: width,
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFFFF), Color(0xFFF3FCF6)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFB9E4CF), width: 1.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D0F8A61),
-            blurRadius: 14,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: avatarUrl.trim().isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: avatarUrl.trim(),
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => _personFallback(),
-                      errorWidget: (_, __, ___) => _personFallback(),
-                    )
-                  : _personFallback(),
-            ),
-          ),
-          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            width: width,
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3F7EA),
-              borderRadius: BorderRadius.circular(999),
+              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: [Color(0xFFFFFFFF), Color(0xFFF3FCF6)]),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFB9E4CF), width: 1.2),
+              boxShadow: const [BoxShadow(color: Color(0x0D0F8A61), blurRadius: 14, offset: Offset(0, 6))],
             ),
-            child: Text(
-              displayRole,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF15803D),
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .5,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  height: 122,
+                  child: avatarUrl.trim().isNotEmpty
+                      ? CachedNetworkImage(imageUrl: avatarUrl.trim(), fit: BoxFit.cover, alignment: Alignment.center,
+                          placeholder: (_, __) => _personFallback(), errorWidget: (_, __, ___) => _personFallback())
+                      : _personFallback(),
+                ),
               ),
-            ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(color: const Color(0xFFE3F7EA), borderRadius: BorderRadius.circular(999)),
+                child: Text(displayRole, softWrap: true, textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF15803D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .5)),
+              ),
+              const SizedBox(height: 7),
+              Text(displayName, softWrap: true, textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14.5, height: 1.15, fontWeight: FontWeight.w900)),
+            ]),
           ),
-          const SizedBox(height: 7),
-          Text(
-            displayName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 14.5,
-              height: 1.15,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
+          if (onEdit != null)
+            Positioned(top: 6, right: 6, child: Material(
+              color: Colors.white, shape: const CircleBorder(), elevation: 2,
+              child: IconButton(tooltip: 'Edit adviser', onPressed: onEdit, padding: const EdgeInsets.all(7), constraints: const BoxConstraints(),
+                icon: const Icon(Icons.edit_rounded, size: 16, color: Color(0xFF16A34A))),
+            )),
         ],
       ),
     );
   }
 
-  Widget _personFallback() => Container(
-        color: const Color(0xFFE7F7EF),
-        child: const Center(
-          child: Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 42),
-        ),
-      );
+  Widget _personFallback() => Container(color: const Color(0xFFE7F7EF),
+    child: const Center(child: Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 42)));
 }
 
 class _OfficerPeopleEditor extends StatelessWidget {
@@ -1225,89 +1207,91 @@ class _OfficerPeopleEditor extends StatelessWidget {
                 ),
               )
             else
-              SizedBox(
-                height: 244,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: officers.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (_, index) {
-                    final raw = officers[index];
-                    final name = _nameOnly(raw);
-                    final role = _roleOnly(raw);
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        SizedBox(
-                          width: 172,
-                          child: _ProfilePersonEditorCard(
-                            label: role,
-                            name: name,
-                            avatarUrl: _profileAvatar(name),
-                            width: 172,
-                          ),
-                        ),
-                        Positioned(
-                          top: -5,
-                          right: -4,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var index = 0; index < officers.length; index++) ...[
+                      if (index > 0) const SizedBox(width: 10),
+                      Builder(
+                        builder: (context) {
+                          final raw = officers[index];
+                          final name = _nameOnly(raw);
+                          final role = _roleOnly(raw);
+                          return Stack(
+                            clipBehavior: Clip.none,
                             children: [
-                              GestureDetector(
-                                onTap: () => onEdit(index),
-                                child: Container(
-                                  width: 26,
-                                  height: 26,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: const Color(0xFFB9E4CF)),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x12000000),
-                                        blurRadius: 6,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.edit_rounded,
-                                    size: 14,
-                                    color: Color(0xFF16A34A),
-                                  ),
-                                ),
+                              _ProfilePersonEditorCard(
+                                label: role,
+                                name: name,
+                                avatarUrl: _profileAvatar(name),
+                                width: 172,
                               ),
-                              const SizedBox(width: 4),
-                              GestureDetector(
-                                onTap: () => onRemove(index),
-                                child: Container(
-                                  width: 26,
-                                  height: 26,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.red.shade100),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x12000000),
-                                        blurRadius: 6,
-                                        offset: Offset(0, 2),
+                              Positioned(
+                                top: -5,
+                                right: -4,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => onEdit(index),
+                                      child: Container(
+                                        width: 26,
+                                        height: 26,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: const Color(0xFFB9E4CF)),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0x12000000),
+                                              blurRadius: 6,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: const Icon(
+                                          Icons.edit_rounded,
+                                          size: 14,
+                                          color: Color(0xFF16A34A),
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                  child: Icon(
-                                    Icons.close_rounded,
-                                    size: 16,
-                                    color: Colors.red.shade400,
-                                  ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    GestureDetector(
+                                      onTap: () => onRemove(index),
+                                      child: Container(
+                                        width: 26,
+                                        height: 26,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.red.shade100),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0x12000000),
+                                              blurRadius: 6,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Icon(
+                                          Icons.close_rounded,
+                                          size: 16,
+                                          color: Colors.red.shade400,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                          );
+                        },
+                      ),
+                    ],
+                  ],
                 ),
               ),
             const SizedBox(height: 8),

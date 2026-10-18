@@ -53,13 +53,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     });
   }
 
-  Future<void> _refreshNotifications() async {
-    try {
-      await AppState.instance.fetchNotifications();
-    } catch (e) {
-      debugPrint('Could not refresh notifications: $e');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -126,7 +119,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             _HomeTab(),
             OrgListScreen(),
             StudentDashboard(),
-            NotificationScreen(showBackButton: false),
             ProfileScreen(),
           ],
         ),
@@ -189,28 +181,14 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 onTap: () => setState(() => _selectedIndex = 2),
               ),
               _NavItem(
-                icon: Icons.notifications_rounded,
-                label: 'Notifs',
+                icon: Icons.person_rounded,
+                label: 'Profile',
                 index: 3,
                 selectedIndex: _selectedIndex,
                 iconSize: iconSize,
                 fontSize: fontSize,
-                primaryColor: _eventsAccent,
-                badgeCount: unreadCount,
-                onTap: () {
-                  setState(() => _selectedIndex = 3);
-                  _refreshNotifications();
-                },
-              ),
-              _NavItem(
-                icon: Icons.person_rounded,
-                label: 'Profile',
-                index: 4,
-                selectedIndex: _selectedIndex,
-                iconSize: iconSize,
-                fontSize: fontSize,
                 primaryColor: _profileAccent,
-                onTap: () => setState(() => _selectedIndex = 4),
+                onTap: () => setState(() => _selectedIndex = 3),
               ),
             ],
           ),
@@ -221,7 +199,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 }
 
 // =============================================================================
-// _QuickActionsRow — Applications / Joined Orgs / Notifications
+// _QuickActionsRow — Applications / Joined Orgs
 // Sits BELOW the green header, on the light background.
 // =============================================================================
 class _QuickActionsRow extends StatelessWidget {
@@ -229,22 +207,8 @@ class _QuickActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final student = AppState.instance.currentStudent;
 
-    final unreadOrgUpdates = AppState.instance.notifications
-        .where((n) =>
-            n.orgId != null &&
-            n.orgId!.isNotEmpty &&
-            !n.read &&
-            !_isWorkflowOrganizationNotification(n) &&
-            !_isStudentPersonalNotification(n))
-        .length;
 
-    final unreadNotifications = AppState.instance.notifications
-        .where((n) =>
-            (n.studentId == student?.id || n.studentId == student?.studentId) &&
-            !n.read)
-        .length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -263,13 +227,13 @@ class _QuickActionsRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: _QuickActionCard(
               label: 'Joined Orgs',
               icon: Icons.groups_rounded,
               accent: const Color(0xFF0F766E),
-              badgeCount: unreadOrgUpdates,
+              badgeCount: 0,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -277,16 +241,17 @@ class _QuickActionsRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: _QuickActionCard(
               label: 'Notifications',
-              icon: Icons.notifications_active_rounded,
-              accent: const Color(0xFF15803D),
-              badgeCount: unreadNotifications,
+              icon: Icons.notifications_rounded,
+              accent: const Color(0xFF16A34A),
+              // Avoid a stale red badge from workflow/system notifications.
+              badgeCount: 0,
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const NotificationScreen()),
+                MaterialPageRoute(builder: (_) => const NotificationScreen(showBackButton: true)),
               ),
             ),
           ),
@@ -420,11 +385,12 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
   }
 
   Future<void> _refreshApplications() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _refreshing = true;
         _failed = false;
       });
+    }
     try {
       final app = AppState.instance;
       if (app.currentStudent == null) await app.loadStudentProfile();
@@ -808,21 +774,11 @@ class _JoinedOrganizationsScreenState
   }
 }
 
-bool _isStudentPersonalNotification(Notification n) {
-  final title = n.title.trim().toLowerCase();
-  final message = n.message.trim().toLowerCase();
-  return title.contains('interview scheduled') ||
-      title == 'application update' ||
-      title.contains('congratulations') ||
-      message.contains('your interview') ||
-      message.contains('your application') ||
-      message.contains('officially a member');
-}
-
 bool _isWorkflowOrganizationNotification(Notification n) {
   final title = n.title.trim().toLowerCase();
   final message = n.message.trim().toLowerCase();
   const workflowWords = [
+    'proposal',
     'proposal approved',
     'proposal forwarded',
     'proposal revision',
@@ -847,13 +803,7 @@ class _JoinedOrgCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final updates = AppState.instance.notifications
-        .where((n) =>
-            n.orgId == org.id &&
-            !n.read &&
-            !_isWorkflowOrganizationNotification(n) &&
-            !_isStudentPersonalNotification(n))
-        .length;
+    const updates = 0; // Do not show stale global notification rows as unread org updates.
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
@@ -1081,6 +1031,30 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
     final advisers = _orgPeople
         .where((p) => p['role']?.toString().toLowerCase() == 'adviser')
         .toList();
+    // Officers are also organization members. Merge the organization roster
+    // with saved member rows so officer positions and profile photos are shown.
+    final memberRows = <Map<String, dynamic>>[];
+    final memberNames = <String>{};
+    for (final member in members) {
+      final profile = _orgPeople.cast<Map<String, dynamic>?>().firstWhere(
+        (p) => p?['id']?.toString() == member.profileId,
+        orElse: () => null,
+      );
+      final name = member.name.trim();
+      if (name.isEmpty || !memberNames.add(name.toLowerCase())) continue;
+      memberRows.add({'name': name, 'role': member.position, 'avatar_url': profile?['avatar_url']?.toString() ?? ''});
+    }
+    for (final raw in org.officers) {
+      final colon = raw.indexOf(':');
+      final role = colon < 0 ? 'Officer' : raw.substring(0, colon).trim();
+      final name = (colon < 0 ? raw : raw.substring(colon + 1)).trim();
+      if (name.isEmpty || !memberNames.add(name.toLowerCase())) continue;
+      final profile = _orgPeople.cast<Map<String, dynamic>?>().firstWhere(
+        (p) => p?['name']?.toString().trim().toLowerCase() == name.toLowerCase(),
+        orElse: () => null,
+      );
+      memberRows.add({'name': name, 'role': role, 'avatar_url': profile?['avatar_url']?.toString() ?? ''});
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1FAF6),
@@ -1170,66 +1144,6 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
                               }).toList(),
                             ),
                 ),
-                const SizedBox(height: 14),
-
-                // Adviser first, then officers. Their saved profile photos are shown
-                // as clean square organization cards rather than circular login avatars.
-                _CommunitySection(
-                  title: 'Adviser & officers',
-                  icon: Icons.badge_rounded,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (advisers.isNotEmpty) ...[
-                        const Text('Adviser',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF24463C))),
-                        const SizedBox(height: 10),
-                        _OrganizationPersonTile(
-                          person: advisers.first,
-                          fallbackIcon: Icons.school_rounded,
-                          wide: true,
-                        ),
-                      ] else if (org.adviser.trim().isNotEmpty) ...[
-                        const Text('Adviser',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF24463C))),
-                        const SizedBox(height: 10),
-                        _OrganizationFallbackPersonTile(
-                          name: org.adviser.trim(),
-                          label: 'Adviser',
-                          icon: Icons.school_rounded,
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      const Text('Officers',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF24463C))),
-                      const SizedBox(height: 10),
-                      if (officers.isEmpty)
-                        const Text(
-                          'No officer profiles have been posted for this organization yet.',
-                          style: TextStyle(color: Color(0xFF6B8178)),
-                        )
-                      else
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 12,
-                          children: officers
-                              .map((person) => _OrganizationPersonTile(
-                                    person: person,
-                                    fallbackIcon: Icons.badge_rounded,
-                                  ))
-                              .toList(),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
                 const SizedBox(height: 14),
 
                 // Fee/payment notices are pulled from the organization's own
@@ -1372,8 +1286,7 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
                                                   height: 1.4)),
                                         ],
                                         const SizedBox(height: 10),
-                                        EventReactionBar(eventId: e.id),
-                                        Align(
+Align(
                                           alignment: Alignment.centerRight,
                                           child: FilledButton.icon(
                                             onPressed: () => showEventComments(
@@ -1383,7 +1296,7 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
                                             icon: const Icon(
                                                 Icons.forum_outlined,
                                                 size: 15),
-                                            label: const Text('Comments'),
+                                            label: EventCommentCountLabel(eventId: e.id, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                                             style: FilledButton.styleFrom(
                                               backgroundColor:
                                                   const Color(0xFFE4F7EF),
@@ -1410,32 +1323,94 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
                 const SizedBox(height: 14),
 
                 _CommunitySection(
+                  title: 'Adviser and Officers',
+                  icon: Icons.badge_rounded,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (advisers.isNotEmpty || org.adviser.trim().isNotEmpty) ...[
+                        const Text('Adviser', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF24463C))),
+                        const SizedBox(height: 10),
+                        _OrganizationPersonTile(
+                          person: advisers.isNotEmpty
+                              ? advisers.first
+                              : {'name': org.adviser.trim(), 'role': 'Adviser', 'avatar_url': ''},
+                          fallbackIcon: Icons.school_rounded,
+                          wide: true,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      const Text('Officers', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF24463C))),
+                      const SizedBox(height: 10),
+                      if (org.officers.isEmpty && officers.isEmpty)
+                        const Text('No officer profiles have been posted for this organization yet.', style: TextStyle(color: Color(0xFF6B8178)))
+                      else
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 12,
+                          children: [
+                            ...org.officers.map((raw) {
+                              final colon = raw.indexOf(':');
+                              final role = colon < 0 ? 'Officer' : raw.substring(0, colon).trim();
+                              final name = (colon < 0 ? raw : raw.substring(colon + 1)).trim();
+                              final liveProfile = _orgPeople.cast<Map<String, dynamic>?>().firstWhere(
+                                (p) => p?['name']?.toString().trim().toLowerCase() == name.toLowerCase(),
+                                orElse: () => null,
+                              );
+                              final savedProfile = org.officerProfiles.cast<OrgOfficerProfile?>().firstWhere(
+                                (p) => p?.name.trim().toLowerCase() == name.toLowerCase(),
+                                orElse: () => null,
+                              );
+                              final liveAvatar = liveProfile?['avatar_url']?.toString().trim() ?? '';
+                              final savedAvatar = savedProfile?.avatarUrl.trim() ?? '';
+                              return _OrganizationPersonTile(
+                                person: {
+                                  'name': name,
+                                  'role': savedProfile?.role ?? role,
+                                  'avatar_url': liveAvatar.isNotEmpty ? liveAvatar : savedAvatar,
+                                },
+                                fallbackIcon: Icons.badge_rounded,
+                              );
+                            }),
+                            if (org.officers.isEmpty)
+                              ...officers.map((person) => _OrganizationPersonTile(
+                                    person: person,
+                                    fallbackIcon: Icons.badge_rounded,
+                                  )),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                _CommunitySection(
                   title: 'Members',
                   icon: Icons.groups_rounded,
-                  child: members.isEmpty
-                      ? const Text(
-                          'Member list will appear when membership records are available.',
-                          style: TextStyle(color: Color(0xFF6B8178)),
-                        )
-                      : Column(
-                          children: members.map((m) {
-                            final profile = _orgPeople
-                                .cast<Map<String, dynamic>?>()
-                                .firstWhere(
-                                  (p) => p?['id']?.toString() == m.profileId,
-                                  orElse: () => null,
-                                );
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _OrganizationMemberCard(
-                                name: m.name,
-                                role: m.position,
-                                avatarUrl:
-                                    profile?['avatar_url']?.toString() ?? '',
-                              ),
-                            );
-                          }).toList(),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE4F7EF),
+                          borderRadius: BorderRadius.circular(14),
                         ),
+                        child: const Icon(Icons.groups_rounded, color: Color(0xFF0F8A61)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Organization members', style: TextStyle(color: Color(0xFF24463C), fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 3),
+                            Text('${memberRows.length} ${memberRows.length == 1 ? 'member' : 'members'}', style: const TextStyle(color: Color(0xFF0F8A61), fontSize: 13, fontWeight: FontWeight.w800)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 14),
 
@@ -1762,146 +1737,6 @@ class _OrganizationPersonTile extends StatelessWidget {
   }
 }
 
-class _OrganizationFallbackPersonTile extends StatelessWidget {
-  final String name;
-  final String label;
-  final IconData icon;
-
-  const _OrganizationFallbackPersonTile({
-    required this.name,
-    required this.label,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8FFFB), Color(0xFFE7F8F0)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFCBE8DC)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 82,
-            height: 82,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE4F7EF),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFCBE8DC), width: 1.4),
-            ),
-            child: Icon(icon, color: const Color(0xFF0F8A61), size: 30),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Color(0xFF24463C),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 4),
-                Text(label,
-                    style: const TextStyle(
-                        color: Color(0xFF0F8A61),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 7),
-                const Text('Organization adviser',
-                    style: TextStyle(color: Color(0xFF6B8178), fontSize: 11)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OrganizationMemberCard extends StatelessWidget {
-  final String name;
-  final String role;
-  final String avatarUrl;
-
-  const _OrganizationMemberCard({
-    required this.name,
-    required this.role,
-    required this.avatarUrl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cleanName = name.trim().isEmpty ? 'Member' : name.trim();
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FFFB),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: const Color(0xFFD8EEE4)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE4F7EF),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: const Color(0xFFCBE8DC)),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: avatarUrl.isEmpty
-                ? const Icon(Icons.person_rounded,
-                    color: Color(0xFF0F8A61), size: 25)
-                : Image.network(
-                    avatarUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(
-                        Icons.person_rounded,
-                        color: Color(0xFF0F8A61),
-                        size: 25),
-                  ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(cleanName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Color(0xFF24463C),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 3),
-                Text(role.trim().isEmpty ? 'Member' : role.trim(),
-                    style: const TextStyle(
-                        color: Color(0xFF6B8178),
-                        fontSize: 10.8,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          const Icon(Icons.verified_rounded,
-              color: Color(0xFF16A34A), size: 18),
-        ],
-      ),
-    );
-  }
-}
-
 class _CommunitySection extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -2187,7 +2022,6 @@ class _NavItem extends StatelessWidget {
   final double iconSize;
   final double fontSize;
   final Color primaryColor;
-  final int badgeCount;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -2199,7 +2033,6 @@ class _NavItem extends StatelessWidget {
     required this.fontSize,
     required this.primaryColor,
     required this.onTap,
-    this.badgeCount = 0,
   });
 
   @override
@@ -2229,31 +2062,6 @@ class _NavItem extends StatelessWidget {
                   size: iconSize,
                   color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
                 ),
-                if (badgeCount > 0)
-                  Positioned(
-                    right: -8,
-                    top: -5,
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 16),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDC2626),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.5),
-                      ),
-                      child: Text(
-                        badgeCount > 99 ? '99+' : '$badgeCount',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
             const SizedBox(height: 3),
@@ -2641,15 +2449,14 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                     ),
                   ],
                 ),
-                EventReactionBar(eventId: widget.event.id),
-                Align(
+Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
                     onPressed: () => showEventComments(context,
                         eventId: widget.event.id,
                         eventTitle: widget.event.title),
                     icon: const Icon(Icons.forum_outlined, size: 17),
-                    label: const Text('Comments'),
+                    label: EventCommentCountLabel(eventId: widget.event.id, style: const TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF15803D)),
                   ),

@@ -45,6 +45,7 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
     'Officer',
     'Secretary',
     'Assistant Secretary',
+    'Treasurer',
   ];
 
   final Set<String> _activeProfileIds = <String>{};
@@ -56,6 +57,9 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
   bool _activeStatusLoaded = false;
   bool _canManageMembers = false;
   bool _canManageAttendance = false;
+  bool _canManageMinutes = false;
+  bool _canManageFinance = false;
+  bool _canViewFinance = false;
   bool _managerRoleLoaded = false;
   RealtimeChannel? _attendanceChannel;
   final ScrollController _membersScrollController = ScrollController();
@@ -109,8 +113,11 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
       final position = row?['position']?.toString().toLowerCase().trim() ?? '';
       if (mounted) {
         setState(() {
-          _canManageMembers = position == 'president' || position == 'vice president';
-          _canManageAttendance = position == 'secretary' || position == 'assistant secretary';
+          _canManageMembers = widget.adviserView || position == 'president' || position == 'vice president';
+          _canManageAttendance = {'secretary', 'assistant secretary'}.contains(position);
+          _canManageMinutes = {'secretary', 'assistant secretary'}.contains(position);
+          _canManageFinance = position == 'treasurer';
+          _canViewFinance = {'treasurer', 'president', 'vice president'}.contains(position);
           _managerRoleLoaded = true;
         });
       }
@@ -221,17 +228,16 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
         }
       }
 
-      // Attendance is a second, concrete activity signal for members.
-      // It is displayed in the Active Members & Impact cards so advisers can
-      // distinguish an active account from someone who is actually attending
-      // organization activities. Attendance records are stored in Supabase.
+      // Attendance is a separate member-activity signal; it is not part of
+      // the student-reported organization-impact score.
       _attendancePresentCounts.clear();
       _attendanceTotalCounts.clear();
       try {
         final attendanceRows = await client
             .from('organization_member_attendance')
             .select('profile_id,status,marked_at')
-            .eq('org_id', orgId);
+            .eq('org_id', orgId)
+            .gte('marked_at', cutoff.toIso8601String());
         for (final row in attendanceRows as List) {
           final profileId = row['profile_id']?.toString() ?? '';
           if (profileId.isEmpty || !memberProfileIds.contains(profileId)) continue;
@@ -260,12 +266,13 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
         debugPrint('Could not load organization impact data: $e');
       }
 
-      // Active Members is based on the real Supabase membership + active
-      // account records. Recent chat/comment activity is shown as engagement
-      // detail, but it must never hide a legitimate member (including officers).
+      // Active means a member participated in the last 30 days through chat,
+      // event comments, or recorded attendance. This is distinct from impact.
       _activeProfileIds
         ..clear()
-        ..addAll(activeAccounts);
+        ..addAll(_chatMessageCounts.keys)
+        ..addAll(_commentCounts.keys)
+        ..addAll(_attendancePresentCounts.keys.where((id) => (_attendancePresentCounts[id] ?? 0) > 0));
     } catch (e) {
       debugPrint('Error loading member engagement data: $e');
     }
@@ -294,6 +301,8 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
       case 'secretary':
       case 'assistant secretary':
         return const Color(0xFF0D9488);
+      case 'treasurer':
+        return const Color(0xFFB45309);
       case 'officer':
         return const Color(0xFF22C55E);
       default:
@@ -317,13 +326,14 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
               child: AnimatedBuilder(
                 animation: AppState.instance,
                 builder: (ctx, _) {
-                  var members = orgId != null
+                  final allOrgMembers = orgId != null
                       ? AppState.instance.members.where((m) => m.orgId == orgId).toList()
                       : AppState.instance.members.toList();
+                  var members = List<Member>.from(allOrgMembers);
                   if (widget.showOnlyActive && _activeStatusLoaded) {
                     members = members.where((m) => m.profileId != null && _activeProfileIds.contains(m.profileId)).toList();
                   }
-                  if (members.isEmpty) {
+                  if (members.isEmpty && !widget.adviserView) {
                     return ListView(
                       controller: _membersScrollController,
                       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
@@ -368,11 +378,48 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
                                 onTap: () => _manageAttendance(ctx, members),
                               ),
                             ],
+                            if (!widget.readOnly && _canManageMinutes) ...[
+                              const SizedBox(height: 10),
+                              _attendanceActionCard(
+                                title: 'Meeting Minutes',
+                                subtitle: 'Write what was discussed and send it to your adviser',
+                                icon: Icons.notes_rounded,
+                                primary: false,
+                                onTap: () => _openMeetingMinutes(ctx, orgId ?? ''),
+                              ),
+                              const SizedBox(height: 10),
+                              _attendanceActionCard(
+                                title: 'View Meeting Minutes',
+                                subtitle: 'Review minutes previously created by your secretary team',
+                                icon: Icons.library_books_rounded,
+                                primary: false,
+                                onTap: () => _viewMeetingMinutes(ctx, orgId ?? ''),
+                              ),
+                            ],
+                            if (!widget.readOnly && _canManageFinance) ...[
+                              const SizedBox(height: 10),
+                              _attendanceActionCard(
+                                title: 'Treasurer Financial Report',
+                                subtitle: 'Record event income and expenses for your adviser',
+                                icon: Icons.account_balance_wallet_rounded,
+                                primary: true,
+                                onTap: () => _openTreasurerFinance(ctx, orgId ?? ''),
+                              ),
+                            ] else if (!widget.readOnly && _canViewFinance) ...[
+                              const SizedBox(height: 10),
+                              _attendanceActionCard(
+                                title: 'View Financial Report',
+                                subtitle: 'Review the organization budget, income, expenses, and balance',
+                                icon: Icons.account_balance_wallet_rounded,
+                                primary: false,
+                                onTap: () => _viewFinanceReport(ctx, orgId ?? ''),
+                              ),
+                            ],
                               ]),
                             ),
                             const SizedBox(height: 18),
-                            Row(children: [const Expanded(child: Text('Organization members', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF14532D)))), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(20)), child: Text('${members.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF166534))))]),
-                            const SizedBox(height: 10),
+                            if (members.isNotEmpty) Row(children: [const Expanded(child: Text('Organization members', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF14532D)))), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(20)), child: Text('${members.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF166534))))]),
+                            if (members.isNotEmpty) const SizedBox(height: 10),
                             ...members.asMap().entries.map((e) => _MemberCard(
                               member: e.value,
                               readOnly: widget.readOnly || !_canManageMembers,
@@ -389,7 +436,11 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
                               },
                             )),
                             const SizedBox(height: 18),
-                            if (widget.adviserView) _ImpactSection(members: members, impactByStudentId: _impactByStudentId, averageFor: _impactAverage, attendancePresent: _attendancePresentCounts, attendanceTotal: _attendanceTotalCounts, adviserView: true),
+                            if (widget.adviserView) ...[
+                              _ImpactSection(members: allOrgMembers, impactByStudentId: _impactByStudentId, averageFor: _impactAverage, adviserView: true),
+                              const SizedBox(height: 14),
+                              _MemberActivitySection(members: allOrgMembers, activeProfileIds: _activeProfileIds, chatMessageCounts: _chatMessageCounts, commentCounts: _commentCounts, attendancePresent: _attendancePresentCounts, attendanceTotal: _attendanceTotalCounts),
+                            ],
                           ]),
                         ),
                       ),
@@ -718,6 +769,289 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
     return result;
   }
 
+  Future<void> _openMeetingMinutes(BuildContext context, String orgId) async {
+    if (orgId.isEmpty) return;
+    final titleCtrl = TextEditingController();
+    final minutesCtrl = TextEditingController();
+    DateTime meetingDate = DateTime.now();
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
+        title: const Text('Meeting Minutes'),
+        content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Meeting title')),
+          const SizedBox(height: 10),
+          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.calendar_month_rounded), title: const Text('Meeting date'), subtitle: Text('${meetingDate.year}-${meetingDate.month.toString().padLeft(2,'0')}-${meetingDate.day.toString().padLeft(2,'0')}'), onTap: () async { final d = await showDatePicker(context: ctx, initialDate: meetingDate, firstDate: DateTime(2020), lastDate: DateTime(2100)); if (d != null) setDialogState(() => meetingDate = d); }),
+          const SizedBox(height: 8),
+          TextField(controller: minutesCtrl, minLines: 5, maxLines: 9, decoration: const InputDecoration(alignLabelWithHint: true, labelText: 'Discussion / minutes', hintText: 'Write the topics discussed, decisions made, and action items...', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          const Text('Submitting saves the minutes in Supabase for the adviser to review.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+        ]))),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Send to Adviser'))],
+      )),
+    );
+    if (save != true) { titleCtrl.dispose(); minutesCtrl.dispose(); return; }
+    if (titleCtrl.text.trim().isEmpty || minutesCtrl.text.trim().isEmpty) {
+      _snack('Enter a meeting title and the meeting minutes.', Colors.orange); titleCtrl.dispose(); minutesCtrl.dispose(); return;
+    }
+    try {
+      await Supabase.instance.client.from('organization_meeting_minutes').insert({
+        'org_id': orgId, 'title': titleCtrl.text.trim(),
+        'meeting_date': '${meetingDate.year}-${meetingDate.month.toString().padLeft(2,'0')}-${meetingDate.day.toString().padLeft(2,'0')}',
+        'minutes': minutesCtrl.text.trim(), 'submitted_by': Supabase.instance.client.auth.currentUser?.id,
+      });
+      _snack('Meeting minutes sent to adviser.', _ok);
+    } catch (e) { _snack('Could not submit meeting minutes: $e', Colors.red); }
+    finally { titleCtrl.dispose(); minutesCtrl.dispose(); }
+  }
+
+
+  Future<void> _viewMeetingMinutes(BuildContext context, String orgId) async {
+    if (orgId.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('organization_meeting_minutes')
+          .select('title,meeting_date,minutes,submitted_at')
+          .eq('org_id', orgId)
+          .order('meeting_date', ascending: false);
+      if (!context.mounted) return;
+      final records = List<Map<String, dynamic>>.from(rows as List);
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          title: const Row(children: [Icon(Icons.library_books_rounded, color: _p), SizedBox(width: 8), Expanded(child: Text('Meeting Minutes'))]),
+          content: SizedBox(width: 480, child: records.isEmpty
+            ? const Padding(padding: EdgeInsets.all(16), child: Text('No meeting minutes have been saved yet.'))
+            : ListView.separated(shrinkWrap: true, itemCount: records.length, separatorBuilder: (_, __) => const SizedBox(height: 8), itemBuilder: (ctx, i) {
+                final item = records[i];
+                return Container(decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFD1FAE5))), child: ExpansionTile(leading: const CircleAvatar(backgroundColor: Color(0xFFDCFCE7), child: Icon(Icons.description_rounded, color: Color(0xFF128058))), title: Text(item['title']?.toString() ?? 'Meeting', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(item['meeting_date']?.toString() ?? ''), children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: Align(alignment: Alignment.centerLeft, child: SelectableText(item['minutes']?.toString() ?? '', style: const TextStyle(height: 1.5))))]));
+              })),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+        ),
+      );
+    } catch (e) { _snack('Could not load meeting minutes: $e', Colors.red); }
+  }
+
+  bool _showAllFinanceTransactions = false;
+
+  Future<void> _viewFinanceReport(BuildContext context, String orgId) async {
+    if (orgId.isEmpty) return;
+    try {
+      final db = Supabase.instance.client;
+      final results = await Future.wait<dynamic>([
+        db.from('organizations').select('name,allocated_budget').eq('id', orgId).maybeSingle(),
+        db.from('org_financial_transactions').select('*').eq('org_id', orgId).order('transaction_date', ascending: false),
+      ]);
+      final org = results[0] as Map<String, dynamic>?;
+      final rows = List<Map<String, dynamic>>.from(results[1] as List);
+      double total(String type) => rows.where((r) => r['type']?.toString().toLowerCase() == type).fold(0.0, (sum, r) => sum + ((r['amount'] as num?)?.toDouble() ?? 0));
+      String money(double n) => '₱${n.toStringAsFixed(2)}';
+      final allocated = (org?['allocated_budget'] as num?)?.toDouble() ?? 0;
+      final income = total('income');
+      final expenses = total('expense');
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 900,
+              maxHeight: MediaQuery.of(dialogContext).size.height * 0.92,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: 142,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF16A34A), Color(0xFF0F766E)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 20, 12),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Close financial report',
+                            onPressed: () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .18),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white.withValues(alpha: .30), width: 1.5),
+                            ),
+                            child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 26),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Treasurer Financial Report', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                                const SizedBox(height: 4),
+                                Text(org?['name']?.toString() ?? 'Organization finances', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LayoutBuilder(builder: (context, constraints) {
+                          final columns = constraints.maxWidth >= 560 ? 4 : (constraints.maxWidth >= 360 ? 2 : 1);
+                          final gap = 10.0;
+                          final cardWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
+                          Widget metric(String label, String value, IconData icon, Color color) => Container(
+                            width: cardWidth,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: color.withValues(alpha: .08), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: .22))),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Icon(icon, color: color, size: 21),
+                              const SizedBox(height: 10),
+                              Text(label, style: const TextStyle(color: Color(0xFF48665A), fontSize: 11, fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 4),
+                              Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900)),
+                            ]),
+                          );
+                          return Wrap(spacing: gap, runSpacing: gap, children: [
+                            metric('Allocated budget', money(allocated), Icons.savings_rounded, const Color(0xFF0F766E)),
+                            metric('Total income', money(income), Icons.trending_up_rounded, const Color(0xFF15803D)),
+                            metric('Total expenses', money(expenses), Icons.trending_down_rounded, const Color(0xFFB45309)),
+                            metric('Available balance', money(allocated + income - expenses), Icons.account_balance_wallet_rounded, const Color(0xFF166534)),
+                          ]);
+                        }),
+                        const SizedBox(height: 22),
+                        Row(children: [
+                          const Expanded(child: Text('Transaction details', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF14532D)))),
+                          Text('${rows.length} record${rows.length == 1 ? '' : 's'}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w700)),
+                        ]),
+                        const SizedBox(height: 10),
+                        if (rows.isEmpty)
+                          Container(width: double.infinity, padding: const EdgeInsets.all(22), decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFD1FAE5))), child: const Column(children: [Icon(Icons.receipt_long_rounded, size: 34, color: Color(0xFF16A34A)), SizedBox(height: 8), Text('No financial transactions recorded yet.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF48665A), fontWeight: FontWeight.w600))]))
+                        else
+                          ...(_showAllFinanceTransactions ? rows : rows.take(5).toList()).map((r) {
+                            final kind = (r['type'] ?? 'transaction').toString().toLowerCase();
+                            final color = kind == 'income' ? const Color(0xFF15803D) : (kind == 'reimbursement' ? const Color(0xFF7C3AED) : const Color(0xFFB45309));
+                            final eventName = r['event_name']?.toString().trim() ?? '';
+                            final description = r['description']?.toString().trim() ?? '';
+                            final heading = eventName.isNotEmpty ? eventName : (description.isNotEmpty ? description : 'Transaction');
+                            return Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(color: const Color(0xFFFAFFFB), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFDCEFE2))),
+                              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Container(width: 42, height: 42, decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(13)), child: Icon(Icons.receipt_long_rounded, color: color)),
+                                const SizedBox(width: 12),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(heading, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF173D2D), fontSize: 14)),
+                                  const SizedBox(height: 5),
+                                  Wrap(spacing: 7, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                                    Text(r['transaction_date']?.toString() ?? 'Date not set', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                    Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(20)), child: Text(kind.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: color))),
+                                  ]),
+                                  if (description.isNotEmpty && description != heading) ...[
+                                    const SizedBox(height: 6),
+                                    Text(description, style: const TextStyle(fontSize: 12, height: 1.35, color: Color(0xFF48665A))),
+                                  ],
+                                  if (r['category']?.toString().trim().isNotEmpty == true) ...[
+                                    const SizedBox(height: 4),
+                                    Text('Category: ${r['category']}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                  ],
+                                ])),
+                                const SizedBox(width: 10),
+                                Flexible(child: Text(money((r['amount'] as num?)?.toDouble() ?? 0), textAlign: TextAlign.end, style: TextStyle(fontWeight: FontWeight.w900, color: color, fontSize: 14))),
+                              ]),
+                            );
+                          }),
+                        if (rows.length > 5)
+                          Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                            onPressed: () {
+                              setState(() => _showAllFinanceTransactions = !_showAllFinanceTransactions);
+                              Navigator.pop(dialogContext);
+                              _viewFinanceReport(context, orgId);
+                            },
+                            icon: Icon(_showAllFinanceTransactions ? Icons.expand_less_rounded : Icons.expand_more_rounded),
+                            label: Text(_showAllFinanceTransactions ? 'View latest 5' : 'View all ${rows.length} records'),
+                          )),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _snack('Could not load financial report: $e', Colors.red);
+    }
+  }
+
+  Future<void> _openTreasurerFinance(BuildContext context, String orgId) async {
+    if (orgId.isEmpty) return;
+    final amountCtrl = TextEditingController();
+    final eventCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final categoryCtrl = TextEditingController();
+    String type = 'expense';
+    DateTime date = DateTime.now();
+    final save = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      title: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF128058), Color(0xFF16A34A)]), borderRadius: BorderRadius.circular(16)), child: const Row(children: [Icon(Icons.account_balance_wallet_rounded, color: Colors.white), SizedBox(width: 10), Expanded(child: Text('Treasurer Financial Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)))])),
+      content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        DropdownButtonFormField<String>(initialValue: type, decoration: const InputDecoration(labelText: 'Transaction type'), items: const [DropdownMenuItem(value: 'expense', child: Text('Expense / Paid from organization funds')), DropdownMenuItem(value: 'income', child: Text('Income / Money received')), DropdownMenuItem(value: 'reimbursement', child: Text('Reimbursement (paid with personal money)'))], onChanged: (v) { if (v != null) setDialogState(() => type = v); }),
+        TextField(controller: eventCtrl, decoration: const InputDecoration(labelText: 'Event name')),
+        TextField(controller: amountCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount (₱)')),
+        TextField(controller: categoryCtrl, decoration: InputDecoration(labelText: type == 'reimbursement' ? 'Expense category (e.g. supplies, transport)' : 'Category (e.g. supplies, tickets)')),
+        if (type == 'reimbursement') const Padding(padding: EdgeInsets.only(top: 8), child: Text('Use this when a member paid an event expense using personal money. Submitting records it for the adviser to review.', style: TextStyle(fontSize: 12, color: Colors.black54))),
+        TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Details / receipt notes')),
+        ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.calendar_month_rounded), title: const Text('Transaction date'), subtitle: Text('${date.year}-${date.month.toString().padLeft(2,'0')}-${date.day.toString().padLeft(2,'0')}'), onTap: () async { final d = await showDatePicker(context: ctx, initialDate: date, firstDate: DateTime(2020), lastDate: DateTime(2100)); if (d != null) setDialogState(() => date = d); }),
+        const Text('The adviser and admin can review these transactions in the organization financial report.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+      ]))),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Submit report'))],
+    )));
+    if (save != true) { amountCtrl.dispose(); eventCtrl.dispose(); descCtrl.dispose(); categoryCtrl.dispose(); return; }
+    final amount = double.tryParse(amountCtrl.text.trim().replaceAll(',', ''));
+    if (amount == null || amount <= 0 || eventCtrl.text.trim().isEmpty) {
+      _snack('Enter a valid amount and event name.', Colors.orange); amountCtrl.dispose(); eventCtrl.dispose(); descCtrl.dispose(); categoryCtrl.dispose(); return;
+    }
+    try {
+      await Supabase.instance.client.from('org_financial_transactions').insert({
+        'org_id': orgId, 'type': type, 'amount': amount,
+        'category': categoryCtrl.text.trim(), 'description': descCtrl.text.trim(),
+        'event_name': eventCtrl.text.trim(),
+        'transaction_date': '${date.year}-${date.month.toString().padLeft(2,'0')}-${date.day.toString().padLeft(2,'0')}',
+        'created_by': Supabase.instance.client.auth.currentUser?.id,
+      });
+      _snack(type == 'reimbursement' ? 'Reimbursement submitted for adviser review.' : 'Financial transaction submitted.', _ok);
+    } catch (e) { _snack('Could not submit financial transaction: $e', Colors.red); }
+    finally { amountCtrl.dispose(); eventCtrl.dispose(); descCtrl.dispose(); categoryCtrl.dispose(); }
+  }
+
   Future<void> _viewAttendance(BuildContext context, List<Member> members) async {
     final orgId = widget.organizationId ?? AppState.instance.currentOfficerOrgId;
     if (orgId == null || orgId.isEmpty) return;
@@ -846,8 +1180,8 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
                 final isPresent = status == 'present';
                 return ListTile(dense: true, contentPadding: EdgeInsets.zero,
                   leading: CircleAvatar(radius: 17, backgroundColor: status == null ? Colors.grey.shade100 : isPresent ? const Color(0xFFDCFCE7) : const Color(0xFFFFE4E6), child: Icon(status == null ? Icons.hourglass_empty_rounded : isPresent ? Icons.check_rounded : Icons.close_rounded, size: 18, color: status == null ? Colors.grey : isPresent ? _p : Colors.redAccent)),
-                  title: Text(member.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(member.position),
+                  title: Text(member.name, softWrap: true, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(member.position, maxLines: 1, overflow: TextOverflow.ellipsis),
                   trailing: Text(status == null ? 'Not recorded' : isPresent ? 'Present' : 'Absent', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: status == null ? Colors.grey : isPresent ? _p : Colors.redAccent)),
                 );
               }))),
@@ -937,7 +1271,7 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
               final id = member.profileId;
               if (id == null || id.isEmpty) return const SizedBox.shrink();
               final present = selected.contains(id);
-              return CheckboxListTile(value: present, activeColor: _p, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: Text(member.name, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(member.position), onChanged: (value) => setDialogState(() => value == true ? selected.add(id) : selected.remove(id)));
+              return CheckboxListTile(value: present, activeColor: _p, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: Text(member.name, softWrap: true, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(member.position, maxLines: 1, overflow: TextOverflow.ellipsis), onChanged: (value) => setDialogState(() => value == true ? selected.add(id) : selected.remove(id)));
             }))),
           ]))))),
           bottomNavigationBar: SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: _p, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)), icon: const Icon(Icons.send_rounded, size: 18), onPressed: () async {
@@ -1022,7 +1356,8 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
       'President',
       'Vice President',
       'Secretary',
-      'Assistant Secretary'
+      'Assistant Secretary',
+      'Treasurer'
     ];
 
     String position =
@@ -1071,18 +1406,19 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
                             hint: 'Enter member name',
                             icon: Icons.person_rounded),
                         const SizedBox(height: 14),
-                        // Position dropdown — unchanged
+                        // Designation choices shared by adviser and organization leadership
                         _FieldLabel('Position'),
                         DropdownButtonFormField<String>(
                           initialValue: position,
                           decoration: _fieldDeco(Icons.badge_rounded),
                           items: [
-                            'Member',
-                            'Officer',
                             'President',
                             'Vice President',
                             'Secretary',
                             'Assistant Secretary',
+                            'Treasurer',
+                            'Officer',
+                            'Member',
                           ]
                               .map((v) =>
                                   DropdownMenuItem(value: v, child: Text(v)))
@@ -1260,13 +1596,18 @@ class _MemberCard extends StatelessWidget {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                    // Keep the complete member/officer name visible. The card
+                    // grows vertically for long names instead of truncating.
                     Text(member.name,
+                        softWrap: true,
                         style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF0F172A))),
                     const SizedBox(height: 2),
                     Text(member.orgName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 12, color: Color(0xFF94A3B8))),
                     const SizedBox(height: 5),
@@ -1335,7 +1676,7 @@ class _EngagementInfoCard extends StatelessWidget {
           Icon(Icons.verified_user_rounded, color: Color(0xFF16A34A), size: 21),
           SizedBox(width: 10),
           Expanded(child: Text(
-            'Active means the member has an active account and has participated in the last 30 days through community chat or event comments.',
+            'Active means the member participated in the last 30 days through community chat, event comments, or recorded attendance.',
             style: TextStyle(color: Color(0xFF4D6F62), fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w600),
           )),
         ]),
@@ -1346,138 +1687,95 @@ class _ImpactSection extends StatelessWidget {
   final List<Member> members;
   final Map<String, Map<String, dynamic>> impactByStudentId;
   final double Function(Map<String, dynamic>) averageFor;
-  final Map<String, int> attendancePresent;
-  final Map<String, int> attendanceTotal;
   final bool adviserView;
-  const _ImpactSection({required this.members, required this.impactByStudentId, required this.averageFor, required this.attendancePresent, required this.attendanceTotal, this.adviserView = false});
+  const _ImpactSection({required this.members, required this.impactByStudentId, required this.averageFor, this.adviserView = false});
 
   double _rating(dynamic value) {
     final n = double.tryParse(value?.toString() ?? '') ?? 0;
-    // v26+ stores impact on a 1–5 scale. Normalize legacy percentage values
-    // so older records do not make the adviser dashboard display misleading data.
-    return n > 5 ? (n / 20).clamp(1, 5) : n.clamp(0, 5);
+    return n > 5 ? (n / 20).clamp(1, 5) : n.clamp(1, 5);
   }
 
   @override
   Widget build(BuildContext context) {
-    final rows = members
-        .where((m) => m.profileId != null && impactByStudentId.containsKey(m.profileId))
-        .toList();
+    final rows = members.where((m) => m.profileId != null && impactByStudentId.containsKey(m.profileId)).toList();
     final impacts = rows.map((m) => impactByStudentId[m.profileId!]!).toList();
-    final orgAverage = impacts.isEmpty
-        ? 0.0
-        : impacts.map(averageFor).map((v) => v > 5 ? v / 20 : v).reduce((a, b) => a + b) / impacts.length;
+    final avgScore = impacts.isEmpty ? 0.0 : impacts.map((impact) => averageFor(impact)).map((v) => v > 5 ? v / 20 : v).reduce((a, b) => a + b) / impacts.length;
+    // A 1/5 response means no perceived impact (0%); 5/5 means full impact (100%).
+    final percent = impacts.isEmpty ? 0 : (((avgScore - 1) / 4) * 100).round().clamp(0, 100);
+    final level = impacts.isEmpty ? 'Awaiting responses' : percent >= 75 ? 'High impact' : percent >= 50 ? 'Moderate impact' : 'Low impact';
+    final high = impacts.where((i) { final a = averageFor(i); final p = (((((a > 5 ? a / 20 : a) - 1) / 4) * 100)); return p >= 75; }).length;
+    final moderate = impacts.where((i) { final a = averageFor(i); final p = (((((a > 5 ? a / 20 : a) - 1) / 4) * 100)); return p >= 50 && p < 75; }).length;
+    final low = impacts.length - high - moderate;
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFEAF9F0), Color(0xFFD6F1E1)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFB7E2C9)),
-        boxShadow: [BoxShadow(color: const Color(0xFF16A34A).withValues(alpha: .08), blurRadius: 20, offset: const Offset(0, 8))],
-      ),
+      decoration: BoxDecoration(color: const Color(0xFFEAF9F0), borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFB7E2C9))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: const Color(0xFF16A34A).withValues(alpha: .12), borderRadius: BorderRadius.circular(14)),
-            child: const Icon(Icons.insights_rounded, color: Color(0xFF15803D), size: 21),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(child: Text('Organization Impact', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF12352A)))),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .75), borderRadius: BorderRadius.circular(20)),
-            child: Text(impacts.isEmpty ? 'No ratings' : '${orgAverage.toStringAsFixed(1)}/5', style: const TextStyle(color: Color(0xFF166534), fontSize: 11, fontWeight: FontWeight.w900)),
-          ),
-        ]),
-        const SizedBox(height: 8),
-        Text(
-          impacts.isEmpty
-              ? 'Members can rate how helpful the organization has been to them from 1 to 5 in Academic, Social, Leadership, and Confidence.'
-              : 'These are self-reported helpfulness ratings from members. Higher scores mean members feel the organization is helping them more in that area.',
-          style: const TextStyle(color: Color(0xFF3F6255), fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w600),
-        ),
-        if (adviserView)
-          Container(
-            margin: const EdgeInsets.only(top: 10, bottom: 13),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .72),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFB7E2C9)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.verified_rounded, color: Color(0xFF15803D), size: 18),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Attendance is recorded by the organization Secretary and automatically sent here for the adviser to review.',
-                    style: TextStyle(color: Color(0xFF3F6255), fontSize: 11, height: 1.35, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        if (impacts.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .72), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFBFE6CE))),
-            child: const Row(children: [
-              Icon(Icons.assignment_turned_in_outlined, color: Color(0xFF15803D), size: 20),
-              SizedBox(width: 9),
-              Expanded(child: Text('No student impact responses have been submitted yet.', style: TextStyle(color: Color(0xFF48665A), fontSize: 11.5, height: 1.35))),
-            ]),
-          )
-        else
-          ...rows.map((member) {
-            final impact = impactByStudentId[member.profileId!]!;
-            final avg = averageFor(impact);
-            final normalizedAvg = avg > 5 ? avg / 20 : avg;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF198754), Color(0xFF36A96F)]),
-                borderRadius: BorderRadius.circular(19),
-                boxShadow: [BoxShadow(color: const Color(0xFF128058).withValues(alpha: .10), blurRadius: 12, offset: const Offset(0, 5))],
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(child: Text(member.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5))),
-                  Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .16), borderRadius: BorderRadius.circular(20)), child: Text('${normalizedAvg.toStringAsFixed(1)}/5 helpful', style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900))),
-                ]),
-                const SizedBox(height: 11),
-                Wrap(spacing: 7, runSpacing: 7, children: [
-                  _impactChip('Academic', _rating(impact['academic_growth'])),
-                  _impactChip('Social', _rating(impact['social_growth'])),
-                  _impactChip('Leadership', _rating(impact['leadership_growth'])),
-                  _impactChip('Confidence', _rating(impact['confidence_growth'])),
-                ]),
-                const SizedBox(height: 9),
-                Builder(builder: (_) {
-                  final total = attendanceTotal[member.profileId!] ?? 0;
-                  final present = attendancePresent[member.profileId!] ?? 0;
-                  final label = total == 0 ? 'Attendance: No records yet' : 'Attendance: $present/$total present (${((present / total) * 100).round()}%)';
-                  return Text(label, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800));
-                }),
-              ]),
-            );
-          }),
+        Row(children: [const Icon(Icons.insights_rounded, color: Color(0xFF15803D), size: 22), const SizedBox(width: 10), const Expanded(child: Text('Organization Impact', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF12352A)))), if (impacts.isNotEmpty) Text('$percent%', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF166534)))]),
+        const SizedBox(height: 6),
+        Text(impacts.isEmpty ? 'No member impact responses have been submitted yet.' : '$level • Overall result from ${impacts.length} submitted member response${impacts.length == 1 ? '' : 's'}.', style: const TextStyle(color: Color(0xFF3F6255), fontSize: 12, height: 1.4, fontWeight: FontWeight.w700)),
+        if (impacts.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ClipRRect(borderRadius: BorderRadius.circular(20), child: LinearProgressIndicator(value: percent / 100, minHeight: 10, backgroundColor: Colors.white, color: const Color(0xFF16A34A))),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: [ _summaryPill('High impact', high), _summaryPill('Moderate impact', moderate), _summaryPill('Low impact', low) ]),
+          const SizedBox(height: 7),
+          const Text('Impact bands: High 75–100%, Moderate 50–74%, Low below 50%. These are suggested reporting bands based on the 1–5 self-reported scale.', style: TextStyle(color: Color(0xFF48665A), fontSize: 10.5, height: 1.35)),
+        ],
+        const SizedBox(height: 14),
+        if (impacts.isEmpty) const Text('Members rate Academic, Social, Leadership, and Confidence from 1 to 5. Their combined answers are converted to an overall percentage.', style: TextStyle(color: Color(0xFF48665A), fontSize: 11.5, height: 1.4))
+        else ...rows.map((member) {
+          final impact = impactByStudentId[member.profileId!]!;
+          final avg = averageFor(impact); final normalized = avg > 5 ? avg / 20 : avg;
+          final memberPercent = ((((normalized - 1) / 4) * 100).round()).clamp(0, 100);
+          final memberLevel = memberPercent >= 75 ? 'High' : memberPercent >= 50 ? 'Moderate' : 'Low';
+          return Container(margin: const EdgeInsets.only(bottom: 9), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFD1FAE5))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Expanded(child: Text(member.name, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF12352A)))), Text('$memberPercent% • $memberLevel', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF166534), fontSize: 11))]),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: [_impactChip('Academic', _rating(impact['academic_growth'])), _impactChip('Social', _rating(impact['social_growth'])), _impactChip('Leadership', _rating(impact['leadership_growth'])), _impactChip('Confidence', _rating(impact['confidence_growth']))]),
+          ]));
+        }),
       ]),
     );
   }
 
-  Widget _impactChip(String label, double value) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .92), borderRadius: BorderRadius.circular(30)),
-        child: Text('$label ${value.round()}/5', style: const TextStyle(fontSize: 9.5, color: Color(0xFF166534), fontWeight: FontWeight.w900)),
-      );
+  Widget _summaryPill(String label, int count) => Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)), child: Text('$label: $count', style: const TextStyle(color: Color(0xFF166534), fontSize: 10.5, fontWeight: FontWeight.w800)));
+
+  Widget _impactChip(String label, double value) => Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(30)), child: Text('$label ${value.round()}/5', style: const TextStyle(fontSize: 9.5, color: Color(0xFF166534), fontWeight: FontWeight.w900)));
+}
+
+class _MemberActivitySection extends StatelessWidget {
+  final List<Member> members;
+  final Set<String> activeProfileIds;
+  final Map<String, int> chatMessageCounts;
+  final Map<String, int> commentCounts;
+  final Map<String, int> attendancePresent;
+  final Map<String, int> attendanceTotal;
+  const _MemberActivitySection({required this.members, required this.activeProfileIds, required this.chatMessageCounts, required this.commentCounts, required this.attendancePresent, required this.attendanceTotal});
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMembers = members.where((m) => m.profileId != null).length;
+    final active = members.where((m) => m.profileId != null && activeProfileIds.contains(m.profileId)).length;
+    final chatParticipants = members.where((m) => m.profileId != null && ((chatMessageCounts[m.profileId] ?? 0) > 0 || (commentCounts[m.profileId] ?? 0) > 0)).length;
+    final totalAttendance = attendanceTotal.values.fold<int>(0, (a, b) => a + b);
+    final presentAttendance = attendancePresent.values.fold<int>(0, (a, b) => a + b);
+    final attendanceRate = totalAttendance == 0 ? 0 : (presentAttendance / totalAttendance * 100).round();
+    return Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFDCEFE2))), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Row(children: [Icon(Icons.groups_rounded, color: Color(0xFF0F766E), size: 22), SizedBox(width: 10), Expanded(child: Text('Member Activity', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF12352A))))]),
+      const SizedBox(height: 5),
+      const Text('A separate participation measure based on attendance and engagement in the organization community during the last 30 days.', style: TextStyle(color: Color(0xFF48665A), fontSize: 11.5, height: 1.4)),
+      const SizedBox(height: 12),
+      Row(children: [Expanded(child: _activityMetric('Active members', '$active/$totalMembers', Icons.verified_user_rounded)), const SizedBox(width: 8), Expanded(child: _activityMetric('Chat / comments', '$chatParticipants', Icons.forum_rounded)), const SizedBox(width: 8), Expanded(child: _activityMetric('Attendance', totalAttendance == 0 ? '—' : '$attendanceRate%', Icons.fact_check_rounded))]),
+      const SizedBox(height: 12),
+      if (members.isEmpty) const Text('No members found for this organization.', style: TextStyle(color: Color(0xFF48665A), fontSize: 11.5)) else ...members.where((m) => m.profileId != null).map((m) {
+        final id = m.profileId!; final present = attendancePresent[id] ?? 0; final total = attendanceTotal[id] ?? 0; final messages = chatMessageCounts[id] ?? 0; final comments = commentCounts[id] ?? 0; final isActive = activeProfileIds.contains(id);
+        return Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: Text(m.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF234638)))), Expanded(child: Text('${isActive ? 'Active' : 'No recent activity'}  •  Chat $messages  •  Comments $comments  •  Attendance ${total == 0 ? '—' : '$present/$total'}', textAlign: TextAlign.end, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, color: Color(0xFF48665A), fontWeight: FontWeight.w700)))]));
+      }),
+    ]));
+  }
+
+  Widget _activityMetric(String label, String value, IconData icon) => Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(14)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, color: const Color(0xFF15803D), size: 18), const SizedBox(height: 5), Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF14532D))), Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 9, color: Color(0xFF48665A)))]));
 }
 
 // Shared small widgets

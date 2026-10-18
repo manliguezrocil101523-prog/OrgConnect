@@ -845,8 +845,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                EventReactionBar(eventId: widget.event.id),
-                Align(
+Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
                     onPressed: () {
@@ -855,7 +854,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
                           eventTitle: widget.event.title);
                     },
                     icon: const Icon(Icons.forum_outlined, size: 17),
-                    label: const Text('Comments'),
+                    label: EventCommentCountLabel(eventId: widget.event.id, style: const TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF15803D)),
                   ),
@@ -878,7 +877,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
           base64Decode(base64Str),
           width: double.infinity,
           height: height,
-          fit: BoxFit.cover,
+          fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => _imageFallback(height),
         );
       } catch (_) {
@@ -891,7 +890,7 @@ class _EventFeedCardState extends State<_EventFeedCard> {
       url,
       width: double.infinity,
       height: height,
-      fit: BoxFit.cover,
+      fit: BoxFit.contain,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
         return Container(

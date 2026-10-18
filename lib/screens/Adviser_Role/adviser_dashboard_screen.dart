@@ -8,6 +8,7 @@ import '../Officer_Role/officer_members_screen.dart';
 import '../Officer_Role/officer_org_profile_screen.dart';
 import 'adviser_profile_screen.dart';
 import 'adviser_liquidation_screen.dart';
+import 'adviser_meeting_minutes_screen.dart';
 import '../community/org_community_chat_screen.dart';
 import '../analytics/event_comments_sheet.dart';
 import '../../widgets/app_header.dart';
@@ -33,6 +34,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   bool _loading = true;
   bool _loadedOnce = false; // NEW
   bool _showAllPublishedEvents = false;
+  bool _showAllProposals = false;
   List<Map<String, dynamic>> _requests = [], _events = [], _posts = [];
   String _avatarUrl = '';
   String _userName = '';
@@ -105,7 +107,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       if (!mounted) return;
       setState(() {
         _requests = List<Map<String, dynamic>>.from(results[0] as List);
-        _events = List<Map<String, dynamic>>.from(results[1] as List);
+        _events = List<Map<String, dynamic>>.from(results[1] as List)
+          ..sort((a, b) => ('${b['date'] ?? b['created_at'] ?? ''}').compareTo('${a['date'] ?? a['created_at'] ?? ''}'));
         // Announcements are adviser-authored posts. Proposal workflow notifications
         // share the notifications table, so exclude them from the Announcements feed.
         _posts =
@@ -114,6 +117,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
           final message = post['message']?.toString().toLowerCase() ?? '';
           final combined = '$title $message';
           final isProposalNotice = combined.contains('proposal') ||
+              combined.contains('final pictures') ||
+              combined.contains('creative submitted') ||
+              combined.contains('approved and published') ||
               combined.contains('final posting sent to adviser') ||
               combined.contains('final layout') ||
               combined.contains('adviser review') ||
@@ -605,11 +611,12 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                   selectedIcon: Icon(Icons.home_rounded, color: green),
                   label: 'Home'),
               NavigationDestination(
-                  icon: Badge(
-                      label: _hasUnreadProposalNotice ? const Text('!') : null,
-                      child: const Icon(Icons.assignment_outlined)),
-                  selectedIcon:
-                      const Icon(Icons.assignment_rounded, color: green),
+                  icon: _hasUnreadProposalNotice
+                      ? Badge(label: const Text('!'), child: const Icon(Icons.assignment_outlined))
+                      : const Icon(Icons.assignment_outlined),
+                  selectedIcon: _hasUnreadProposalNotice
+                      ? Badge(label: const Text('!'), child: const Icon(Icons.assignment_rounded, color: green))
+                      : const Icon(Icons.assignment_rounded, color: green),
                   label: 'Proposals'),
               const NavigationDestination(
                   icon: Icon(Icons.apartment_outlined),
@@ -727,7 +734,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             _empty(
                 'No published events yet. Approved event creatives will appear here.')
           else
-            ..._events.take(4).map(_eventCard),
+            ...(_showAllPublishedEvents ? _events : _events.take(5).toList()).map(_eventCard),
+          if (_events.length > 5)
+            Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => setState(() => _showAllPublishedEvents = !_showAllPublishedEvents), child: Text(_showAllPublishedEvents ? 'Show Less' : 'View All Events'))),
           const SizedBox(height: 18),
           _sectionHeader(
               'Announcements', 'Updates shared with your organization', null),
@@ -822,7 +831,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE9FFF2), Color(0xFFBDF3D0)]),
+            colors: [Color(0xFFF3FBF6), Color(0xFFE2F4E8)]),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: line),
         boxShadow: [
@@ -872,8 +881,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               ],
               if (eventId.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                EventReactionBar(eventId: eventId),
-                const SizedBox(height: 6),
+const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
@@ -881,7 +889,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                         eventId: eventId,
                         eventTitle: e['title']?.toString() ?? 'Event'),
                     icon: const Icon(Icons.forum_rounded, size: 16),
-                    label: const Text('Comments'),
+                    label: EventCommentCountLabel(eventId: eventId, style: const TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
                         foregroundColor: green,
                         side: const BorderSide(color: line),
@@ -904,7 +912,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
           gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFFE9FFF2), Color(0xFFBDF3D0)]),
+              colors: [Color(0xFFF3FBF6), Color(0xFFE2F4E8)]),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: line),
           boxShadow: [
@@ -969,7 +977,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               style: const TextStyle(color: muted, fontWeight: FontWeight.w700))
         ]),
         const SizedBox(height: 10),
-        ..._requests.map(_proposalCard),
+        ...(_showAllProposals ? _requests : _requests.take(5).toList()).map(_proposalCard),
+        if (_requests.length > 5)
+          Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => setState(() => _showAllProposals = !_showAllProposals), child: Text(_showAllProposals ? 'Show Less' : 'View All Proposals'))),
         if (_requests.isEmpty)
           _empty('No proposals have been submitted by officers yet.'),
       ]);
@@ -1321,6 +1331,19 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             context,
             MaterialPageRoute(
                 builder: (_) => OfficerOrgProfileScreen(orgId: widget.orgId)),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _feature(
+          Icons.notes_rounded,
+          'Meeting Minutes',
+          'Review meeting notes submitted by the Secretary or Assistant Secretary.',
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AdviserMeetingMinutesScreen(
+                  orgId: widget.orgId, orgName: widget.orgName),
+            ),
           ),
         ),
         const SizedBox(height: 10),

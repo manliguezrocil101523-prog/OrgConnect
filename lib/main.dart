@@ -17,7 +17,10 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 /// Applies one font (Plus Jakarta Sans) to a theme, including AppBar titles.
 ThemeData _withFont(ThemeData base) => base.copyWith(
+      // Apply Plus Jakarta Sans through the Material text themes. ThemeData.copyWith
+      // does not accept a fontFamily parameter on this Flutter SDK.
       textTheme: GoogleFonts.plusJakartaSansTextTheme(base.textTheme),
+      primaryTextTheme: GoogleFonts.plusJakartaSansTextTheme(base.primaryTextTheme),
       appBarTheme: base.appBarTheme.copyWith(
         titleTextStyle: GoogleFonts.plusJakartaSans(
           textStyle: base.appBarTheme.titleTextStyle,
@@ -86,6 +89,7 @@ class _MyAppState extends State<MyApp> {
       themeMode: AppState.instance.isDark ? ThemeMode.dark : ThemeMode.light,
 
       theme: _withFont(ThemeData(
+        fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
         brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF128058)),
         useMaterial3: true,
@@ -109,6 +113,7 @@ class _MyAppState extends State<MyApp> {
       )),
 
       darkTheme: _withFont(ThemeData(
+        fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF19A974), brightness: Brightness.dark),

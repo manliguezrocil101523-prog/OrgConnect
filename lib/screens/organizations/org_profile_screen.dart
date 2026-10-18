@@ -29,11 +29,15 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
   late final TabController _tabs;
   bool get _loggedIn => Supabase.instance.client.auth.currentUser != null;
   List<Map<String, dynamic>> _orgPeople = <Map<String, dynamic>>[];
+  int _lastNonApplyTab = 0;
+  OverlayEntry? _loginRequiredEntry;
+  bool _loginMessageVisible = false;
+  final GlobalKey _tabBarKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: _loggedIn ? 3 : 2, vsync: this);
+    _tabs = TabController(length: 3, vsync: this);
     _loadOrganizationPeople();
   }
 
@@ -56,8 +60,84 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
 
   @override
   void dispose() {
+    _loginRequiredEntry?.remove();
+    _loginRequiredEntry = null;
     _tabs.dispose();
     super.dispose();
+  }
+
+  void _showLoginRequiredMessage() {
+    if (_loginMessageVisible || !mounted) return;
+    final overlay = Overlay.of(context);
+    final anchorContext = _tabBarKey.currentContext;
+    final renderObject = anchorContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final overlayObject = overlay.context.findRenderObject();
+    final overlayBox = overlayObject is RenderBox ? overlayObject : null;
+    final globalTopLeft = renderObject.localToGlobal(Offset.zero);
+    final localTopLeft = overlayBox == null
+        ? globalTopLeft
+        : overlayBox.globalToLocal(globalTopLeft);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final left = (localTopLeft.dx + renderObject.size.width * 0.62)
+        .clamp(12.0, screenWidth - 300.0);
+    final top = localTopLeft.dy + renderObject.size.height + 8;
+    _loginMessageVisible = true;
+    _loginRequiredEntry?.remove();
+    _loginRequiredEntry = OverlayEntry(
+      builder: (overlayContext) => Positioned(
+        left: left,
+        top: top,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 285),
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0F8A61), Color(0xFF20B77D)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFBDEBD7)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33075A42),
+                  blurRadius: 18,
+                  offset: Offset(0, 7),
+                ),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.lock_outline_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    'Login required\nTap Login on the “Discover campus life” card to apply.',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(_loginRequiredEntry!);
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      _loginRequiredEntry?.remove();
+      _loginRequiredEntry = null;
+      _loginMessageVisible = false;
+    });
   }
 
   @override
@@ -95,6 +175,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
             ),
           ),
           Container(
+            key: _tabBarKey,
             height: 58,
             margin: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
@@ -114,6 +195,18 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
               indicatorColor: _C.green,
               indicatorWeight: 3,
               dividerColor: Colors.transparent,
+              onTap: (index) {
+                if (!loggedIn && index == 2) {
+                  // Guests cannot open an application tab. Show a brief message
+                  // instead of navigating to a separate login-required card.
+                  // Keep the current content (for example, About) selected.
+                  // Only show the popup beside Apply; never switch to the Apply page.
+                  _tabs.index = _lastNonApplyTab;
+                  _showLoginRequiredMessage();
+                } else if (index != 2) {
+                  _lastNonApplyTab = index;
+                }
+              },
               labelStyle:
                   const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
               tabs: [
@@ -123,10 +216,9 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
                 const Tab(
                     icon: Icon(Icons.info_outline_rounded, size: 18),
                     text: 'About'),
-                if (loggedIn)
-                  const Tab(
-                      icon: Icon(Icons.volunteer_activism_rounded, size: 18),
-                      text: 'Apply'),
+                const Tab(
+                    icon: Icon(Icons.volunteer_activism_rounded, size: 18),
+                    text: 'Apply'),
               ],
             ),
           ),
@@ -137,7 +229,10 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
               children: [
                 _OrgDashboard(org: org),
                 _AboutTab(org: org, people: _orgPeople),
-                if (loggedIn) _ApplyTab(org: org),
+                if (loggedIn)
+                  _ApplyTab(org: org)
+                else
+                  const SizedBox.shrink(),
               ],
             ),
           ),
@@ -202,17 +297,6 @@ class _Hero extends StatelessWidget {
                   ),
                 ],
               ),
-              if (org.shortDesc.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(org.shortDesc,
-                    textAlign: TextAlign.left,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: .82),
-                        fontSize: 11.5,
-                        height: 1.25)),
-              ],
             ]),
           ),
         ),
@@ -643,6 +727,7 @@ class _AboutTab extends StatelessWidget {
                 body: org.about),
           if (org.mission.isNotEmpty ||
               org.vision.isNotEmpty ||
+              org.goals.isNotEmpty ||
               org.missionVision.isNotEmpty) ...[
             const SizedBox(height: 12),
             _MissionVisionCard(
@@ -662,6 +747,14 @@ class _AboutTab extends StatelessWidget {
                   : 'No vision has been added yet.',
               icon: Icons.visibility_rounded,
             ),
+            const SizedBox(height: 12),
+            _MissionVisionCard(
+              label: 'GOALS',
+              text: org.goals.isNotEmpty
+                  ? org.goals
+                  : 'No goals have been added yet.',
+              icon: Icons.flag_circle_rounded,
+            ),
           ],
           if (org.adviser.isNotEmpty || org.officers.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -676,6 +769,7 @@ class _AboutTab extends StatelessWidget {
           if (org.about.isEmpty &&
               org.mission.isEmpty &&
               org.vision.isEmpty &&
+              org.goals.isEmpty &&
               org.missionVision.isEmpty &&
               org.adviser.isEmpty &&
               org.officers.isEmpty &&
@@ -889,10 +983,18 @@ class _PeopleSectionLabel extends StatelessWidget {
       ]);
 }
 
-class _AboutPeopleGallery extends StatelessWidget {
+class _AboutPeopleGallery extends StatefulWidget {
   final Organization org;
   final List<Map<String, dynamic>> people;
   const _AboutPeopleGallery({required this.org, required this.people});
+
+  @override
+  State<_AboutPeopleGallery> createState() => _AboutPeopleGalleryState();
+}
+
+class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
+  Organization get org => widget.org;
+  List<Map<String, dynamic>> get people => widget.people;
 
   Map<String, dynamic>? _findByName(String name) {
     final target = name.trim().toLowerCase();
@@ -919,9 +1021,9 @@ class _AboutPeopleGallery extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final adviserProfile = people.cast<Map<String, dynamic>?>().firstWhere(
-          (p) => p?['role']?.toString().toLowerCase() == 'adviser',
-          orElse: () => null,
-        );
+      (p) => p?['role']?.toString().toLowerCase() == 'adviser',
+      orElse: () => null,
+    );
     final officers = org.officers.map((raw) {
       final name = _officerName(raw);
       OrgOfficerProfile? savedProfile;
@@ -931,12 +1033,16 @@ class _AboutPeopleGallery extends StatelessWidget {
           break;
         }
       }
+      // The live profile is the source of truth for photos. The JSON
+      // officer_profiles value is a fallback only: it can contain an older
+      // URL if an officer updates their picture from their own profile.
+      final liveProfile = _findByName(name);
+      final liveAvatar = liveProfile?['avatar_url']?.toString().trim() ?? '';
+      final savedAvatar = savedProfile?.avatarUrl.trim() ?? '';
       return <String, dynamic>{
         'name': name,
         'role': savedProfile?.role ?? _officerRole(raw),
-        'avatar_url': savedProfile?.avatarUrl.isNotEmpty == true
-            ? savedProfile!.avatarUrl
-            : (_findByName(name)?['avatar_url']?.toString() ?? ''),
+        'avatar_url': liveAvatar.isNotEmpty ? liveAvatar : savedAvatar,
       };
     }).toList();
 
@@ -948,36 +1054,46 @@ class _AboutPeopleGallery extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (adviserProfile != null || org.adviser.isNotEmpty) ...[
-          const Text('Adviser',
-              style: TextStyle(
-                  color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const Text('Adviser', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          _CompactPersonCard(
-            name: adviserProfile?['name']?.toString().trim().isNotEmpty == true
-                ? adviserProfile!['name'].toString()
-                : org.adviser,
-            role: 'Adviser',
-            avatarUrl: adviserProfile?['avatar_url']?.toString() ?? '',
+          Center(
+            child: SizedBox(
+              width: 144,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _SquarePersonCard(
+                    name: adviserProfile?['name']?.toString().trim().isNotEmpty == true
+                        ? adviserProfile!['name'].toString()
+                        : org.adviser,
+                    role: 'Adviser',
+                    avatarUrl: adviserProfile?['avatar_url']?.toString() ?? '',
+                    width: 144,
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 14),
         ],
         if (officers.isNotEmpty) ...[
-          const Text('Officers',
-              style: TextStyle(
-                  color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const Text('Officers', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 214,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: officers.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, i) => _SquarePersonCard(
-                name: officers[i]['name'].toString(),
-                role: officers[i]['role'].toString(),
-                avatarUrl: officers[i]['avatar_url'].toString(),
-                width: 144,
-              ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < officers.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  _SquarePersonCard(
+                    name: officers[i]['name'].toString(),
+                    role: officers[i]['role'].toString(),
+                    avatarUrl: officers[i]['avatar_url'].toString(),
+                    width: 144,
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -1025,13 +1141,28 @@ class _SquarePersonCard extends StatelessWidget {
               child: avatarUrl.trim().isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: avatarUrl,
+                      width: double.infinity,
+                      height: 122,
                       fit: BoxFit.cover,
+                      alignment: Alignment.center,
                       errorWidget: (_, __, ___) => _squareFallback(),
                     )
                   : _squareFallback(),
             ),
           ),
           const SizedBox(height: 9),
+          Text(
+            name,
+            softWrap: true,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: _C.ink,
+              fontSize: 13.5,
+              height: 1.14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 7),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
@@ -1040,8 +1171,7 @@ class _SquarePersonCard extends StatelessWidget {
             ),
             child: Text(
               role,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              softWrap: true,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFF15803D),
@@ -1049,19 +1179,6 @@ class _SquarePersonCard extends StatelessWidget {
                 fontWeight: FontWeight.w900,
                 letterSpacing: .45,
               ),
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _C.ink,
-              fontSize: 13.5,
-              height: 1.14,
-              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -1076,133 +1193,49 @@ class _SquarePersonCard extends StatelessWidget {
       );
 }
 
-class _CompactPersonCard extends StatelessWidget {
-  final String name;
-  final String role;
-  final String avatarUrl;
-  const _CompactPersonCard(
-      {required this.name, required this.role, required this.avatarUrl});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _C.line),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x080F8A61), blurRadius: 12, offset: Offset(0, 5))
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 74,
-                height: 74,
-                child: avatarUrl.trim().isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: avatarUrl,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _fallback(),
-                      )
-                    : _fallback(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    role,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _C.green,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: .6,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _C.ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      height: 1.15,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _fallback() => Container(
-        color: _C.mint,
-        child: const Center(
-            child: Icon(Icons.person_rounded, color: _C.green, size: 30)),
-      );
-}
-
 class _ConnectCard extends StatelessWidget {
   final Organization org;
   const _ConnectCard({required this.org});
-  Future<void> _openSocial() async {
-    final raw = org.socialLink.trim();
-    if (raw.isEmpty) return;
-    final candidate = raw.contains('://') ? raw : 'https://$raw';
-    Uri? uri = Uri.tryParse(candidate);
+
+  String _facebookDisplayName(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return '';
+    final uri = Uri.tryParse(value.contains('://') ? value : 'https://$value');
     final host = uri?.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
     if (host == 'facebook.com' && uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return;
+      final query = uri.queryParameters['q'];
+      if (query != null && query.trim().isNotEmpty) return query.trim();
+      final path = uri.pathSegments.where((part) => part.isNotEmpty).join(' ');
+      if (path.isNotEmpty && path.toLowerCase() != 'search top') {
+        return path.replaceAll(RegExp(r'[-_]'), ' ');
+      }
     }
-    // Support page usernames saved before URL validation was added.
-    if (!raw.contains('/') && !raw.contains(' ') && !raw.contains('.')) {
-      uri = Uri.parse('https://www.facebook.com/$raw');
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    return value;
   }
 
+
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final facebookName = _facebookDisplayName(org.socialLink);
+    return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_C.dark, _C.green]),
-          borderRadius: BorderRadius.circular(20)),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('STAY CONNECTED',
-            style: TextStyle(
-                color: Colors.white70,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .9)),
-        const SizedBox(height: 10),
-        if (org.socialLink.isNotEmpty)
-          FilledButton.icon(
-            onPressed: _openSocial,
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: _C.green,
-              minimumSize: const Size.fromHeight(44),
-            ),
-            icon: const Icon(Icons.facebook_rounded),
-            label: const Text(
-              'Visit their official Facebook page',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
-      ]));
+        const Text('FACEBOOK PAGE', style: TextStyle(color: _C.muted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .9)),
+        const SizedBox(height: 7),
+        Text(
+          facebookName,
+          softWrap: true,
+          style: const TextStyle(color: _C.dark, fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+      ]),
+    );
+  }
 }
 
 class _ApplyTab extends StatelessWidget {

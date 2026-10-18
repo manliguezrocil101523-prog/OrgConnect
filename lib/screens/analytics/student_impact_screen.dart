@@ -4,7 +4,6 @@ import '../../core/app_state.dart';
 import '../../widgets/app_header.dart';
 
 const _impactGreen = Color(0xFF16A34A);
-const _impactTeal = Color(0xFF0F766E);
 const _impactBg = Color(0xFFF1F5F9);
 const _impactInk = Color(0xFF0F172A);
 const _impactMuted = Color(0xFF64748B);
@@ -110,7 +109,7 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Your organization impact was saved.')),
+          const SnackBar(content: Text('Your feedback was sent to your adviser.')),
         );
       }
     } catch (_) {
@@ -118,7 +117,7 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Impact tracking is not enabled yet. Run the included Supabase migration.'),
+                'Feedback could not be sent. Please check your connection and permissions.'),
           ),
         );
       }
@@ -136,8 +135,8 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
       body: Column(
         children: [
           AppHeader(
-            title: 'My Impact',
-            subtitle: 'How is your organization helping you?',
+            title: 'Organization Feedback',
+            subtitle: 'Share how your organization supports you.',
             status: 'RATE FROM 1 TO 5',
             icon: Icons.insights_rounded,
             onBack: () => Navigator.of(context).maybePop(),
@@ -210,7 +209,7 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
                           )
                         : const Icon(Icons.check_circle_rounded),
                     label: const Text(
-                      'Save my impact',
+                      'Send feedback',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
@@ -219,108 +218,6 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ImpactHeader extends StatelessWidget {
-  final VoidCallback onBack;
-  const _ImpactHeader({required this.onBack});
-
-  @override
-  Widget build(BuildContext context) {
-    const headerHeight = 138.0;
-    return SizedBox(
-      height: headerHeight,
-      width: double.infinity,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_impactGreen, _impactTeal],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -30,
-              top: -45,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .07),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Positioned(
-              left: -35,
-              bottom: -55,
-              child: Container(
-                width: 115,
-                height: 115,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .05),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            SafeArea(
-              bottom: false,
-              child: Stack(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      tooltip: 'Back',
-                      onPressed: onBack,
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white, size: 21),
-                    ),
-                  ),
-                  const SizedBox(
-                    height: headerHeight,
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(64, 12, 28, 8),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'How is your organization helping you?',
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  height: 1.1,
-                                  fontWeight: FontWeight.w800),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              '1 = Not helpful  •  5 = Extremely helpful',
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12.5,
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

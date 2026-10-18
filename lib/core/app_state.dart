@@ -405,6 +405,7 @@ class Organization {
   final String about;
   final String mission;
   final String vision;
+  final String goals;
   final String missionVision;
   final String adviser;
   final String contactEmail;
@@ -425,6 +426,7 @@ class Organization {
     this.about = '',
     this.mission = '',
     this.vision = '',
+    this.goals = '',
     this.missionVision = '',
     this.adviser = '',
     this.contactEmail = '',
@@ -446,6 +448,7 @@ class Organization {
     String? about,
     String? mission,
     String? vision,
+    String? goals,
     String? missionVision,
     String? adviser,
     String? contactEmail,
@@ -466,6 +469,7 @@ class Organization {
         about: about ?? this.about,
         mission: mission ?? this.mission,
         vision: vision ?? this.vision,
+        goals: goals ?? this.goals,
         missionVision: missionVision ?? this.missionVision,
         adviser: adviser ?? this.adviser,
         contactEmail: contactEmail ?? this.contactEmail,
@@ -599,6 +603,7 @@ class AppState extends ChangeNotifier {
           about: item['about'] ?? '',
           mission: item['mission'] ?? '',
           vision: item['vision'] ?? '',
+          goals: item['goals'] ?? '',
           missionVision: item['mission_vision'] ?? '',
           adviser: item['adviser'] ?? '',
           contactEmail: item['contact_email'] ?? '',
@@ -655,14 +660,16 @@ class AppState extends ChangeNotifier {
     subscribe('event_comments', () async {
       notifyListeners();
     });
+    subscribe('event_comment_reactions', () async {
+      notifyListeners();
+    });
+    subscribe('event_comment_replies', () async {
+      notifyListeners();
+    });
     subscribe('organization_attendance_sessions', () async {
       notifyListeners();
     });
     subscribe('organization_member_attendance', () async {
-      notifyListeners();
-    });
-    subscribe('event_images', () async {
-      await fetchEvents();
       notifyListeners();
     });
     subscribe('event_requests', () async {
@@ -1370,7 +1377,8 @@ class AppState extends ChangeNotifier {
     'President',
     'Vice President',
     'Secretary',
-    'Assistant Secretary'
+    'Assistant Secretary',
+    'Treasurer'
   ];
 
   String _sanitizePosition(String? raw) {
@@ -2071,6 +2079,7 @@ class AppState extends ChangeNotifier {
         'about': org.about,
         'mission': org.mission,
         'vision': org.vision,
+        'goals': org.goals,
         'mission_vision': org.missionVision,
         'adviser': org.adviser,
         'contact_email': org.contactEmail,
@@ -2101,6 +2110,7 @@ class AppState extends ChangeNotifier {
     String about = '',
     String mission = '',
     String vision = '',
+    String goals = '',
     String missionVision = '',
     String adviser = '',
     String contactEmail = '',
@@ -2124,6 +2134,7 @@ class AppState extends ChangeNotifier {
       about: about,
       mission: mission,
       vision: vision,
+      goals: goals,
       missionVision: missionVision,
       adviser: adviser,
       contactEmail: contactEmail,
@@ -2142,6 +2153,7 @@ class AppState extends ChangeNotifier {
         'about': about,
         'mission': mission,
         'vision': vision,
+        'goals': goals,
         'mission_vision': missionVision,
         'adviser': adviser,
         'contact_email': contactEmail,

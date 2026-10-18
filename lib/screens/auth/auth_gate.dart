@@ -131,8 +131,14 @@ class _AuthGateState extends State<AuthGate> {
         final officerPosition =
             officerMembership?['position']?.toString().toLowerCase().trim() ??
                 '';
-        if (!{'president', 'vice president', 'secretary'}
-            .contains(officerPosition)) {
+        if (!{
+          'president',
+          'vice president',
+          'secretary',
+          'assistant secretary',
+          'treasurer',
+          'officer',
+        }.contains(officerPosition)) {
           await Supabase.instance.client.auth.signOut();
           _goTo(const UnifiedLoginPage());
           return;

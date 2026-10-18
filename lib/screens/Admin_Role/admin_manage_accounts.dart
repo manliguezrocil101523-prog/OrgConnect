@@ -50,6 +50,34 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
     }
   }
 
+  Future<void> _setOfficerPosition(
+    Map<String, dynamic> user,
+    String position,
+  ) async {
+    final userId = user['id'].toString();
+    final previousPosition = user['officer_position']?.toString() ?? '';
+    setState(() {
+      final index = dbUsers.indexWhere((item) => item['id'] == user['id']);
+      if (index != -1) dbUsers[index]['officer_position'] = position;
+    });
+
+    try {
+      await supabase.Supabase.instance.client
+          .from('profiles')
+          .update({'officer_position': position})
+          .eq('id', userId);
+      if (!mounted) return;
+      _showSnack('Officer position updated to $position');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final index = dbUsers.indexWhere((item) => item['id'] == user['id']);
+        if (index != -1) dbUsers[index]['officer_position'] = previousPosition;
+      });
+      _showSnack('Failed to update officer position: $e');
+    }
+  }
+
   // Show org picker when admin sets role to Officer or Adviser.
   Future<void> _showOrgPickerDialog(
     Map<String, dynamic> user, {
@@ -564,7 +592,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                                     ),
                                   ],
                                   const SizedBox(height: 10),
-                                  if (role == 'officer')
+                                  if (role == 'officer') ...[
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 11,
@@ -596,7 +624,52 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                                           ),
                                         ],
                                       ),
-                                    )
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        color: dropdownBg,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isDark
+                                              ? Colors.white10
+                                              : const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      child: DropdownButton<String>(
+                                        value: const [
+                                          'President',
+                                          'Vice President',
+                                          'Secretary',
+                                          'Assistant Secretary',
+                                          'Officer',
+                                        ].contains(u['officer_position']?.toString())
+                                            ? u['officer_position'].toString()
+                                            : 'Officer',
+                                        isDense: true,
+                                        underline: const SizedBox(),
+                                        dropdownColor: dropdownBg,
+                                        style: TextStyle(color: textMain, fontSize: 12),
+                                        icon: Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: dropdownIcon,
+                                        ),
+                                        items: const [
+                                          DropdownMenuItem(value: 'President', child: Text('President')),
+                                          DropdownMenuItem(value: 'Vice President', child: Text('Vice President')),
+                                          DropdownMenuItem(value: 'Secretary', child: Text('Secretary')),
+                                          DropdownMenuItem(value: 'Assistant Secretary', child: Text('Assistant Secretary')),
+                                          DropdownMenuItem(value: 'Officer', child: Text('Officer')),
+                                        ],
+                                        onChanged: (position) {
+                                          if (position != null) {
+                                            _setOfficerPosition(u, position);
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ]
                                   else
                                     Container(
                                       padding: const EdgeInsets.symmetric(

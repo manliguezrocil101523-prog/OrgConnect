@@ -5,12 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart' hide User;
 import 'email_verification_page.dart';
 
-const _kBlue = Color(0xFF2563EB);
+const _kGreen = Color(0xFF16A34A);
 const _kBg = Color(0xFFF8FAFF);
 const _kText = Color(0xFF1E293B);
 const _kSubText = Color(0xFF94A3B8);
 const _kError = Color(0xFFDC2626);
 const _kSuccess = Color(0xFF059669);
+const _kLogo = 'assets/icon/login_logo.png';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -326,7 +327,7 @@ class _SignUpPageState extends State<SignUpPage>
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(
-              horizontal: 24,
+              horizontal: 16,
               vertical: 20,
             ),
             child: FadeTransition(
@@ -335,24 +336,51 @@ class _SignUpPageState extends State<SignUpPage>
                 position: _slide,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
-                    maxWidth: 380,
+                    maxWidth: 440,
                   ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          height: screen.height * .05,
+                  child: Container(
+                    padding: EdgeInsets.all(screen.width < 360 ? 20 : 28),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _kGreen.withValues(alpha: 0.08),
+                          blurRadius: 32,
+                          offset: const Offset(0, 8),
                         ),
-
+                      ],
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Image.asset(
+                          _kLogo,
+                          height: 72,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'OrgConnect',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: _kText,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
                         const Text(
                           "Let's Get Started!",
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 34,
+                            fontSize: 28,
                             fontWeight: FontWeight.w900,
                             color: _kText,
-                            letterSpacing: -.7,
+                            letterSpacing: -.4,
                           ),
                         ),
 
@@ -370,7 +398,7 @@ class _SignUpPageState extends State<SignUpPage>
                           ),
                         ),
 
-                        const SizedBox(height: 45),
+                        const SizedBox(height: 28),
 
                         _LineFormField(
                           controller: _fName,
@@ -386,7 +414,7 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 14),
 
                         _LineFormField(
                           controller: _lName,
@@ -402,7 +430,7 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 14),
 
                         _LineFormField(
                           controller: _studId,
@@ -424,7 +452,7 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 14),
 
                         _LineFormField(
                           controller: _email,
@@ -451,7 +479,7 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 14),
 
                         _LineFormField(
                           controller: _contact,
@@ -470,7 +498,7 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 14),
 
                         _LineFormField(
                           controller: _facebook,
@@ -484,7 +512,7 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 14),
 
                         _LineFormField(
                           controller: _password,
@@ -510,11 +538,11 @@ class _SignUpPageState extends State<SignUpPage>
                           },
                         ),
 
-                        const SizedBox(height: 45),
+                        const SizedBox(height: 28),
 
                         SizedBox(
-                          width: 200,
-                          height: 55,
+                          width: double.infinity,
+                          height: 52,
                           child: ElevatedButton(
                             onPressed:
                                 _loading
@@ -525,18 +553,10 @@ class _SignUpPageState extends State<SignUpPage>
                                     .styleFrom(
                               backgroundColor:
                                   const Color(0xFF16A34A),
-                              disabledBackgroundColor:
-                                  const Color(0xFF16A34A).withValues(alpha: 
-                                0.5,
-                              ),
-                              elevation: 8,
-                              shape:
-                                  RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                  30,
-                                ),
+                              disabledBackgroundColor: _kGreen.withValues(alpha: 0.4),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             ),
                             child: _loading
@@ -606,6 +626,7 @@ class _SignUpPageState extends State<SignUpPage>
                           ],
                         ),
                       ],
+                      ),
                     ),
                   ),
                 ),
@@ -700,15 +721,13 @@ class _LineFormFieldState
           color: _kSubText,
           fontSize: 14,
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 4,
           vertical: 22,
         ),
         prefixIcon: Icon(
           widget.icon,
-          color: focused
-              ? _kBlue
-              : Colors.grey.shade400,
+          color: focused ? _kGreen : _kSubText,
           size: 20,
         ),
         suffixIcon:
@@ -722,18 +741,14 @@ class _LineFormFieldState
                               .visibility_off_outlined
                           : Icons
                               .visibility_outlined,
-                      color: _kBlue,
+                      color: _kGreen,
                     ),
                   )
                 : null,
         enabledBorder:
             OutlineInputBorder(
-          borderRadius:
-              BorderRadius.circular(30),
-          borderSide: BorderSide(
-            color: Colors.grey.shade300,
-            width: 1.2,
-          ),
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB), width: 1.2),
         ),
         focusedBorder:
             OutlineInputBorder(
@@ -741,8 +756,8 @@ class _LineFormFieldState
               BorderRadius.circular(30),
           borderSide:
               const BorderSide(
-            color: _kBlue,
-            width: 2,
+            color: _kGreen,
+            width: 1.8,
           ),
         ),
         errorBorder:

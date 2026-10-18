@@ -11,20 +11,25 @@ import '../Admin_Role/admin_dashboard_screen.dart';
 import '../Adviser_Role/adviser_dashboard_screen.dart';
 import '../auth/forgot_password_page.dart';
 
-const _green = Color(0xFF1F7A45);
-const _ink = Color(0xFF17352A);
-const _muted = Color(0xFF6B7280);
-const _line = Color(0xFFDCEBE4);
-const _tint = Color(0xFFF1F8F4);
+const _green = Color(0xFF16A34A);
+const _ink = Color(0xFF1E293B);
+const _muted = Color(0xFF94A3B8);
+const _line = Color(0xFFD1D5DB);
+const _tint = Color(0xFFF8FAFF);
 const _error = Color(0xFFDC2626);
 const _logo = 'assets/icon/login_logo.png';
 
-/// One font family (Plus Jakarta Sans) used everywhere on this screen.
+/// Explicitly applies Plus Jakarta Sans so login typography does not depend
+/// on inherited theme styles.
 TextStyle _t(double size, {FontWeight w = FontWeight.w500, Color c = _ink}) =>
-    GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: w, color: c);
+    GoogleFonts.plusJakartaSans(
+      fontSize: size,
+      fontWeight: w,
+      color: c,
+    );
 
 OutlineInputBorder _border(Color c, [double w = 1.2]) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(30),
       borderSide: BorderSide(color: c, width: w),
     );
 
@@ -97,7 +102,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage> {
         final org = orgs[i];
 
         if (role == 'officer') {
-          // Only the President, Vice President, or Secretary may enter.
+          // Every designated officer can enter the officer dashboard; individual actions remain permission-gated by designation.
           final m = await db
               .from('members')
               .select('position')
@@ -105,9 +110,16 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage> {
               .eq('profile_id', user.id)
               .maybeSingle();
           final pos = m?['position']?.toString().toLowerCase().trim() ?? '';
-          if (!{'president', 'vice president', 'secretary'}.contains(pos)) {
+          if (!{
+            'president',
+            'vice president',
+            'secretary',
+            'assistant secretary',
+            'treasurer',
+            'officer',
+          }.contains(pos)) {
             return _reject(
-                'Officer access is limited to the President, Vice President, or Secretary account.');
+                'Officer access requires a valid organization designation. Please ask your adviser or admin to check your designation.');
           }
           app.setRole(UserRole.officer);
           app.setCurrentOfficerOrgId(orgId);
@@ -270,7 +282,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage> {
       (Icons.receipt_long_outlined, 'Reports and liquidation'),
     ];
     return Container(
-      color: const Color(0xFFE3F1E8),
+      color: const Color(0xFFF8FAFF),
       alignment: Alignment.center,
       padding: const EdgeInsets.all(48),
       child: ConstrainedBox(
@@ -330,7 +342,7 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage> {
           const SizedBox(height: 24),
         ],
         Text('Welcome back',
-            textAlign: ta, style: _t(wide ? 30 : 26, w: FontWeight.w800)),
+            textAlign: ta, style: _t(wide ? 30 : 26, w: FontWeight.w700)),
         const SizedBox(height: 6),
         Text('Log in to your account to continue.',
             textAlign: ta, style: _t(14, c: _muted)),
@@ -408,10 +420,10 @@ class _UnifiedLoginPageState extends State<UnifiedLoginPage> {
       style: _t(15),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: _t(15, c: _muted),
+        hintStyle: _t(14, c: _muted),
         filled: true,
-        fillColor: const Color(0xFFF7FAF8),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(vertical: 22),
         prefixIcon: Icon(icon, size: 20),
         prefixIconColor: WidgetStateColor.resolveWith(
             (s) => s.contains(WidgetState.focused) ? _green : _muted),

@@ -224,6 +224,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
                       ),
                     ),
                     IconButton(
+                      tooltip: 'Delete organization',
                       icon: Icon(Icons.delete_outline, color: danger),
                       onPressed: () => _confirmDelete(context, o),
                     ),
@@ -323,7 +324,7 @@ class _AdminOrganizationsScreenState extends State<AdminOrganizationsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Remove organization?'),
         content: Text(
-          'This will remove "${o.name}" from the list. This cannot be undone in the demo.',
+          'This will delete "${o.name}" from the organization list. Related records may also be affected depending on your database relationships.',
         ),
         actions: [
           TextButton(

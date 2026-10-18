@@ -21,13 +21,16 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
   List<Map<String, dynamic>> members = [];
   final ScrollController _accountsScrollController = ScrollController();
 
-  // Only these three officers have access to the Officer dashboard.
-  // Adviser assignment creates/updates the member's own login account; there
-  // is no shared officer account.
+  // Organization positions that use the Officer area. Member is intentionally
+  // excluded and remains a regular student account. The adviser assigns each
+  // member's own login account; there is no shared officer account.
   static const officerPositions = <String>[
     'President',
     'Vice President',
     'Secretary',
+    'Assistant Secretary',
+    'Treasurer',
+    'Officer',
   ];
 
   @override
@@ -91,7 +94,7 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'The adviser assigns the member position. President, Vice President, and Secretary can use their own accounts to open the Officer area.',
+                'Choose the member’s organization designation. Officer designations can access the Officer area according to their permissions; Member remains a regular student role.',
                 style: TextStyle(color: muted, height: 1.4, fontSize: 12.5),
               ),
               const SizedBox(height: 16),
@@ -105,8 +108,8 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 items: [
-                  const DropdownMenuItem(value: 'Member', child: Text('Member')),
                   ...officerPositions.map((v) => DropdownMenuItem(value: v, child: Text(v))),
+                  const DropdownMenuItem(value: 'Member', child: Text('Member')),
                 ],
                 onChanged: (v) => setDialogState(() => position = v ?? 'Member'),
               ),

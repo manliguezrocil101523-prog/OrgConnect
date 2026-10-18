@@ -785,8 +785,7 @@ class _OfficerEventCard extends StatelessWidget {
                 ],
                 if (eventId.isNotEmpty) ...[
                   const SizedBox(height: 7),
-                  EventReactionBar(eventId: eventId),
-                  Align(
+Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
                       onPressed: () => showEventComments(
@@ -795,7 +794,7 @@ class _OfficerEventCard extends StatelessWidget {
                         eventTitle: title,
                       ),
                       icon: const Icon(Icons.forum_outlined, size: 17),
-                      label: const Text('View Comments'),
+                      label: EventCommentCountLabel(eventId: eventId, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
                       style: TextButton.styleFrom(
                         foregroundColor: _green,
                         textStyle: const TextStyle(
@@ -890,7 +889,7 @@ class _OfficerOrganizationsTab extends StatelessWidget {
   void _openApplications(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const OfficerApplicationsScreen()),
+      MaterialPageRoute(builder: (_) => OfficerApplicationsScreen()),
     );
   }
 

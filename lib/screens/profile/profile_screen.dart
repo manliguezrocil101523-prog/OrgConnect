@@ -15,7 +15,7 @@ import '../../widgets/app_header.dart';
 const _kPrimary = Color(0xFF16A34A);
 const _kSecondary = Color(0xFF0F766E);
 const _kSuccess = Color(0xFF22C55E);
-const _kBg = Color(0xFFF1F5F9);
+const _kBg = Color(0xFFE6F7EE);
 const _kSlate0F = Color(0xFF0F172A);
 const _kSlate94 = Color(0xFF94A3B8);
 const _kSlateE2 = Color(0xFFE2E8F0);
@@ -1199,6 +1199,42 @@ class _EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<_EditProfilePage> {
   Uint8List? _localAvatarBytes;
 
+  Future<void> _showAvatarOptions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded),
+                title: const Text('Choose from gallery'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _handleUploadAvatar();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded),
+                title: const Text('Take a photo'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _handleTakePhoto();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleUploadAvatar() async {
     final bytes = await widget.onUploadAvatar();
     if (!mounted || bytes == null) return;
@@ -1218,38 +1254,62 @@ class _EditProfilePageState extends State<_EditProfilePage> {
         : widget.avatarImage;
 
     return Scaffold(
-      backgroundColor: _kBg,
-      appBar: AppBar(
-        backgroundColor: _kPrimary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Edit Profile',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 22, 20, 40),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 540),
-            child: _EditForm(
-              studentIdCtrl: widget.studentIdCtrl,
-              nameCtrl: widget.nameCtrl,
-              emailCtrl: widget.emailCtrl,
-              contactCtrl: widget.contactCtrl,
-              facebookCtrl: widget.facebookCtrl,
-              avatarImage: currentAvatar,
-              onUploadAvatar: _handleUploadAvatar,
-              onTakePhoto: _handleTakePhoto,
-              onSave: () async {
-                final ok = await widget.onSave();
-                if (ok && context.mounted) Navigator.pop(context);
-              },
+      backgroundColor: const Color(0xFFE6F7EE),
+      body: Column(
+        children: [
+          AppHeader(
+            title: 'Edit Profile',
+            subtitle: 'Manage your account',
+            status: 'STUDENT PROFILE',
+            avatarImage: currentAvatar,
+            avatarEditing: true,
+            onAvatarTap: _showAvatarOptions,
+            trailing: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .15),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white.withValues(alpha: .30)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.close_rounded, color: Colors.white, size: 15),
+                    SizedBox(width: 5),
+                    Text('Cancel', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+          Expanded(
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 48),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 540),
+                    child: _EditForm(
+                      studentIdCtrl: widget.studentIdCtrl,
+                      nameCtrl: widget.nameCtrl,
+                      emailCtrl: widget.emailCtrl,
+                      contactCtrl: widget.contactCtrl,
+                      facebookCtrl: widget.facebookCtrl,
+                      onSave: () async {
+                        final ok = await widget.onSave();
+                        if (ok && context.mounted) Navigator.pop(context);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1264,9 +1324,6 @@ class _EditForm extends StatelessWidget {
   final TextEditingController emailCtrl;
   final TextEditingController contactCtrl;
   final TextEditingController facebookCtrl;
-  final ImageProvider? avatarImage;
-  final VoidCallback onUploadAvatar;
-  final VoidCallback onTakePhoto;
   final VoidCallback onSave;
 
   const _EditForm({
@@ -1275,9 +1332,6 @@ class _EditForm extends StatelessWidget {
     required this.emailCtrl,
     required this.contactCtrl,
     required this.facebookCtrl,
-    required this.avatarImage,
-    required this.onUploadAvatar,
-    required this.onTakePhoto,
     required this.onSave,
   });
 
@@ -1286,114 +1340,6 @@ class _EditForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-          decoration: _cardDecoration(),
-          child: Column(
-            children: [
-              const Text(
-                'Profile Photo',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _kSlate0F,
-                ),
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                'Add a photo so your profile is easy to recognize.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: _kSlate94, fontSize: 12.5),
-              ),
-              const SizedBox(height: 18),
-              GestureDetector(
-                onTap: onUploadAvatar,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 118,
-                      height: 118,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: _kGrad,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _kPrimary.withValues(alpha: 0.18),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: CircleAvatar(
-                        backgroundColor: const Color(0xFFE0E7FF),
-                        backgroundImage: avatarImage,
-                        child: avatarImage == null
-                            ? const Icon(
-                                Icons.person_rounded,
-                                size: 54,
-                                color: _kPrimary,
-                              )
-                            : null,
-                      ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      bottom: 2,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: _kGrad,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt_rounded,
-                          size: 17,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: onUploadAvatar,
-                    icon: const Icon(Icons.upload_rounded, size: 17),
-                    label: const Text('Upload'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _kPrimary,
-                      side: const BorderSide(color: _kPrimary),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: onTakePhoto,
-                    icon: const Icon(Icons.camera_alt_rounded, size: 17),
-                    label: const Text('Camera'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _kPrimary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 22),
         const _SectionLabel(text: 'Edit Information'),
         const SizedBox(height: 16),

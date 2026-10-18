@@ -36,6 +36,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   @override
   void initState() {
     super.initState();
+    AppState.instance.addListener(_onAppStateChanged);
     _load();
     _eventsChannel = Supabase.instance.client.channel('public-events-screen')
       ..onPostgresChanges(
@@ -46,19 +47,16 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
           if (mounted) _load();
         },
       )
-      ..onPostgresChanges(
-        event: PostgresChangeEvent.all,
-        schema: 'public',
-        table: 'event_images',
-        callback: (_) {
-          if (mounted) _load();
-        },
-      )
       ..subscribe();
+  }
+
+  void _onAppStateChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    AppState.instance.removeListener(_onAppStateChanged);
     final channel = _eventsChannel;
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel);
@@ -566,9 +564,12 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
             SizedBox(
               height: featured ? 180 : 145,
               width: double.infinity,
-              child: Image.network(image,
-                  fit: BoxFit.cover,
+              child: Container(
+                color: const Color(0xFFF2F8F4),
+                child: Image.network(image,
+                  fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => _imagePlaceholder()),
+              ),
             )
           else
             _imagePlaceholder(height: featured ? 130 : 105),
@@ -619,8 +620,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                           color: _muted, height: 1.4, fontSize: 13)),
                 ],
                 const SizedBox(height: 8),
-                EventReactionBar(eventId: event.id),
-                const SizedBox(height: 5),
+const SizedBox(height: 5),
                 Row(
                   children: [
                     const Icon(Icons.calendar_today_rounded,
@@ -634,17 +634,17 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                                 color: _ink,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700))),
-                    IconButton(
-                      tooltip: 'Comments',
-                      onPressed: () async {
-                        await AnalyticsService.instance.logEventView(event.id);
-                        if (!context.mounted) return;
-                        final dialogContext = context;
-                        await showEventComments(dialogContext,
+                    TextButton.icon(
+                      onPressed: () {
+                        // Open the comments sheet immediately; logging the view should
+                        // not hold up the UI or require reusing BuildContext after an await.
+                        AnalyticsService.instance.logEventView(event.id);
+                        showEventComments(context,
                             eventId: event.id, eventTitle: event.title);
                       },
-                      icon: const Icon(Icons.forum_outlined,
-                          size: 19, color: _green),
+                      icon: const Icon(Icons.forum_outlined, size: 17, color: _green),
+                      label: EventCommentCountLabel(eventId: event.id, style: const TextStyle(color: _green, fontSize: 11, fontWeight: FontWeight.w700)),
+                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 5), minimumSize: Size.zero),
                     ),
                   ],
                 ),
@@ -773,6 +773,24 @@ class _InterestMatchCard extends StatefulWidget {
 class _InterestMatchCardState extends State<_InterestMatchCard> {
   List<String>? _answers;
   final List<String> _answerCategories = <String>[];
+
+  @override
+  void initState() {
+    super.initState();
+    // Organization data is refreshed by AppState's Supabase Realtime channel.
+    // Listen here so recommendations are recalculated as soon as it changes.
+    AppState.instance.addListener(_onOrganizationDataChanged);
+  }
+
+  void _onOrganizationDataChanged() {
+    if (mounted && _answers != null) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    AppState.instance.removeListener(_onOrganizationDataChanged);
+    super.dispose();
+  }
 
   // Six dimensions are used instead of four broad buckets so the result can
   // distinguish, for example, theater/music from journalism and coding.
@@ -1017,8 +1035,9 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
       for (final dimension in _dimensions) dimension: 0.0,
     };
     for (final category in _answerCategories) {
-      if (profile.containsKey(category))
+      if (profile.containsKey(category)) {
         profile[category] = profile[category]! + 1.0;
+      }
     }
     return profile;
   }
@@ -1283,13 +1302,6 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
                       ],
                     ),
                   ),
-                  if (_answers != null)
-                    IconButton(
-                      onPressed: _startQuiz,
-                      icon: const Icon(Icons.replay_rounded,
-                          color: Colors.white70),
-                      tooltip: 'Retake quiz',
-                    ),
                 ],
               ),
               const SizedBox(height: 13),

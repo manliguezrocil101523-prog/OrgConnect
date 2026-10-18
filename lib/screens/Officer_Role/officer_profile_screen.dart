@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/unified_login_page.dart';
 import '../analytics/student_impact_screen.dart';
+import '../../widgets/app_header.dart';
 
 class OfficerProfileScreen extends StatefulWidget {
   final String initialName;
@@ -30,7 +31,7 @@ class OfficerProfileScreen extends StatefulWidget {
 class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
   static const _primary = Color(0xFF16A34A);
   static const _secondary = Color(0xFF128058);
-  static const _bg = Color(0xFFF3FAF5);
+  static const _bg = Color(0xFFE6F7EE);
   static const _slate0F = Color(0xFF0F2D22);
   static const _slate94 = Color(0xFF64748B);
   static const _red = Color(0xFFDC2626);
@@ -400,178 +401,41 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
       children: [
           Column(
             children: [
-              SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_secondary, _primary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+              AppHeader(
+                title: displayName,
+                subtitle: 'Organization Officer',
+                status: 'OFFICER PROFILE',
+                avatarImage: avatar,
+                avatarEditing: _editing,
+                onAvatarTap: () {
+                  if (_editing) {
+                    _pickAvatar();
+                  } else if (avatar != null) {
+                    setState(() => _showZoom = true);
+                  }
+                },
+                trailing: GestureDetector(
+                  onTap: () => setState(() {
+                    _editing = !_editing;
+                    if (!_editing) _avatarBytes = null;
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .15),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white.withValues(alpha: .30)),
                     ),
-                  ),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        right: -30,
-                        top: -50,
-                        child: _orb(150, Colors.white.withValues(alpha: .07)),
-                      ),
-                      Positioned(
-                        left: -35,
-                        bottom: -55,
-                        child: _orb(115, Colors.white.withValues(alpha: .05)),
-                      ),
-                      SafeArea(
-                        bottom: false,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 10, 14, 0),
-                          child: Row(
-                            children: [
-                              const Text(
-                                'Profile',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const Spacer(),
-                              GestureDetector(
-                                onTap: () => setState(() {
-                                  _editing = !_editing;
-                                  if (!_editing) _avatarBytes = null;
-                                }),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: .15),
-                                    borderRadius: BorderRadius.circular(22),
-                                    border: Border.all(
-                                      color: Colors.white.withValues(alpha: .30),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        _editing
-                                            ? Icons.close_rounded
-                                            : Icons.edit_rounded,
-                                        color: Colors.white,
-                                        size: 15,
-                                      ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        _editing ? 'Cancel' : 'Edit',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 12,
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () {
-                                if (_editing) {
-                                  _pickAvatar();
-                                } else if (avatar != null) {
-                                  setState(() => _showZoom = true);
-                                }
-                              },
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Container(
-                                    width: 78,
-                                    height: 78,
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: CircleAvatar(
-                                      backgroundColor: const Color(0xFFE8F5EC),
-                                      backgroundImage: avatar,
-                                      child: avatar == null
-                                          ? const Icon(
-                                              Icons.person_rounded,
-                                              color: _primary,
-                                              size: 38,
-                                            )
-                                          : null,
-                                    ),
-                                  ),
-                                  if (_editing)
-                                    Positioned(
-                                      right: -2,
-                                      bottom: -2,
-                                      child: Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: const BoxDecoration(
-                                          color: _primary,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.camera_alt_rounded,
-                                          color: Colors.white,
-                                          size: 14,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    'Organization Officer',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: .82),
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_editing ? Icons.close_rounded : Icons.edit_rounded,
+                            color: Colors.white, size: 15),
+                        const SizedBox(width: 5),
+                        Text(_editing ? 'Cancel' : 'Edit',
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -908,12 +772,6 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
       body: profileBody,
     );
   }
-
-  Widget _orb(double size, Color color) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      );
 
   Widget _sectionLabel(String text) => Row(
         children: [

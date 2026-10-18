@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -16,7 +15,6 @@ class AdminProfileScreen extends StatefulWidget {
 
 class _AdminProfileScreenState extends State<AdminProfileScreen> {
   static const _primary = Color(0xFF16A34A);
-  static const _secondary = Color(0xFF128058);
   static const _bg = Color(0xFFF3FAF5);
   static const _slate0F = Color(0xFF0F2D22);
   static const _slate94 = Color(0xFF64748B);
@@ -82,16 +80,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     }
   }
 
-  Future<void> _pickAvatar() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    final bytes = result?.files.single.bytes;
-    if (bytes != null && mounted) {
-      setState(() => _avatarBytes = bytes);
-    }
-  }
+
 
   Future<String?> _uploadAvatar() async {
     if (_avatarBytes == null) return null;
@@ -652,11 +641,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     );
   }
 
-  Widget _orb(double size, Color color) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      );
 
   Widget _sectionLabel(String text) => Row(
         children: [

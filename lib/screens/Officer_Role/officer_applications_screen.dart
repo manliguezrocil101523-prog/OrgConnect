@@ -13,7 +13,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 class OfficerApplicationsScreen extends StatelessWidget {
   final String? filter;
-  const OfficerApplicationsScreen({super.key, this.filter});
+
+  // Always re-read applications and hydrate applicant details from the latest
+  // Supabase profile when an officer opens this screen. The application row
+  // intentionally stores a submission-time snapshot, so relying on that row
+  // alone leaves old names/photos visible after a student edits their profile.
+  OfficerApplicationsScreen({super.key, this.filter}) {
+    AppState.instance.fetchApplications();
+  }
 
   static const _primary = Color(0xFF16A34A);
   static const _secondary = Color(0xFF0F766E);
@@ -1094,12 +1101,19 @@ class _AppCard extends StatelessWidget {
                             shape: BoxShape.circle,
                             border: Border.all(color: cfg.ring),
                           ),
-                          child: Center(
-                              child: Text(initial,
-                                  style: TextStyle(
-                                      color: cfg.fg,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800))),
+                          child: ClipOval(
+                            child: app.profilePicUrl.trim().isNotEmpty
+                                ? Image.network(
+                                    app.profilePicUrl,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Center(
+                                      child: Text(initial, style: TextStyle(color: cfg.fg, fontSize: 16, fontWeight: FontWeight.w800)),
+                                    ),
+                                  )
+                                : Center(child: Text(initial, style: TextStyle(color: cfg.fg, fontSize: 16, fontWeight: FontWeight.w800))),
+                          ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -1107,11 +1121,15 @@ class _AppCard extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(app.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF0F172A))),
                                 Text(app.orgName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                         fontSize: 11.5,
                                         color: Color(0xFF94A3B8))),

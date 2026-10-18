@@ -5,15 +5,19 @@ class EventComment {
   final String id;
   final String eventId;
   final String userName;
+  final String? userId;
+  final String? avatarUrl;
   final String comment;
   final DateTime createdAt;
 
-  EventComment({required this.id, required this.eventId, required this.userName, required this.comment, required this.createdAt});
+  EventComment({required this.id, required this.eventId, required this.userName, this.userId, this.avatarUrl, required this.comment, required this.createdAt});
 
   factory EventComment.fromMap(Map<String, dynamic> row) => EventComment(
         id: row['id']?.toString() ?? '',
         eventId: row['event_id']?.toString() ?? '',
         userName: row['user_name']?.toString() ?? 'Member',
+        userId: row['user_id']?.toString(),
+        avatarUrl: row['avatar_url']?.toString(),
         comment: row['comment']?.toString() ?? '',
         createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now(),
       );
@@ -72,7 +76,24 @@ class AnalyticsService {
   Future<List<EventComment>> fetchComments(String eventId) async {
     try {
       final rows = await _db.from('event_comments').select().eq('event_id', eventId).order('created_at', ascending: true);
-      return (rows as List).map((e) => EventComment.fromMap(Map<String, dynamic>.from(e))).toList();
+      final mapped = (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+      final ids = mapped.map((r) => r['user_id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet().toList();
+      if (ids.isNotEmpty) {
+        try {
+          final profiles = await _db.from('profiles').select('id,avatar_url').inFilter('id', ids);
+          final avatars = <String, String>{};
+          for (final raw in profiles as List) {
+            final row = Map<String, dynamic>.from(raw as Map);
+            final url = row['avatar_url']?.toString() ?? '';
+            if (url.isNotEmpty) avatars[row['id'].toString()] = url;
+          }
+          for (final row in mapped) {
+            final id = row['user_id']?.toString();
+            if (id != null && avatars.containsKey(id)) row['avatar_url'] = avatars[id];
+          }
+        } catch (_) {}
+      }
+      return mapped.map((e) => EventComment.fromMap(e)).toList();
     } catch (_) {
       return [];
     }
