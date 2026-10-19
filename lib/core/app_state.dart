@@ -239,9 +239,12 @@ class Event {
   final String description;
   final String orgName;
   final String? orgId;
-  final String? imageUrl; // ← keep for backward compat
-  final List<String> imageUrls; // ← NEW: multiple images
+  final String? imageUrl;
+  final List<String> imageUrls;
   final DateTime createdAt;
+  final String venue; // NEW (events.venue)
+  final String? startTime; // NEW (events.start_time, text)
+  final String? endTime; // NEW (events.end_time, text)
 
   Event({
     required this.id,
@@ -251,9 +254,20 @@ class Event {
     required this.orgName,
     this.orgId,
     this.imageUrl,
-    this.imageUrls = const [], // ← NEW
+    this.imageUrls = const [],
     DateTime? createdAt,
+    this.venue = '',
+    this.startTime,
+    this.endTime,
   }) : createdAt = createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// "08:00 – 16:00", just the start, or '' when no time was saved.
+  String get timeLabel {
+    final s = startTime?.trim() ?? '';
+    final e = endTime?.trim() ?? '';
+    if (s.isEmpty) return '';
+    return e.isEmpty ? s : '$s – $e';
+  }
 
   Event copyWith({
     String? id,
@@ -263,8 +277,11 @@ class Event {
     String? orgName,
     String? orgId,
     String? imageUrl,
-    List<String>? imageUrls, // ← NEW
+    List<String>? imageUrls,
     DateTime? createdAt,
+    String? venue,
+    String? startTime,
+    String? endTime,
   }) =>
       Event(
         id: id ?? this.id,
@@ -274,8 +291,11 @@ class Event {
         orgName: orgName ?? this.orgName,
         orgId: orgId ?? this.orgId,
         imageUrl: imageUrl ?? this.imageUrl,
-        imageUrls: imageUrls ?? this.imageUrls, // ← NEW
+        imageUrls: imageUrls ?? this.imageUrls,
         createdAt: createdAt ?? this.createdAt,
+        venue: venue ?? this.venue,
+        startTime: startTime ?? this.startTime,
+        endTime: endTime ?? this.endTime,
       );
 }
 
@@ -1489,6 +1509,13 @@ class AppState extends ChangeNotifier {
           imageUrl: singleUrl,
           imageUrls: imageUrls,
           createdAt: createdAt,
+          venue: item['venue']?.toString() ?? '',
+          startTime: (item['start_time']?.toString().trim().isEmpty ?? true)
+              ? null
+              : item['start_time'].toString().trim(),
+          endTime: (item['end_time']?.toString().trim().isEmpty ?? true)
+              ? null
+              : item['end_time'].toString().trim(),
         ));
       }
       notifyListeners();

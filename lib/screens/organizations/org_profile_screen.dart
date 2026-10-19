@@ -18,7 +18,8 @@ abstract class _C {
 
 class OrgDetailScreen extends StatefulWidget {
   final String orgId;
-  const OrgDetailScreen({super.key, required this.orgId});
+  final int initialTab; // 0 Dashboard, 1 About, 2 Apply
+  const OrgDetailScreen({super.key, required this.orgId, this.initialTab = 0});
 
   @override
   State<OrgDetailScreen> createState() => _OrgDetailScreenState();
@@ -37,7 +38,12 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    final requested = widget.initialTab < 0
+        ? 0
+        : (widget.initialTab > 2 ? 2 : widget.initialTab);
+    final start = (requested == 2 && !_loggedIn) ? 0 : requested;
+    _tabs = TabController(length: 3, vsync: this, initialIndex: start);
+    _lastNonApplyTab = start == 2 ? 0 : start;
     _loadOrganizationPeople();
   }
 
@@ -229,10 +235,7 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
               children: [
                 _OrgDashboard(org: org),
                 _AboutTab(org: org, people: _orgPeople),
-                if (loggedIn)
-                  _ApplyTab(org: org)
-                else
-                  const SizedBox.shrink(),
+                if (loggedIn) _ApplyTab(org: org) else const SizedBox.shrink(),
               ],
             ),
           ),
@@ -1021,9 +1024,9 @@ class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
   @override
   Widget build(BuildContext context) {
     final adviserProfile = people.cast<Map<String, dynamic>?>().firstWhere(
-      (p) => p?['role']?.toString().toLowerCase() == 'adviser',
-      orElse: () => null,
-    );
+          (p) => p?['role']?.toString().toLowerCase() == 'adviser',
+          orElse: () => null,
+        );
     final officers = org.officers.map((raw) {
       final name = _officerName(raw);
       OrgOfficerProfile? savedProfile;
@@ -1054,7 +1057,9 @@ class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (adviserProfile != null || org.adviser.isNotEmpty) ...[
-          const Text('Adviser', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const Text('Adviser',
+              style: TextStyle(
+                  color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Center(
             child: SizedBox(
@@ -1063,9 +1068,11 @@ class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
                 clipBehavior: Clip.none,
                 children: [
                   _SquarePersonCard(
-                    name: adviserProfile?['name']?.toString().trim().isNotEmpty == true
-                        ? adviserProfile!['name'].toString()
-                        : org.adviser,
+                    name:
+                        adviserProfile?['name']?.toString().trim().isNotEmpty ==
+                                true
+                            ? adviserProfile!['name'].toString()
+                            : org.adviser,
                     role: 'Adviser',
                     avatarUrl: adviserProfile?['avatar_url']?.toString() ?? '',
                     width: 144,
@@ -1077,7 +1084,9 @@ class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
           const SizedBox(height: 14),
         ],
         if (officers.isNotEmpty) ...[
-          const Text('Officers', style: TextStyle(color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const Text('Officers',
+              style: TextStyle(
+                  color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -1213,7 +1222,6 @@ class _ConnectCard extends StatelessWidget {
     return value;
   }
 
-
   @override
   Widget build(BuildContext context) {
     final facebookName = _facebookDisplayName(org.socialLink);
@@ -1226,12 +1234,18 @@ class _ConnectCard extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('FACEBOOK PAGE', style: TextStyle(color: _C.muted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .9)),
+        const Text('FACEBOOK PAGE',
+            style: TextStyle(
+                color: _C.muted,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .9)),
         const SizedBox(height: 7),
         Text(
           facebookName,
           softWrap: true,
-          style: const TextStyle(color: _C.dark, fontSize: 15, fontWeight: FontWeight.w700),
+          style: const TextStyle(
+              color: _C.dark, fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ]),
     );
