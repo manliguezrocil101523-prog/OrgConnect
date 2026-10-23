@@ -2,12 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const _kPrimaryBlue = Color(0xFF15803D);
-const _kBorderColor = Color(0xFFE5E7EB);
-const _kHintColor = Color(0xFF9CA3AF);
-const _kTextColor = Color(0xFF111827);
-const _kBackground = Color(0xFFF0FDF4);
+const _kGreen = Color(0xFF16A34A);
+const _kBg = Color(0xFFF8FAFF);
+const _kText = Color(0xFF1E293B);
+const _kSubText = Color(0xFF94A3B8);
 const _kError = Color(0xFFDC2626);
+const _kSuccess = Color(0xFF059669);
+const _kLogo = 'assets/icon/login_logo.png';
+
+enum _DeviceType { mobile, tablet, desktop }
+
+_DeviceType _getDeviceType(double width) {
+  if (width >= 1024) return _DeviceType.desktop;
+  if (width >= 600) return _DeviceType.tablet;
+  return _DeviceType.mobile;
+}
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -18,18 +27,12 @@ class ForgotPasswordPage extends StatefulWidget {
 
 class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     with SingleTickerProviderStateMixin {
-  // ── Step tracking ─────────────────────────────────────────────
-  // step 0 = enter email
-  // step 1 = enter OTP
-  // step 2 = enter new password
   int _step = 0;
 
-  // ── Controllers ───────────────────────────────────────────────
   final _emailCtrl = TextEditingController();
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
 
-  // 6 separate controllers for each OTP digit box
   final List<TextEditingController> _otpCtrl =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocus = List.generate(6, (_) => FocusNode());
@@ -39,7 +42,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
   bool _isLoading = false;
   String _email = '';
 
-  // ── Animation ─────────────────────────────────────────────────
   late final AnimationController _animCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 400),
@@ -65,7 +67,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     super.dispose();
   }
 
-  // ── Animate step transitions ───────────────────────────────────
   void _goToStep(int next) {
     _animCtrl.reverse().then((_) {
       setState(() => _step = next);
@@ -73,7 +74,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     });
   }
 
-  // ── Step 0: Send OTP ──────────────────────────────────────────
   Future<void> _sendOtp() async {
     final email = _emailCtrl.text.trim();
 
@@ -95,22 +95,20 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
       _email = email;
 
       if (!mounted) return;
-      _snack('A 6-digit code has been sent to $email');
+      _snack('A 6-digit code has been sent to $email', ok: true);
       _goToStep(1);
     } on AuthException catch (e) {
       _snack(e.message, isError: true);
     } catch (_) {
-      // Always show generic success for security — don't leak if email exists
       _email = email;
       if (!mounted) return;
-      _snack('If that email is registered, a code has been sent.');
+      _snack('If that email is registered, a code has been sent.', ok: true);
       _goToStep(1);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ── Step 1: Verify OTP ────────────────────────────────────────
   Future<void> _verifyOtp() async {
     final code = _otpCtrl.map((c) => c.text.trim()).join();
 
@@ -144,7 +142,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     }
   }
 
-  // ── Step 2: Update Password ───────────────────────────────────
   Future<void> _updatePassword() async {
     final newPass = _newPassCtrl.text.trim();
     final confirmPass = _confirmPassCtrl.text.trim();
@@ -167,9 +164,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
       );
 
       if (!mounted) return;
-      _snack('Password updated successfully!');
+      _snack('Password updated successfully!', ok: true);
 
-      // Sign out after reset for security — forces fresh login
       await Supabase.instance.client.auth.signOut();
 
       if (!mounted) return;
@@ -183,72 +179,118 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     }
   }
 
-  void _snack(String msg, {bool isError = false}) {
+  void _snack(String msg, {bool isError = false, bool ok = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? _kError : const Color(0xFF059669),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: isError ? _kError : (ok ? _kSuccess : _kText),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
   }
 
-  // ── Build ─────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kBackground,
-      appBar: AppBar(
-        backgroundColor: _kBackground,
-        elevation: 0,
-        leading: BackButton(
-          color: _kTextColor,
-          onPressed: () {
-            if (_step == 0) {
-              Navigator.of(context).pop();
-            } else {
-              _goToStep(_step - 1);
-            }
-          },
-        ),
-        title: Text(
-          _stepTitle(),
-          style: const TextStyle(
-            color: _kTextColor,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
+      backgroundColor: _kBg,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: _buildCurrentStep(),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final device = _getDeviceType(constraints.maxWidth);
+            final isMobile = device == _DeviceType.mobile;
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 20 : 24,
+                vertical: isMobile ? 16 : 28,
               ),
-            ),
-          ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - (isMobile ? 32 : 56),
+                ),
+                child: Center(
+                  child: FadeTransition(
+                    opacity: _fadeAnim,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: isMobile ? double.infinity : 480,
+                      ),
+                      child: Container(
+                        padding: EdgeInsets.all(isMobile ? 16 : 36),
+                        decoration: isMobile
+                            ? const BoxDecoration(color: Colors.white)
+                            : BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _kGreen.withValues(alpha: 0.08),
+                                    blurRadius: 32,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                icon: const Icon(
+                                  Icons.arrow_back_rounded,
+                                  color: _kText,
+                                ),
+                                onPressed: () {
+                                  if (_step == 0) {
+                                    Navigator.of(context).pop();
+                                  } else {
+                                    _goToStep(_step - 1);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Center(
+                              child: Image.asset(
+                                _kLogo,
+                                height: isMobile ? 60 : 68,
+                                fit: BoxFit.contain,
+                                filterQuality: FilterQuality.high,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'OrgConnect',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: _kText,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildCurrentStep(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
-  }
-
-  String _stepTitle() {
-    switch (_step) {
-      case 0:
-        return 'Forgot Password';
-      case 1:
-        return 'Enter OTP Code';
-      case 2:
-        return 'Set New Password';
-      default:
-        return '';
-    }
   }
 
   Widget _buildCurrentStep() {
@@ -264,38 +306,32 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STEP 0 — Enter Email
-  // ─────────────────────────────────────────────────────────────
   Widget _buildEmailStep() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
           'Reset your password',
           style: TextStyle(
             fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: _kTextColor,
+            fontWeight: FontWeight.w900,
+            color: _kText,
+            letterSpacing: -.4,
           ),
         ),
         const SizedBox(height: 8),
         const Text(
-          'Enter your registered email address and we\'ll send you a 6-digit verification code.',
-          style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+          "Enter your registered email address and we'll send you a 6-digit verification code.",
+          style: TextStyle(color: _kSubText, fontSize: 13.5, height: 1.45),
         ),
-        const SizedBox(height: 32),
-
-        // Email field
+        const SizedBox(height: 24),
         _buildTextField(
           controller: _emailCtrl,
           hint: 'Email address',
           icon: Icons.email_outlined,
           keyboardType: TextInputType.emailAddress,
         ),
-
-        const SizedBox(height: 32),
-
+        const SizedBox(height: 24),
         _buildPrimaryButton(
           label: 'SEND CODE',
           isLoading: _isLoading,
@@ -305,28 +341,26 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STEP 1 — Enter OTP
-  // ─────────────────────────────────────────────────────────────
   Widget _buildOtpStep() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
           'Check your email',
           style: TextStyle(
             fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: _kTextColor,
+            fontWeight: FontWeight.w900,
+            color: _kText,
+            letterSpacing: -.4,
           ),
         ),
         const SizedBox(height: 8),
         RichText(
           text: TextSpan(
             style: const TextStyle(
-              color: Color(0xFF6B7280),
-              fontSize: 14,
-              height: 1.5,
+              color: _kSubText,
+              fontSize: 13.5,
+              height: 1.45,
             ),
             children: [
               const TextSpan(text: 'We sent a 6-digit code to '),
@@ -334,40 +368,33 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
                 text: _email,
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: _kTextColor,
+                  color: _kText,
                 ),
               ),
               const TextSpan(text: '. Enter it below.'),
             ],
           ),
         ),
-        const SizedBox(height: 36),
-
-        // OTP boxes
+        const SizedBox(height: 28),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: List.generate(6, (i) => _buildOtpBox(i)),
         ),
-
-        const SizedBox(height: 12),
-
-        // Resend
+        const SizedBox(height: 16),
         Center(
           child: TextButton(
             onPressed: _isLoading ? null : _sendOtp,
             child: const Text(
-              'Didn\'t receive a code? Resend',
+              "Didn't receive a code? Resend",
               style: TextStyle(
-                color: _kPrimaryBlue,
-                fontWeight: FontWeight.w500,
+                color: _kGreen,
+                fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
             ),
           ),
         ),
-
-        const SizedBox(height: 24),
-
+        const SizedBox(height: 16),
         _buildPrimaryButton(
           label: 'VERIFY CODE',
           isLoading: _isLoading,
@@ -379,24 +406,25 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
 
   Widget _buildOtpBox(int index) {
     return SizedBox(
-      width: 48,
-      height: 58,
+      width: 44,
+      height: 52,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _otpFocus[index].hasFocus ? _kPrimaryBlue : _kBorderColor,
-            width: _otpFocus[index].hasFocus ? 2 : 1.2,
+            color:
+                _otpFocus[index].hasFocus ? _kGreen : const Color(0xFFD1D5DB),
+            width: _otpFocus[index].hasFocus ? 1.8 : 1.2,
           ),
           boxShadow: _otpFocus[index].hasFocus
               ? [
                   BoxShadow(
-                    color: _kPrimaryBlue.withValues(alpha: 0.12),
+                    color: _kGreen.withValues(alpha: 0.12),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
-                  )
+                  ),
                 ]
               : [],
         ),
@@ -408,9 +436,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
           maxLength: 1,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           style: const TextStyle(
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: _kTextColor,
+            color: _kText,
           ),
           decoration: const InputDecoration(
             border: InputBorder.none,
@@ -419,65 +447,53 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
           ),
           onChanged: (val) {
             if (val.isNotEmpty && index < 5) {
-              // Move to next box
               FocusScope.of(context).requestFocus(_otpFocus[index + 1]);
             } else if (val.isEmpty && index > 0) {
-              // Move back on delete
               FocusScope.of(context).requestFocus(_otpFocus[index - 1]);
             }
-            // Auto-submit when all 6 digits filled
             if (_otpCtrl.every((c) => c.text.isNotEmpty)) {
               _verifyOtp();
             }
-            setState(() {}); // rebuild to update border focus color
+            setState(() {});
           },
         ),
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STEP 2 — New Password
-  // ─────────────────────────────────────────────────────────────
   Widget _buildNewPasswordStep() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
           'Create a new password',
           style: TextStyle(
             fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: _kTextColor,
+            fontWeight: FontWeight.w900,
+            color: _kText,
+            letterSpacing: -.4,
           ),
         ),
         const SizedBox(height: 8),
         const Text(
           'Your new password must be at least 8 characters.',
-          style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+          style: TextStyle(color: _kSubText, fontSize: 13.5, height: 1.45),
         ),
-        const SizedBox(height: 32),
-
-        // New password
+        const SizedBox(height: 24),
         _buildPasswordField(
           controller: _newPassCtrl,
           hint: 'New Password',
           obscure: _obscureNew,
           onToggle: () => setState(() => _obscureNew = !_obscureNew),
         ),
-
-        const SizedBox(height: 16),
-
-        // Confirm password
+        const SizedBox(height: 14),
         _buildPasswordField(
           controller: _confirmPassCtrl,
           hint: 'Confirm New Password',
           obscure: _obscureConfirm,
           onToggle: () => setState(() => _obscureConfirm = !_obscureConfirm),
         ),
-
-        const SizedBox(height: 32),
-
+        const SizedBox(height: 24),
         _buildPrimaryButton(
           label: 'UPDATE PASSWORD',
           isLoading: _isLoading,
@@ -487,36 +503,35 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Shared widgets
-  // ─────────────────────────────────────────────────────────────
   Widget _buildTextField({
     required TextEditingController controller,
     required String hint,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: _kBorderColor, width: 1.2),
-        color: Colors.white,
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      style: const TextStyle(
+        fontSize: 15,
+        color: _kText,
+        fontWeight: FontWeight.w500,
       ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        style: const TextStyle(
-          fontSize: 15,
-          color: _kTextColor,
-          fontWeight: FontWeight.w500,
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
+        hoverColor: Colors.transparent,
+        hintText: hint,
+        hintStyle: const TextStyle(color: _kSubText, fontSize: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 20),
+        prefixIcon: Icon(icon, color: _kSubText, size: 20),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB), width: 1.2),
         ),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          hintText: hint,
-          hintStyle: const TextStyle(color: _kHintColor),
-          prefixIcon: Icon(icon, color: _kHintColor),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: _kGreen, width: 1.8),
         ),
       ),
     );
@@ -528,37 +543,37 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     required bool obscure,
     required VoidCallback onToggle,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: _kBorderColor, width: 1.2),
-        color: Colors.white,
+    return TextFormField(
+      controller: controller,
+      obscureText: obscure,
+      style: const TextStyle(
+        fontSize: 15,
+        color: _kText,
+        fontWeight: FontWeight.w500,
       ),
-      child: TextField(
-        controller: controller,
-        obscureText: obscure,
-        style: const TextStyle(
-          fontSize: 15,
-          color: _kTextColor,
-          fontWeight: FontWeight.w500,
-        ),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          hintText: hint,
-          hintStyle: const TextStyle(color: _kHintColor),
-          prefixIcon:
-              const Icon(Icons.lock_outline_rounded, color: _kHintColor),
-          suffixIcon: GestureDetector(
-            onTap: onToggle,
-            child: Icon(
-              obscure
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-              color: _kHintColor,
-            ),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
+        hoverColor: Colors.transparent,
+        hintText: hint,
+        hintStyle: const TextStyle(color: _kSubText, fontSize: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 20),
+        prefixIcon: const Icon(Icons.lock_outline, color: _kSubText, size: 20),
+        suffixIcon: IconButton(
+          onPressed: onToggle,
+          icon: Icon(
+            obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+            color: _kGreen,
+            size: 20,
           ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB), width: 1.2),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: _kGreen, width: 1.8),
         ),
       ),
     );
@@ -571,21 +586,21 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
   }) {
     return SizedBox(
       width: double.infinity,
-      height: 54,
+      height: 52,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _kPrimaryBlue,
-          disabledBackgroundColor: _kPrimaryBlue.withValues(alpha: 0.45),
+          backgroundColor: _kGreen,
+          disabledBackgroundColor: _kGreen.withValues(alpha: 0.4),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(40),
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
         child: isLoading
             ? const SizedBox(
-                width: 22,
-                height: 22,
+                width: 24,
+                height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
                   color: Colors.white,
@@ -594,14 +609,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
             : Text(
                 label,
                 style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
                   color: Colors.white,
-                  letterSpacing: 0.5,
+                  letterSpacing: .8,
                 ),
               ),
       ),
     );
   }
 }
-

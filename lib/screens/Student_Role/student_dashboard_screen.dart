@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:flutter/material.dart' hide Notification;
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
-import '../../core/analytics_service.dart';
 import '../analytics/event_comments_sheet.dart';
 import '/screens/notifications/notification_screen.dart';
 import '/screens/Student_Role/student_dashboard_events.dart';
@@ -13,8 +14,308 @@ import '/screens/organizations/org_list_screen.dart';
 import '../../widgets/app_header.dart';
 import 'home/new_home_tab.dart';
 
-/// Set to false to bring back the old Home tab instantly.
-const bool kUseNewHome = true;
+// =============================================================================
+// Shared tokens + helpers
+// =============================================================================
+
+abstract final class _C {
+  static const Color primary = Color(0xFF16A34A);
+  static const Color teal = Color(0xFF0F766E);
+  static const Color green = Color(0xFF0F8A61);
+  static const Color ink = Color(0xFF173B30);
+  static const Color ink2 = Color(0xFF24463C);
+  static const Color muted = Color(0xFF6B8178);
+  static const Color body = Color(0xFF4E665E);
+  static const Color chat = Color(0xFF496A5D);
+  static const Color border = Color(0xFFCBE8DC);
+  static const Color softGreen = Color(0xFFE4F7EF);
+  static const Color pageBg = Color(0xFFFFFFFF);
+  static const Color tileBg = Color(0xFFF7FCF9);
+  static const Color tileBorder = Color(0xFFDCEFE6);
+  static const Color red = Color(0xFFDC2626);
+  static const Color redDark = Color(0xFFB91C1C);
+  static const Color amber = Color(0xFFD97706);
+  static const Color blue = Color(0xFF2563EB);
+  static const Color navInactive = Color(0xFF94A3B8);
+  static const Color toast = Color(0xFF1E293B);
+  static const Color shadow = Color(0x090F8A61);
+}
+
+const double _kMaxContent = 640;
+
+/// 1.0 for 360dp and wider; shrinks linearly (floor 0.88) on narrow phones.
+double _scaleOf(double width) =>
+    width >= 360 ? 1.0 : math.max(0.88, width / 360);
+
+double _sc(BuildContext c) => _scaleOf(MediaQuery.sizeOf(c).width);
+
+/// Extra horizontal padding that centers content on wide screens while the
+/// scroll view itself still spans edge to edge.
+double _side(BuildContext c) =>
+    math.max(0.0, (MediaQuery.sizeOf(c).width - _kMaxContent) / 2);
+
+String _mdy(DateTime d) => '${d.month}/${d.day}/${d.year}';
+
+/// "Role: Name" -> (role, name). A bare "Name" gets the role 'Officer'.
+(String, String) _parseOfficer(String raw) {
+  final colon = raw.indexOf(':');
+  final role = colon < 0 ? 'Officer' : raw.substring(0, colon).trim();
+  final name = (colon < 0 ? raw : raw.substring(colon + 1)).trim();
+  return (role, name);
+}
+
+T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T) test) {
+  for (final e in items) {
+    if (test(e)) return e;
+  }
+  return null;
+}
+
+bool _sameItems(List<Object?> a, List<Object?> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+BoxDecoration _cardDeco({
+  double radius = 20,
+  Color? color = Colors.white,
+  Color shadow = _C.shadow,
+  double blur = 15,
+  double dy = 6,
+}) =>
+    BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: _C.border),
+      boxShadow: [
+        BoxShadow(color: shadow, blurRadius: blur, offset: Offset(0, dy))
+      ],
+    );
+
+Future<T> _guard<T>(Future<T> Function() run, T fallback, String label) async {
+  try {
+    return await run();
+  } catch (e) {
+    debugPrint('Error loading $label: $e');
+    return fallback;
+  }
+}
+
+// ── Notification filters ─────────────────────────────────────────────────────
+
+bool _isPersonalNotification(Notification n) {
+  final title = n.title.trim().toLowerCase();
+  final message = n.message.trim().toLowerCase();
+  return title.contains('interview scheduled') ||
+      title == 'application update' ||
+      title.contains('congratulations') ||
+      message.contains('your interview') ||
+      message.contains('your application');
+}
+
+bool _isWorkflowNotification(Notification n) {
+  final title = n.title.trim().toLowerCase();
+  final message = n.message.trim().toLowerCase();
+  const words = [
+    'proposal',
+    'admin / cso',
+    'final posting',
+    'creative submitted',
+    'revision requested',
+    'forwarded to admin',
+    'approved and published',
+    'final pictures',
+  ];
+  return words.any((w) => title.contains(w) || message.contains(w)) ||
+      title == 'new event';
+}
+
+Notification _notificationFromRow(Map<String, dynamic> row) => Notification(
+      id: row['id']?.toString() ?? '',
+      title: row['title']?.toString() ?? '',
+      message: row['message']?.toString() ?? '',
+      date: DateTime.tryParse(
+              (row['date'] ?? row['created_at'])?.toString() ?? '') ??
+          DateTime.now(),
+      read: row['read'] == true,
+      orgId: row['org_id']?.toString(),
+      studentId: row['student_id']?.toString(),
+    );
+
+// =============================================================================
+// _Select — rebuilds ONLY when the selected snapshot changes.
+// AppState notifies on ~17 realtime tables (chat, usage logs, ...); listening
+// to it directly would rebuild constantly. Selectors must return values with
+// proper == (see _Snap), never the live in-place-mutated AppState lists.
+// =============================================================================
+
+class _Snap<E> {
+  const _Snap(this.items);
+  final List<E> items;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _Snap<E> && _sameItems(items, other.items);
+
+  @override
+  int get hashCode => items.length.hashCode;
+}
+
+class _Select<T> extends StatefulWidget {
+  const _Select({required this.selector, required this.builder});
+  final T Function() selector;
+  final Widget Function(BuildContext context, T value) builder;
+
+  @override
+  State<_Select<T>> createState() => _SelectState<T>();
+}
+
+class _SelectState<T> extends State<_Select<T>> {
+  late T _value;
+  bool _queued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.selector();
+    AppState.instance.addListener(_onChange);
+  }
+
+  @override
+  void dispose() {
+    AppState.instance.removeListener(_onChange);
+    super.dispose();
+  }
+
+  void _onChange() {
+    if (_queued) return;
+    _queued = true;
+    Future.microtask(() {
+      _queued = false;
+      if (!mounted) return;
+      final next = widget.selector();
+      if (next != _value) setState(() => _value = next);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _value);
+}
+
+class _SmartImage extends StatelessWidget {
+  const _SmartImage({
+    required this.source,
+    required this.width,
+    required this.height,
+    this.radius = 17,
+    this.bg = _C.softGreen,
+    this.icon = Icons.groups_rounded,
+    this.iconSize = 28,
+    this.borderColor,
+    this.borderWidth = 1.0,
+  });
+
+  final String source;
+  final double width;
+  final double height;
+  final double radius;
+  final Color bg;
+  final IconData icon;
+  final double iconSize;
+  final Color? borderColor;
+  final double borderWidth;
+
+  static final Map<String, Uint8List> _cache = <String, Uint8List>{};
+
+  static Uint8List? _decode(String value) {
+    final hit = _cache.remove(value);
+    if (hit != null) {
+      _cache[value] = hit; // refresh LRU position
+      return hit;
+    }
+    try {
+      final comma = value.indexOf(',');
+      if (comma < 0) return null;
+      final bytes = base64Decode(value.substring(comma + 1));
+      _cache[value] = bytes;
+      if (_cache.length > 30) _cache.remove(_cache.keys.first);
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  BoxDecoration _deco(Color? fill) => BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(radius),
+        border: borderColor == null
+            ? null
+            : Border.all(color: borderColor!, width: borderWidth),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final iconOnly = ColoredBox(
+      color: bg,
+      child: Center(child: Icon(icon, color: _C.green, size: iconSize)),
+    );
+    final value = source.trim();
+    if (value.isEmpty) {
+      return Container(
+          width: width, height: height, decoration: _deco(bg), child: iconOnly);
+    }
+
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final logicalW = width.isFinite ? width : MediaQuery.sizeOf(context).width;
+    final cacheW = math.max(1, (logicalW * dpr).round());
+    Widget errorBuilder(BuildContext _, Object __, StackTrace? ___) => iconOnly;
+
+    final Widget image;
+    if (value.startsWith('data:')) {
+      final bytes = _decode(value);
+      if (bytes == null) {
+        return Container(
+            width: width,
+            height: height,
+            decoration: _deco(bg),
+            child: iconOnly);
+      }
+      image = Image.memory(bytes,
+          fit: BoxFit.cover,
+          cacheWidth: cacheW,
+          gaplessPlayback: true,
+          errorBuilder: errorBuilder);
+    } else if (value.startsWith('http://') || value.startsWith('https://')) {
+      image = Image.network(value,
+          fit: BoxFit.cover,
+          cacheWidth: cacheW,
+          gaplessPlayback: true,
+          errorBuilder: errorBuilder);
+    } else {
+      image = Image.asset(value,
+          fit: BoxFit.cover,
+          cacheWidth: cacheW,
+          gaplessPlayback: true,
+          errorBuilder: errorBuilder);
+    }
+
+    return Container(
+      width: width,
+      height: height,
+      clipBehavior: Clip.antiAlias,
+      decoration: _deco(null),
+      child: image,
+    );
+  }
+}
+
+// =============================================================================
+// StudentDashboardScreen — shell with lazy, kept-alive tabs + bottom nav
+// =============================================================================
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
@@ -24,197 +325,146 @@ class StudentDashboardScreen extends StatefulWidget {
 }
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
-  // ─── Color tokens — MUST match ProfileScreen exactly ─────────────────────
-  static const Color _primary = Color(0xFF16A34A);
-  static const Color _background = Color(0xFFF0FDF4);
-
-  // Per-action accent colors — all within the permitted palette
-  static const Color _profileAccent = Color(0xFF16A34A);
-  static const Color _orgAccent = Color(0xFF0F766E);
-  static const Color _eventsAccent = Color(0xFF15803D);
-
-  // ─── Double-tap-to-exit state tracker ────────────────────────────────────
   DateTime? _lastBackPressed;
   int _selectedIndex = 0;
+  final Set<int> _visited = <int>{0};
+  final List<Widget?> _tabs = List<Widget?>.filled(4, null);
 
-  // ─── AppState listener so badge refreshes when notifications change ───────
-  @override
-  void initState() {
-    super.initState();
-    AppState.instance.addListener(_onAppStateChanged);
-  }
+  void _select(int i) => setState(() {
+        _selectedIndex = i;
+        _visited.add(i);
+      });
 
-  @override
-  void dispose() {
-    AppState.instance.removeListener(_onAppStateChanged);
-    super.dispose();
-  }
+  void _push(Widget page) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
 
-  void _onAppStateChanged() {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
+  /// Built the first time it is selected, then kept alive.
+  Widget _tab(int i) => _tabs[i] ??= RepaintBoundary(
+        child: switch (i) {
+          0 => NewHomeTab(
+              onSwitchTab: _select,
+              onOpenApplications: () => _push(const _MyApplicationsScreen()),
+              onOpenJoinedOrgs: () => _push(const _JoinedOrganizationsScreen()),
+              onOpenNotifications: () =>
+                  _push(const NotificationScreen(showBackButton: true)),
+            ),
+          1 => const OrgListScreen(),
+          2 => const StudentDashboard(),
+          _ => const ProfileScreen(),
+        },
+      );
+
+  void _onBack(bool didPop, Object? result) {
+    if (didPop) return;
+    if (_selectedIndex != 0) {
+      _select(0);
+      return;
+    }
+    final now = DateTime.now();
+    final messenger = ScaffoldMessenger.of(context);
+    if (_lastBackPressed == null ||
+        now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
+      _lastBackPressed = now;
+      final height = MediaQuery.sizeOf(context).height;
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Tap again to exit',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+          ),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _C.toast,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: EdgeInsets.only(
+              bottom: math.max(0.0, height - 140), left: 40, right: 40),
+        ),
+      );
+    } else {
+      messenger.clearSnackBars();
+      SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final student = AppState.instance.currentStudent;
-    final unreadCount = student == null
-        ? 0
-        : AppState.instance.notifications.where((n) {
-            final title = n.title.toLowerCase();
-            final message = n.message.toLowerCase();
-            final isInterview = title.contains('interview') ||
-                message.contains('scheduled interview');
-            final isMember = title.contains('congratulations') ||
-                message.contains('officially a member');
-            return (n.studentId == student.id ||
-                    n.studentId == student.studentId) &&
-                (isInterview || isMember) &&
-                !n.read;
-          }).length;
-
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) {
-        final now = DateTime.now();
-
-        if (_lastBackPressed == null ||
-            now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
-          _lastBackPressed = now;
-
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Tap again to exit',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white,
-                ),
-              ),
-              duration: const Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF1E293B),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              margin: EdgeInsets.only(
-                bottom: MediaQuery.of(context).size.height - 140,
-                left: 40,
-                right: 40,
-              ),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          SystemChannels.platform.invokeMethod('SystemNavigator.pop');
-        }
-      },
+      onPopInvokedWithResult: _onBack,
       child: Scaffold(
-        backgroundColor: _background,
+        backgroundColor: _C.pageBg,
         body: IndexedStack(
           index: _selectedIndex,
           children: [
-            if (kUseNewHome)
-              NewHomeTab(
-                onSwitchTab: (i) => setState(() => _selectedIndex = i),
-                onOpenApplications: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const _MyApplicationsScreen()),
-                ),
-                onOpenJoinedOrgs: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const _JoinedOrganizationsScreen()),
-                ),
-                onOpenNotifications: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          const NotificationScreen(showBackButton: true)),
-                ),
-              )
-            else
-              const _HomeTab(),
-            const OrgListScreen(),
-            const StudentDashboard(),
-            const ProfileScreen(),
+            for (var i = 0; i < 4; i++)
+              _visited.contains(i) ? _tab(i) : const SizedBox.shrink(),
           ],
         ),
-        bottomNavigationBar: _buildBottomNav(unreadCount),
+        bottomNavigationBar:
+            _BottomNav(selected: _selectedIndex, onSelect: _select),
       ),
     );
   }
+}
 
-  Widget _buildBottomNav(int unreadCount) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = (screenWidth * 0.065).clamp(22.0, 30.0);
-    final fontSize = (screenWidth * 0.028).clamp(10.0, 13.0);
+class _BottomNav extends StatelessWidget {
+  const _BottomNav({required this.selected, required this.onSelect});
+  final int selected;
+  final ValueChanged<int> onSelect;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: (screenWidth * 0.18).clamp(56.0, 72.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.home_rounded,
-                label: 'Home',
-                index: 0,
-                selectedIndex: _selectedIndex,
-                iconSize: iconSize,
-                fontSize: fontSize,
-                primaryColor: _primary,
-                onTap: () => setState(() => _selectedIndex = 0),
+  static const List<(IconData, String)> _items = [
+    (Icons.home_rounded, 'Home'),
+    (Icons.groups_rounded, 'Orgs'),
+    (Icons.calendar_month_rounded, 'Events'),
+    (Icons.person_rounded, 'Profile'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final iconSize = (width * 0.065).clamp(22.0, 30.0);
+    final fontSize = (width * 0.028).clamp(10.0, 13.0);
+    final minHeight = (width * 0.18).clamp(56.0, 72.0);
+
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < _items.length; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _items[i].$1,
+                        label: _items[i].$2,
+                        selected: i == selected,
+                        iconSize: iconSize,
+                        fontSize: fontSize,
+                        onTap: () => onSelect(i),
+                      ),
+                    ),
+                ],
               ),
-              _NavItem(
-                icon: Icons.groups_rounded,
-                label: 'Orgs',
-                index: 1,
-                selectedIndex: _selectedIndex,
-                iconSize: iconSize,
-                fontSize: fontSize,
-                primaryColor: _orgAccent,
-                onTap: () => setState(() => _selectedIndex = 1),
-              ),
-              _NavItem(
-                icon: Icons.calendar_month_rounded,
-                label: 'Events',
-                index: 2,
-                selectedIndex: _selectedIndex,
-                iconSize: iconSize,
-                fontSize: fontSize,
-                primaryColor: _eventsAccent,
-                onTap: () => setState(() => _selectedIndex = 2),
-              ),
-              _NavItem(
-                icon: Icons.person_rounded,
-                label: 'Profile',
-                index: 3,
-                selectedIndex: _selectedIndex,
-                iconSize: iconSize,
-                fontSize: fontSize,
-                primaryColor: _profileAccent,
-                onTap: () => setState(() => _selectedIndex = 3),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -222,160 +472,50 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   }
 }
 
-// =============================================================================
-// _QuickActionsRow — Applications / Joined Orgs
-// Sits BELOW the green header, on the light background.
-// =============================================================================
-class _QuickActionsRow extends StatelessWidget {
-  const _QuickActionsRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: _QuickActionCard(
-              label: 'Applications',
-              icon: Icons.assignment_rounded,
-              accent: const Color(0xFF16A34A),
-              badgeCount: 0,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const _MyApplicationsScreen()),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _QuickActionCard(
-              label: 'Joined Orgs',
-              icon: Icons.groups_rounded,
-              accent: const Color(0xFF0F766E),
-              badgeCount: 0,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const _JoinedOrganizationsScreen()),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _QuickActionCard(
-              label: 'Notifications',
-              icon: Icons.notifications_rounded,
-              accent: const Color(0xFF16A34A),
-              // Avoid a stale red badge from workflow/system notifications.
-              badgeCount: 0,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) =>
-                        const NotificationScreen(showBackButton: true)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// _QuickActionCard — one white rounded card with icon + label + red badge
-// =============================================================================
-class _QuickActionCard extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color accent;
-  final VoidCallback onTap;
-  final int badgeCount;
-
-  const _QuickActionCard({
-    required this.label,
+class _NavItem extends StatelessWidget {
+  const _NavItem({
     required this.icon,
-    required this.accent,
+    required this.label,
+    required this.selected,
+    required this.iconSize,
+    required this.fontSize,
     required this.onTap,
-    this.badgeCount = 0,
   });
 
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final double iconSize;
+  final double fontSize;
+  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFCBE8DC)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120F8A61),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+    final color = selected ? _C.green : _C.navInactive;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(icon, color: accent, size: 23),
-                    ),
-                    if (badgeCount > 0)
-                      Positioned(
-                        right: -5,
-                        top: -4,
-                        child: Container(
-                          constraints: const BoxConstraints(minWidth: 18),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDC2626),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white, width: 1.5),
-                          ),
-                          child: Text(
-                            badgeCount > 99 ? '99+' : '$badgeCount',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              height: 1.1,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 9),
+                Icon(icon, size: iconSize, color: color),
+                const SizedBox(height: 3),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF173B30),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: color,
                   ),
                 ),
               ],
@@ -388,8 +528,63 @@ class _QuickActionCard extends StatelessWidget {
 }
 
 // =============================================================================
-// Student quick-access screens
+// My Applications
 // =============================================================================
+
+class _AppRow {
+  const _AppRow(this.app, this.org);
+  final Application app;
+  final Organization? org;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AppRow &&
+      identical(other.app, app) &&
+      identical(other.org, org);
+
+  @override
+  int get hashCode => Object.hash(app, org);
+}
+
+/// Finds the organization record for an application (by id, name or acronym,
+/// plus the legacy El Teatro name match).
+Organization? _matchOrg(Application a, List<Organization> orgs) {
+  final n = a.orgName.trim().toLowerCase();
+  for (final o in orgs) {
+    final name = o.name.trim().toLowerCase();
+    final acronym = o.acronym.trim().toLowerCase();
+    if ((a.orgId != null && o.id == a.orgId) ||
+        name == n ||
+        acronym == n ||
+        (n.contains('el teatro') && name.contains('el teatro'))) {
+      return o;
+    }
+  }
+  return null;
+}
+
+_Snap<_AppRow> _selectApplications() {
+  final app = AppState.instance;
+  final authUserId = supabase.Supabase.instance.client.auth.currentUser?.id;
+  // SECURITY: match ONLY on the authenticated user id.
+  final mine = app.applications
+      .where((a) => authUserId != null && a.userId == authUserId)
+      .toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return _Snap<_AppRow>(
+      [for (final a in mine) _AppRow(a, _matchOrg(a, app.organizations))]);
+}
+
+enum _AppFilter { all, pending, reviewed }
+
+/// Reviewed = a final result was given. Everything else is still pending.
+/// To move a status between tabs, edit this list only.
+bool _isReviewed(ApplicationStatus s) =>
+    s == ApplicationStatus.approved ||
+    s == ApplicationStatus.accepted ||
+    s == ApplicationStatus.declined ||
+    s == ApplicationStatus.interviewed;
+
 class _MyApplicationsScreen extends StatefulWidget {
   const _MyApplicationsScreen();
 
@@ -400,15 +595,19 @@ class _MyApplicationsScreen extends StatefulWidget {
 class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
   bool _refreshing = true;
   bool _failed = false;
-
+  _AppFilter _filter = _AppFilter.all;
   @override
   void initState() {
     super.initState();
-    _refreshApplications();
+    // Cached AppState data renders immediately; refresh happens after the
+    // first frame so AppState notifications never land mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh();
+    });
   }
 
-  Future<void> _refreshApplications() async {
-    if (mounted) {
+  Future<void> _refresh() async {
+    if (!_refreshing || _failed) {
       setState(() {
         _refreshing = true;
         _failed = false;
@@ -417,15 +616,13 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
     try {
       final app = AppState.instance;
       if (app.currentStudent == null) await app.loadStudentProfile();
-
-      // Only what this screen needs, and in parallel.
       await Future.wait<void>([
         app.fetchApplications(),
         if (app.organizations.isEmpty) app.fetchOrganizations(),
-      ]);
+      ]).timeout(const Duration(seconds: 15));
     } catch (e) {
       debugPrint('Could not refresh My Applications: $e');
-      if (mounted) _failed = true;
+      _failed = true;
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
@@ -433,73 +630,111 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Rebuilds automatically when AppState changes (fetch finishes).
-    return AnimatedBuilder(
-      animation: AppState.instance,
-      builder: (context, _) {
-        final authUserId =
-            supabase.Supabase.instance.client.auth.currentUser?.id;
+    return _Select<_Snap<_AppRow>>(
+      selector: _selectApplications,
+      builder: (context, snap) {
+        final rows = snap.items;
+        final s = _sc(context);
+        final side = _side(context);
+        final bottom = MediaQuery.paddingOf(context).bottom;
 
-        // SECURITY: match ONLY on the authenticated user id (see section 3).
-        final apps = AppState.instance.applications
-            .where((a) => authUserId != null && a.userId == authUserId)
-            .toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        final pendingRows =
+            rows.where((r) => !_isReviewed(r.app.status)).toList();
+        final reviewedRows =
+            rows.where((r) => _isReviewed(r.app.status)).toList();
+        final filtered = switch (_filter) {
+          _AppFilter.all => rows,
+          _AppFilter.pending => pendingRows,
+          _AppFilter.reviewed => reviewedRows,
+        };
 
-        Widget body;
-        if (apps.isEmpty && _refreshing) {
-          body = const Center(
-              child: CircularProgressIndicator(color: Color(0xFF0F8A61)));
-        } else if (apps.isEmpty && _failed) {
-          body = _QuickEmpty(
+        final Widget body;
+        if (rows.isEmpty && _refreshing) {
+          body =
+              const Center(child: CircularProgressIndicator(color: _C.green));
+        } else if (rows.isEmpty && _failed) {
+          body = const _QuickEmpty(
             icon: Icons.wifi_off_rounded,
             title: 'Could not load applications',
             subtitle: 'Check your connection and pull down to try again.',
           );
-        } else if (apps.isEmpty) {
+        } else if (rows.isEmpty) {
           body = const _QuickEmpty(
             icon: Icons.assignment_outlined,
             title: 'No applications yet',
             subtitle:
                 'Organizations you apply to will appear here with their current status.',
           );
+        } else if (filtered.isEmpty) {
+          body = _QuickEmpty(
+            icon: Icons.inbox_outlined,
+            title: _filter == _AppFilter.pending
+                ? 'No pending applications'
+                : 'No reviewed applications',
+            subtitle: _filter == _AppFilter.pending
+                ? 'Applications waiting for a result will show up here.'
+                : 'Applications with a final result will show up here.',
+          );
         } else {
           body = ListView.separated(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-            itemCount: apps.length,
+            padding: EdgeInsets.fromLTRB(
+                18 * s + side, 18, 18 * s + side, 36 + bottom),
+            // +1 for the "That's all for now" footer.
+            itemCount: filtered.length + 1,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (_, i) => _ApplicationCard(application: apps[i]),
+            itemBuilder: (_, i) {
+              if (i == filtered.length) return const _ListFooter();
+              return _ApplicationCard(
+                  key: ValueKey(filtered[i].app.id), row: filtered[i]);
+            },
           );
         }
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF1FAF6),
+          backgroundColor: _C.pageBg,
           body: Column(children: [
-            AppHeader(
+            _StudentHeader(
               title: 'My Applications',
-              subtitle: 'Track your organization applications',
-              status: apps.isEmpty
-                  ? 'NO APPLICATIONS YET'
-                  : '${apps.length} APPLICATION${apps.length == 1 ? '' : 'S'}',
-              icon: Icons.assignment_rounded,
               onBack: () => Navigator.of(context).maybePop(),
             ),
+            _ApplicationsTop(
+              subtitle: 'Track your organization applications',
+              showControls: rows.isNotEmpty,
+              activeCount: pendingRows.length,
+              allCount: rows.length,
+              pendingCount: pendingRows.length,
+              reviewedCount: reviewedRows.length,
+              filter: _filter,
+              onFilter: (f) => setState(() => _filter = f),
+            ),
             // Thin bar: old data stays visible while fresh data loads.
-            if (_refreshing && apps.isNotEmpty)
-              const LinearProgressIndicator(
-                  minHeight: 2, color: Color(0xFF0F8A61)),
+            // Fixed 2dp strip: always reserved, so the layout never shifts.
+            // Idle = static divider line, refreshing = animated bar.
+            // Static divider. Background refresh is silent (the cached list
+            // stays visible); pull-to-refresh shows its own indicator.
+            const Divider(height: 1, thickness: 1, color: _C.softGreen),
             Expanded(
-              child: RefreshIndicator(
-                color: const Color(0xFF0F8A61),
-                onRefresh: _refreshApplications,
-                child: apps.isEmpty
-                    ? ListView(children: [
-                        SizedBox(
-                            height: MediaQuery.of(context).size.height * 0.5,
-                            child: body)
-                      ])
-                    : body,
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: RefreshIndicator(
+                  color: _C.green,
+                  onRefresh: _refresh,
+                  child: filtered.isEmpty
+                      ? ListView(
+                          // Must stay scrollable or pull-to-refresh is dead
+                          // on Android when the empty state fits the screen.
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            SizedBox(
+                              height: MediaQuery.sizeOf(context).height * 0.5,
+                              child: body,
+                            ),
+                          ],
+                        )
+                      : body,
+                ),
               ),
             ),
           ]),
@@ -509,66 +744,336 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
   }
 }
 
-class _ApplicationCard extends StatelessWidget {
-  final Application application;
-  const _ApplicationCard({required this.application});
+class _StudentHeader extends StatelessWidget {
+  const _StudentHeader({
+    required this.title,
+    required this.onBack,
+  });
+
+  final String title;
+  final VoidCallback onBack;
+
+  static const double _barHeight = 72;
+
+  Widget _orb(double size) => IgnorePointer(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: .07),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor(application.status);
-    final rawApplicationOrgName = application.orgName.trim();
-    final normalizedApplicationOrgName = rawApplicationOrgName.toLowerCase();
-    final org =
-        AppState.instance.organizations.cast<Organization?>().firstWhere(
-              (candidate) =>
-                  candidate != null &&
-                  ((application.orgId != null &&
-                          candidate.id == application.orgId) ||
-                      candidate.name.trim().toLowerCase() ==
-                          normalizedApplicationOrgName ||
-                      candidate.acronym.trim().toLowerCase() ==
-                          normalizedApplicationOrgName ||
-                      (normalizedApplicationOrgName == 'scap' &&
-                          candidate.acronym.trim().toLowerCase() == 'scap') ||
-                      (normalizedApplicationOrgName.contains('el teatro') &&
-                          candidate.name
-                              .trim()
-                              .toLowerCase()
-                              .contains('el teatro'))),
-              orElse: () => null,
-            );
+    final mq = MediaQuery.of(context);
+    final top = mq.padding.top;
 
-    // The organization was renamed from SCAP to Student Catholic Action.
-    // Prefer the current organization record everywhere on the card so an
-    // older application row cannot make the UI revert to the old name.
-    final displayName = org?.name.trim().isNotEmpty == true
-        ? org!.name
-        : (normalizedApplicationOrgName == 'scap'
-            ? 'Student Catholic Action'
-            : rawApplicationOrgName);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8DC)),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x090F8A61), blurRadius: 15, offset: Offset(0, 6))
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Container(
+        height: _barHeight + top,
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: const BoxDecoration(
+          gradient: AppHeader.brandGradient,
+        ),
+        child: Stack(
+          children: [
+            Positioned(right: -30, top: -50, child: _orb(120)),
+            Positioned(right: 45, bottom: -50, child: _orb(90)),
+
+            // Title: vertically centered in the bar
+            Positioned(
+              left: 60,
+              right: 16,
+              top: top,
+              height: _barHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+
+            // Back button: same center line as the title
+            Positioned(
+              left: 8,
+              top: top,
+              height: _barHeight,
+              child: Center(
+                child: IconButton(
+                  tooltip: 'Back',
+                  onPressed: onBack,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 44, minHeight: 44),
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Title, summary card and filter chips shown below the header.
+class _ApplicationsTop extends StatelessWidget {
+  const _ApplicationsTop({
+    required this.subtitle,
+    required this.showControls,
+    required this.activeCount,
+    required this.allCount,
+    required this.pendingCount,
+    required this.reviewedCount,
+    required this.filter,
+    required this.onFilter,
+  });
+
+  final String subtitle;
+  final bool showControls;
+  final int activeCount;
+  final int allCount;
+  final int pendingCount;
+  final int reviewedCount;
+  final _AppFilter filter;
+  final ValueChanged<_AppFilter> onFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _sc(context);
+    final side = _side(context);
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(18 * s + side, 18, 18 * s + side, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Your applications',
+              style: TextStyle(
+                  color: _C.ink, fontSize: 24, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(subtitle,
+                style: const TextStyle(color: _C.muted, fontSize: 13)),
+            if (showControls) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: _cardDeco(radius: 18),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                          color: _C.softGreen,
+                          borderRadius: BorderRadius.circular(13)),
+                      child: const Icon(Icons.assignment_rounded,
+                          color: _C.green, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '$activeCount active application${activeCount == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                            color: _C.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                          color: _C.softGreen,
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Text('$activeCount',
+                          style: const TextStyle(
+                              color: _C.green,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _FilterChipButton(
+                      label: 'All ($allCount)',
+                      selected: filter == _AppFilter.all,
+                      onTap: () => onFilter(_AppFilter.all),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChipButton(
+                      label: 'Pending ($pendingCount)',
+                      selected: filter == _AppFilter.pending,
+                      onTap: () => onFilter(_AppFilter.pending),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChipButton(
+                      label: 'Reviewed ($reviewedCount)',
+                      selected: filter == _AppFilter.reviewed,
+                      onTap: () => onFilter(_AppFilter.reviewed),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChipButton extends StatelessWidget {
+  const _FilterChipButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? _C.green : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? _C.green : _C.border),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : _C.body,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ListFooter extends StatelessWidget {
+  const _ListFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 40),
+      child: Column(
+        children: [
+          Icon(Icons.eco_rounded, size: 18, color: _C.green),
+          SizedBox(height: 6),
+          Text("That's all for now.",
+              style: TextStyle(
+                  color: _C.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+          SizedBox(height: 2),
+          Text('Check back for updates on your applications.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _C.muted, fontSize: 11.5)),
         ],
       ),
+    );
+  }
+}
+
+Color _statusColor(ApplicationStatus status) {
+  switch (status) {
+    case ApplicationStatus.approved:
+    case ApplicationStatus.accepted:
+      return _C.green;
+    case ApplicationStatus.declined:
+      return _C.red;
+    case ApplicationStatus.interviewed:
+    case ApplicationStatus.interviewScheduled:
+      return _C.amber;
+    default:
+      return _C.blue;
+  }
+}
+
+String _statusLabel(ApplicationStatus status) {
+  if (status == ApplicationStatus.approved ||
+      status == ApplicationStatus.accepted) {
+    return 'Approved';
+  }
+  // Enum names are camelCase: forApproval -> "For Approval".
+  final spaced =
+      status.name.replaceAllMapped(RegExp(r'[A-Z]'), (m) => ' ${m[0]}').trim();
+  return spaced[0].toUpperCase() + spaced.substring(1);
+}
+
+class _ApplicationCard extends StatelessWidget {
+  const _ApplicationCard({super.key, required this.row});
+  final _AppRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    final application = row.app;
+    final org = row.org;
+    final s = _sc(context);
+    final color = _statusColor(application.status);
+    final rawName = application.orgName.trim();
+
+    // The organization was renamed from SCAP to Student Catholic Action.
+    // Prefer the current organization record so old rows cannot revert it.
+    final displayName = org?.name.trim().isNotEmpty == true
+        ? org!.name
+        : (rawName.toLowerCase() == 'scap'
+            ? 'Student Catholic Action'
+            : rawName);
+
+    return Container(
+      padding: EdgeInsets.all(16 * s),
+      decoration: _cardDeco(),
       child: Row(
         children: [
           if (org != null)
-            _OrgLogo(asset: org.logoAsset, size: 46)
+            _SmartImage(source: org.logoAsset, width: 46 * s, height: 46 * s)
           else
             Container(
-              width: 46,
-              height: 46,
+              width: 46 * s,
+              height: 46 * s,
               decoration: BoxDecoration(
-                  color: const Color(0xFFE4F7EF),
-                  borderRadius: BorderRadius.circular(14)),
-              child: const Icon(Icons.groups_rounded, color: Color(0xFF0F8A61)),
+                  color: _C.softGreen, borderRadius: BorderRadius.circular(14)),
+              child: const Icon(Icons.groups_rounded, color: _C.green),
             ),
           const SizedBox(width: 12),
           Expanded(
@@ -577,15 +1082,12 @@ class _ApplicationCard extends StatelessWidget {
               children: [
                 Text(displayName,
                     style: const TextStyle(
-                        color: Color(0xFF173B30),
+                        color: _C.ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w900)),
                 const SizedBox(height: 4),
-                Text(
-                  'Applied ${application.createdAt.month}/${application.createdAt.day}/${application.createdAt.year}',
-                  style:
-                      const TextStyle(color: Color(0xFF6B8178), fontSize: 11.5),
-                ),
+                Text('Applied ${_mdy(application.createdAt)}',
+                    style: const TextStyle(color: _C.muted, fontSize: 11.5)),
                 if (application.status == ApplicationStatus.declined &&
                     application.declineReason.isNotEmpty) ...[
                   const SizedBox(height: 6),
@@ -593,54 +1095,82 @@ class _ApplicationCard extends StatelessWidget {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Color(0xFFB91C1C),
-                          fontSize: 11.5,
-                          height: 1.35)),
+                          color: _C.redDark, fontSize: 11.5, height: 1.35)),
                 ],
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-            decoration: BoxDecoration(
-                color: color.withValues(alpha: .10),
-                borderRadius: BorderRadius.circular(12)),
-            child: Text(_statusLabel(application.status),
-                style: TextStyle(
-                    color: color, fontSize: 10.5, fontWeight: FontWeight.w900)),
+          MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                  color: color.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(12)),
+              child: Text(_statusLabel(application.status),
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900)),
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  static Color _statusColor(ApplicationStatus status) {
-    switch (status) {
-      case ApplicationStatus.accepted:
-        return const Color(0xFF0F8A61);
-      case ApplicationStatus.declined:
-        return const Color(0xFFDC2626);
-      case ApplicationStatus.interviewed:
-      case ApplicationStatus.interviewScheduled:
-        return const Color(0xFFD97706);
-      default:
-        return const Color(0xFF2563EB);
+// =============================================================================
+// Joined Organizations
+// =============================================================================
+
+/// Joined = profile.joinedOrgIds
+///        + orgs of member rows owned by this profile
+///        + orgs of approved/accepted applications owned by this student.
+/// Name matching is a fallback ONLY for legacy member rows with no profileId,
+/// so two students with the same name can never see each other's orgs.
+_Snap<Organization> _selectJoinedOrgs() {
+  final app = AppState.instance;
+  final student = app.currentStudent;
+  final authId = supabase.Supabase.instance.client.auth.currentUser?.id;
+  final ids = <String>{...?student?.joinedOrgIds};
+  final names = <String>{};
+
+  void add(String? id, String name) {
+    final trimmedId = id?.trim();
+    if (trimmedId != null && trimmedId.isNotEmpty) ids.add(trimmedId);
+    final n = name.trim().toLowerCase();
+    if (n.isNotEmpty) names.add(n);
+  }
+
+  if (student != null) {
+    final myName = student.name.trim().toLowerCase();
+    for (final m in app.members) {
+      final pid = m.profileId ?? '';
+      final isMine = pid.isNotEmpty
+          ? pid == student.id
+          : (myName.isNotEmpty && m.name.trim().toLowerCase() == myName);
+      if (isMine) add(m.orgId, m.orgName);
     }
   }
 
-  static String _statusLabel(ApplicationStatus status) {
-    if (status == ApplicationStatus.approved ||
-        status == ApplicationStatus.accepted) {
-      return 'Approved';
+  final myStudentId = student?.studentId.trim() ?? '';
+  for (final a in app.applications) {
+    if (a.status != ApplicationStatus.approved &&
+        a.status != ApplicationStatus.accepted) {
+      continue;
     }
-    return status.name
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map((word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1)}')
-        .join(' ');
+    final uid = a.userId ?? '';
+    final byUser = uid.isNotEmpty && (uid == authId || uid == student?.id);
+    final byStudentId =
+        myStudentId.isNotEmpty && a.studentId.trim() == myStudentId;
+    if (byUser || byStudentId) add(a.orgId, a.orgName);
   }
+
+  return _Snap<Organization>([
+    for (final o in app.organizations)
+      if (ids.contains(o.id) || names.contains(o.name.trim().toLowerCase())) o,
+  ]);
 }
 
 class _JoinedOrganizationsScreen extends StatefulWidget {
@@ -653,205 +1183,167 @@ class _JoinedOrganizationsScreen extends StatefulWidget {
 
 class _JoinedOrganizationsScreenState
     extends State<_JoinedOrganizationsScreen> {
-  final Set<String> _joinedOrgIds = <String>{};
-  final Set<String> _joinedOrgNames = <String>{};
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _loadJoinedOrganizations());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
-  Future<void> _loadJoinedOrganizations() async {
-    if (mounted) setState(() => _loading = true);
+  /// Cached data is shown immediately; this refreshes in the background.
+  Future<void> _load() async {
     try {
-      if (AppState.instance.currentStudent == null) {
-        await AppState.instance.loadStudentProfile();
-      }
-      // These three reads are independent; load them concurrently so Joined
-      // Organizations does not wait for each Supabase request one after another.
-      await Future.wait<void>([
-        AppState.instance.fetchOrganizations(),
-        AppState.instance.fetchMembers(),
-      ]);
-      // Joined Organizations is derived directly from the fresh membership,
-      // application, and profile data below; no extra membership-sync round trip
-      // is needed just to render this screen.
-
-      final student = AppState.instance.currentStudent;
-      final ids = <String>{...?student?.joinedOrgIds};
-      final names = <String>{};
-
-      // Existing member rows.
-      for (final member in AppState.instance.members) {
-        final profileMatch = member.profileId == student?.id;
-        final legacyNameMatch = student != null &&
-            student.name.trim().isNotEmpty &&
-            member.name.trim().toLowerCase() ==
-                student.name.trim().toLowerCase();
-        if (!profileMatch && !legacyNameMatch) continue;
-        final memberId = member.orgId?.trim();
-        if (memberId != null && memberId.isNotEmpty) ids.add(memberId);
-        final memberName = member.orgName.trim().toLowerCase();
-        if (memberName.isNotEmpty) names.add(memberName);
-      }
-
-      // Use the applications already fetched for the signed-in student.
-      // Supabase RLS permits students to read their own applications, so this
-      // stays within AppState and avoids a second client-specific query here.
-      for (final application in AppState.instance.applications) {
-        final status = application.status.name.toLowerCase();
-        if (status != 'approved' && status != 'accepted') continue;
-
-        final matchesUser = student != null &&
-            application.userId != null &&
-            application.userId == student.id;
-        final matchesStudentId = student != null &&
-            student.studentId.trim().isNotEmpty &&
-            application.studentId.trim() == student.studentId.trim();
-        if (!matchesUser && !matchesStudentId) continue;
-
-        final orgId = application.orgId?.trim();
-        final orgName = application.orgName.trim();
-        if (orgId != null && orgId.isNotEmpty) ids.add(orgId);
-        if (orgName.isNotEmpty) names.add(orgName.toLowerCase());
-      }
-
-      // Name matching is a fallback for old records whose org_id is missing or
-      // no longer matches the current organizations row.
-      for (final org in AppState.instance.organizations) {
-        if (names.contains(org.name.trim().toLowerCase())) ids.add(org.id);
-      }
-
-      if (mounted) {
-        setState(() {
-          _joinedOrgIds
-            ..clear()
-            ..addAll(ids);
-          _joinedOrgNames
-            ..clear()
-            ..addAll(names);
-          _loading = false;
-        });
-      }
+      final app = AppState.instance;
+      if (app.currentStudent == null) await app.loadStudentProfile();
+      await Future.wait<void>([app.fetchOrganizations(), app.fetchMembers()]);
     } catch (e) {
       debugPrint('Error loading Joined Orgs: $e');
+    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: AppState.instance,
-      builder: (context, _) {
-        final joined = AppState.instance.organizations
-            .where((org) =>
-                _joinedOrgIds.contains(org.id) ||
-                _joinedOrgNames.contains(org.name.trim().toLowerCase()))
-            .toList();
+    return _Select<_Snap<Organization>>(
+      selector: _selectJoinedOrgs,
+      builder: (context, snap) {
+        final joined = snap.items;
+        final s = _sc(context);
+        final side = _side(context);
+        final bottom = MediaQuery.paddingOf(context).bottom;
+
+        final Widget body;
+        if (joined.isEmpty && _loading) {
+          body =
+              const Center(child: CircularProgressIndicator(color: _C.green));
+        } else if (joined.isEmpty) {
+          body = const _QuickEmpty(
+            icon: Icons.groups_outlined,
+            title: 'No organizations joined yet',
+            subtitle:
+                'When an application is accepted, your organization will appear here.',
+          );
+        } else {
+          body = ListView.separated(
+            padding: EdgeInsets.fromLTRB(
+                18 * s + side, 18, 18 * s + side, 36 + bottom),
+            itemCount: joined.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (_, i) =>
+                _JoinedOrgCard(key: ValueKey(joined[i].id), org: joined[i]),
+          );
+        }
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF1FAF6),
-          body: Column(
-            children: [
-              AppHeader(
-                title: 'Joined Organizations',
-                subtitle: 'Your organization communities',
-                status: joined.isEmpty
-                    ? 'NO ORGANIZATIONS YET'
-                    : '${joined.length} JOINED',
-                icon: Icons.groups_rounded,
-                onBack: () => Navigator.of(context).maybePop(),
-              ),
-              Expanded(
-                child: _loading
-                    ? const Center(
-                        child:
-                            CircularProgressIndicator(color: Color(0xFF0F8A61)),
-                      )
-                    : joined.isEmpty
-                        ? const _QuickEmpty(
-                            icon: Icons.groups_outlined,
-                            title: 'No organizations joined yet',
-                            subtitle:
-                                'When an application is accepted, your organization will appear here.',
-                          )
-                        : ListView.separated(
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                            itemCount: joined.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (_, i) =>
-                                _JoinedOrgCard(org: joined[i]),
-                          ),
-              ),
-            ],
-          ),
+          backgroundColor: _C.pageBg,
+          body: Column(children: [
+            _StudentHeader(
+              title: 'Joined Organizations',
+              onBack: () => Navigator.of(context).maybePop(),
+            ),
+            _JoinedTop(
+              subtitle: 'Your organization communities',
+              status: joined.isEmpty
+                  ? 'NO ORGANIZATIONS YET'
+                  : '${joined.length} JOINED',
+            ),
+            Expanded(
+              child: SafeArea(top: false, bottom: false, child: body),
+            ),
+          ]),
         );
       },
     );
   }
 }
 
-bool _isWorkflowOrganizationNotification(Notification n) {
-  final title = n.title.trim().toLowerCase();
-  final message = n.message.trim().toLowerCase();
-  const workflowWords = [
-    'proposal',
-    'proposal approved',
-    'proposal forwarded',
-    'proposal revision',
-    'proposal sent back',
-    'admin / cso',
-    'final posting',
-    'creative submitted',
-    'revision requested',
-    'forwarded to admin',
-    'approved and published',
-    'has been approved and published',
-    'final pictures',
-  ];
-  return workflowWords
-          .any((word) => title.contains(word) || message.contains(word)) ||
-      title == 'new event';
-}
-
-class _JoinedOrgCard extends StatelessWidget {
-  final Organization org;
-  const _JoinedOrgCard({required this.org});
+// Subtitle + status shown BELOW the header on the Joined Organizations screen.
+class _JoinedTop extends StatelessWidget {
+  const _JoinedTop({required this.subtitle, required this.status});
+  final String subtitle;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
-    const updates =
-        0; // Do not show stale global notification rows as unread org updates.
+    final s = _sc(context);
+    final side = _side(context);
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+          padding: EdgeInsets.fromLTRB(18 * s + side, 18, 18 * s + side, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: _C.ink,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _C.softGreen,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: _C.green,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      status,
+                      style: const TextStyle(
+                        color: _C.green,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )),
+    );
+  }
+}
+
+class _JoinedOrgCard extends StatelessWidget {
+  const _JoinedOrgCard({super.key, required this.org});
+  final Organization org;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _sc(context);
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => _MemberOrganizationSpace(org: org))),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => _MemberOrganizationSpace(org: org))),
         child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFCBE8DC)),
-            boxShadow: const [
-              BoxShadow(
-                  color: Color(0x090F8A61),
-                  blurRadius: 15,
-                  offset: Offset(0, 6))
-            ],
-          ),
+          padding: EdgeInsets.all(14 * s),
+          decoration: _cardDeco(radius: 22, color: null),
           child: Row(
             children: [
-              _OrgLogo(asset: org.logoAsset, size: 62),
+              _SmartImage(source: org.logoAsset, width: 62 * s, height: 62 * s),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -859,7 +1351,7 @@ class _JoinedOrgCard extends StatelessWidget {
                   children: [
                     Text(org.name,
                         style: const TextStyle(
-                            color: Color(0xFF173B30),
+                            color: _C.ink,
                             fontSize: 15,
                             fontWeight: FontWeight.w900)),
                     const SizedBox(height: 4),
@@ -870,31 +1362,24 @@ class _JoinedOrgCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Color(0xFF6B8178),
-                          fontSize: 11.5,
-                          height: 1.35),
+                          color: _C.muted, fontSize: 11.5, height: 1.35),
                     ),
                     const SizedBox(height: 7),
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(Icons.campaign_rounded,
-                            size: 14, color: Color(0xFF0F8A61)),
-                        const SizedBox(width: 4),
-                        Text(
-                          updates == 0
-                              ? 'No new updates'
-                              : '$updates new update${updates == 1 ? '' : 's'}',
-                          style: const TextStyle(
-                              color: Color(0xFF0F8A61),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800),
-                        ),
+                        Icon(Icons.campaign_rounded, size: 14, color: _C.green),
+                        SizedBox(width: 4),
+                        Text('No new updates',
+                            style: TextStyle(
+                                color: _C.green,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800)),
                       ],
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF6B8178)),
+              const Icon(Icons.chevron_right_rounded, color: _C.muted),
             ],
           ),
         ),
@@ -903,9 +1388,59 @@ class _JoinedOrgCard extends StatelessWidget {
   }
 }
 
-class _MemberOrganizationSpace extends StatefulWidget {
+// =============================================================================
+// Member Organization Space
+// =============================================================================
+
+class _OrgView {
+  const _OrgView(this.org, this.events, this.memberCount);
   final Organization org;
+  final List<Event> events;
+  final int memberCount;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _OrgView &&
+      identical(other.org, org) &&
+      other.memberCount == memberCount &&
+      _sameItems(other.events, events);
+
+  @override
+  int get hashCode => Object.hash(org, memberCount, events.length);
+}
+
+_OrgView _orgViewFor(Organization base) {
+  final app = AppState.instance;
+  // Use the freshest org record (realtime may have updated it).
+  final org =
+      app.organizations.firstWhere((o) => o.id == base.id, orElse: () => base);
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final events = app.events
+      .where((e) =>
+          (e.orgId == org.id || e.orgName == org.name) &&
+          !DateTime(e.date.year, e.date.month, e.date.day).isBefore(today))
+      .toList()
+    ..sort((a, b) => a.date.compareTo(b.date));
+
+  // Unique lowercase member names for this org + officer names not yet counted.
+  final names = <String>{};
+  for (final m in app.members) {
+    if (m.orgId != org.id && m.orgName != org.name) continue;
+    final n = m.name.trim().toLowerCase();
+    if (n.isNotEmpty) names.add(n);
+  }
+  for (final raw in org.officers) {
+    final n = _parseOfficer(raw).$2.toLowerCase();
+    if (n.isNotEmpty) names.add(n);
+  }
+  return _OrgView(org, events.take(8).toList(), names.length);
+}
+
+class _MemberOrganizationSpace extends StatefulWidget {
   const _MemberOrganizationSpace({required this.org});
+  final Organization org;
 
   @override
   State<_MemberOrganizationSpace> createState() =>
@@ -913,770 +1448,495 @@ class _MemberOrganizationSpace extends StatefulWidget {
 }
 
 class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
-  final _messageController = TextEditingController();
-  List<Notification> _orgAnnouncements = <Notification>[];
-  List<Map<String, dynamic>> _orgPeople = <Map<String, dynamic>>[];
-  bool _loadingCommunity = true;
+  List<Notification> _announcements = <Notification>[];
+  List<Map<String, dynamic>> _people = <Map<String, dynamic>>[];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCommunityData());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
-  Future<void> _loadCommunityData() async {
-    if (mounted) setState(() => _loadingCommunity = true);
+  Future<List<Notification>> _queryAnnouncements(String orgId) async {
+    final rows = await supabase.Supabase.instance.client
+        .from('notifications')
+        .select('id,title,message,date,read,org_id,student_id,created_at')
+        .eq('org_id', orgId)
+        .order('created_at', ascending: false)
+        .limit(50);
+    // Read org rows directly so adviser announcements show even if an old row
+    // was mistakenly addressed to a student; personal types stay in
+    // Notifications.
+    return [
+      for (final r in (rows as List))
+        _notificationFromRow(Map<String, dynamic>.from(r as Map)),
+    ]
+        .where(
+            (n) => !_isPersonalNotification(n) && !_isWorkflowNotification(n))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  Future<List<Map<String, dynamic>>> _queryPeople(String orgId) async {
+    final rows = await supabase.Supabase.instance.client
+        .from('profiles')
+        .select('id,name,role,avatar_url,assigned_org_id,org_id')
+        .or('assigned_org_id.eq.$orgId,org_id.eq.$orgId')
+        // PostgREST "in" is case-sensitive, so cover both spellings.
+        .inFilter(
+            'role', ['officer', 'Officer', 'adviser', 'Adviser']).order('name');
+    return [
+      for (final r in (rows as List)) Map<String, dynamic>.from(r as Map),
+    ];
+  }
+
+  /// On open: only this org's two direct queries + a member refresh scoped to
+  /// this org. Pull-to-refresh (full: true) also refreshes the shared state.
+  /// Each request is guarded so one failure never wipes the others.
+  Future<void> _load({bool full = false}) async {
+    final app = AppState.instance;
+    final id = widget.org.id;
+
+    final announcementsF = _guard<List<Notification>>(
+        () => _queryAnnouncements(id), _announcements, 'org notifications');
+    final peopleF = _guard<List<Map<String, dynamic>>>(
+        () => _queryPeople(id), _people, 'org people');
+    final sharedF = Future.wait<void>([
+      _guard<void>(() => app.fetchMembers(organizationId: id), null, 'members'),
+      if (full) ...[
+        _guard<void>(app.fetchOrganizations, null, 'organizations'),
+        _guard<void>(app.fetchEvents, null, 'events'),
+        _guard<void>(app.fetchNotifications, null, 'notifications'),
+      ],
+    ]);
+
+    final announcements = await announcementsF;
+    final people = await peopleF;
+    await sharedF;
+    if (!mounted) return;
+    setState(() {
+      _announcements = announcements;
+      _people = people;
+      _loading = false;
+    });
+
+    // Opening the space counts as seeing the announcements that are SHOWN.
+    // NOTE: org-wide announcements share one `read` column, so one student
+    // opening this marks them read for everyone. The real fix needs a
+    // per-user read table.
+    final unread = announcements.take(10).where((n) => !n.read).toList();
+    if (unread.isEmpty) return;
     try {
-      final client = supabase.Supabase.instance.client;
-      final results = await Future.wait<dynamic>([
-        AppState.instance.fetchOrganizations(),
-        AppState.instance.fetchEvents(),
-        AppState.instance.fetchMembers(),
-        AppState.instance.fetchNotifications(),
-        client
-            .from('notifications')
-            .select('id,title,message,date,read,org_id,student_id,created_at')
-            .eq('org_id', widget.org.id)
-            .order('created_at', ascending: false),
-        client
-            .from('profiles')
-            .select('id,name,role,avatar_url,assigned_org_id,org_id')
-            .or('assigned_org_id.eq.${widget.org.id},org_id.eq.${widget.org.id}')
-            .order('name'),
-      ]);
-
-      // Read organization notifications directly so adviser announcements are
-      // shown even when an older notification row was mistakenly addressed to
-      // a student's ID. Personal notification types stay in Notifications.
-      final notificationRows =
-          List<Map<String, dynamic>>.from(results[4] as List);
-      final announcements = notificationRows
-          .map((row) => Notification(
-                id: row['id']?.toString() ?? '',
-                title: row['title']?.toString() ?? '',
-                message: row['message']?.toString() ?? '',
-                date: DateTime.tryParse(
-                        (row['date'] ?? row['created_at'])?.toString() ?? '') ??
-                    DateTime.now(),
-                read: row['read'] == true,
-                orgId: row['org_id']?.toString(),
-                studentId: row['student_id']?.toString(),
-              ))
-          .where((n) =>
-              !_isPersonalStudentNotification(n) &&
-              !_isWorkflowOrganizationNotification(n))
-          .toList()
-        ..sort((a, b) => b.date.compareTo(a.date));
-
-      final people = (results[5] as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-
-      if (mounted) {
-        setState(() {
-          _orgAnnouncements = announcements;
-          _orgPeople = people;
-          _loadingCommunity = false;
-        });
-      }
-
-      // Opening the organization space counts as seeing the adviser updates.
-      final unreadAnnouncements = announcements
-          .where((n) => !n.read && !_isWorkflowOrganizationNotification(n))
-          .toList();
-      for (final announcement in unreadAnnouncements) {
-        await AppState.instance.markNotificationRead(announcement.id);
-      }
-      if (mounted && unreadAnnouncements.isNotEmpty) {
-        setState(() {
-          _orgAnnouncements = announcements
-              .map((n) => unreadAnnouncements.any((u) => u.id == n.id)
-                  ? n.copyWith(read: true)
-                  : n)
-              .toList();
-        });
-      }
+      await Future.wait<void>(
+          unread.map((n) => app.markNotificationRead(n.id)));
     } catch (e) {
-      debugPrint('Error loading member organization community: $e');
-      if (mounted) {
-        setState(() {
-          _orgAnnouncements = <Notification>[];
-          _orgPeople = <Map<String, dynamic>>[];
-          _loadingCommunity = false;
-        });
-      }
+      debugPrint('Error marking announcements read: $e');
     }
+    if (!mounted) return;
+    final readIds = {for (final n in unread) n.id};
+    setState(() {
+      _announcements = [
+        for (final n in _announcements)
+          readIds.contains(n.id) ? n.copyWith(read: true) : n,
+      ];
+    });
   }
 
-  bool _isPersonalStudentNotification(Notification n) {
-    final title = n.title.trim().toLowerCase();
-    final message = n.message.trim().toLowerCase();
-    return title.contains('interview scheduled') ||
-        title == 'application update' ||
-        title.contains('congratulations') ||
-        message.contains('your interview') ||
-        message.contains('your application');
-  }
-
-  bool _isFeeAnnouncement(Notification n) {
-    final text = '${n.title} ${n.message}'.toLowerCase();
-    return RegExp(
-            r'\bfee\b|fees|registration|membership dues|dues|payment|payable|₱|php')
-        .hasMatch(text);
-  }
-
-  @override
-  void dispose() {
-    _messageController.dispose();
-    super.dispose();
+  Widget _announcementsBody() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    if (_announcements.isEmpty) {
+      return const Text(
+        'No organization announcements have been posted yet. Meeting notices, reminders, deadlines, and other member updates will appear here.',
+        style: TextStyle(color: _C.muted, height: 1.45),
+      );
+    }
+    return Column(children: [
+      for (final n in _announcements.take(10)) _AnnouncementTile(n: n),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
-    final org = widget.org;
-    final now = DateTime.now();
-    final events = AppState.instance.events
-        .where((e) =>
-            (e.orgId == org.id || e.orgName == org.name) &&
-            !DateTime(e.date.year, e.date.month, e.date.day)
-                .isBefore(DateTime(now.year, now.month, now.day)))
-        .toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+    return _Select<_OrgView>(
+      selector: () => _orgViewFor(widget.org),
+      builder: (context, v) {
+        final org = v.org;
+        final s = _sc(context);
+        final side = _side(context);
+        final bottom = MediaQuery.paddingOf(context).bottom;
 
-    final members = AppState.instance.members
-        .where((m) => m.orgId == org.id || m.orgName == org.name)
-        .toList();
-
-    final regularAnnouncements =
-        _orgAnnouncements.where((n) => !_isFeeAnnouncement(n)).toList();
-    final officers = _orgPeople
-        .where((p) => p['role']?.toString().toLowerCase() == 'officer')
-        .toList();
-    final advisers = _orgPeople
-        .where((p) => p['role']?.toString().toLowerCase() == 'adviser')
-        .toList();
-    // Officers are also organization members. Merge the organization roster
-    // with saved member rows so officer positions and profile photos are shown.
-    final memberRows = <Map<String, dynamic>>[];
-    final memberNames = <String>{};
-    for (final member in members) {
-      final profile = _orgPeople.cast<Map<String, dynamic>?>().firstWhere(
-            (p) => p?['id']?.toString() == member.profileId,
-            orElse: () => null,
-          );
-      final name = member.name.trim();
-      if (name.isEmpty || !memberNames.add(name.toLowerCase())) continue;
-      memberRows.add({
-        'name': name,
-        'role': member.position,
-        'avatar_url': profile?['avatar_url']?.toString() ?? ''
-      });
-    }
-    for (final raw in org.officers) {
-      final colon = raw.indexOf(':');
-      final role = colon < 0 ? 'Officer' : raw.substring(0, colon).trim();
-      final name = (colon < 0 ? raw : raw.substring(colon + 1)).trim();
-      if (name.isEmpty || !memberNames.add(name.toLowerCase())) continue;
-      final profile = _orgPeople.cast<Map<String, dynamic>?>().firstWhere(
-            (p) =>
-                p?['name']?.toString().trim().toLowerCase() ==
-                name.toLowerCase(),
-            orElse: () => null,
-          );
-      memberRows.add({
-        'name': name,
-        'role': role,
-        'avatar_url': profile?['avatar_url']?.toString() ?? ''
-      });
-    }
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF1FAF6),
-      body: Column(children: [
-        _StudentOrgHeader(org: org),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadCommunityData,
-            color: const Color(0xFF0F8A61),
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              children: [
-                // Organization announcements only: meetings, reminders, deadlines,
-                // rehearsals, orientations, and other messages sent to all members.
-                _CommunitySection(
-                  title: 'Organization announcements',
-                  icon: Icons.campaign_rounded,
-                  child: _loadingCommunity
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Center(
-                              child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : regularAnnouncements.isEmpty
-                          ? const Text(
-                              'No organization announcements have been posted yet. Meeting notices, reminders, deadlines, and other member updates will appear here.',
-                              style: TextStyle(
-                                  color: Color(0xFF6B8178), height: 1.45),
-                            )
-                          : Column(
-                              children: regularAnnouncements.take(10).map((n) {
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  padding: const EdgeInsets.all(13),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF7FCF9),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                        color: const Color(0xFFDCEFE6)),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        width: 42,
-                                        height: 42,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFE4F7EF),
-                                          borderRadius:
-                                              BorderRadius.circular(13),
-                                        ),
-                                        child: const Icon(
-                                            Icons.campaign_rounded,
-                                            color: Color(0xFF0F8A61)),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(n.title,
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.w800)),
-                                            const SizedBox(height: 4),
-                                            Text(n.message,
-                                                style: const TextStyle(
-                                                    color: Color(0xFF4E665E),
-                                                    height: 1.35)),
-                                            const SizedBox(height: 6),
-                                            Text(
-                                              '${n.date.month}/${n.date.day}/${n.date.year}',
-                                              style: const TextStyle(
-                                                  color: Color(0xFF0F8A61),
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.w700),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                ),
-                const SizedBox(height: 14),
-
-                // Fee/payment notices are pulled from the organization's own
-                // organization-wide announcements. Nothing is invented here.
-
-                _CommunitySection(
-                  title: 'Upcoming events',
-                  icon: Icons.event_rounded,
-                  child: events.isEmpty
-                      ? const Text('No upcoming events posted yet.',
-                          style: TextStyle(color: Color(0xFF6B8178)))
-                      : Column(
-                          children: events.take(8).map((e) {
-                            final image = e.imageUrl ??
-                                (e.imageUrls.isNotEmpty
-                                    ? e.imageUrls.first
-                                    : '');
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              clipBehavior: Clip.antiAlias,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border:
-                                    Border.all(color: const Color(0xFFCBE8DC)),
-                                boxShadow: const [
-                                  BoxShadow(
-                                      color: Color(0x090F8A61),
-                                      blurRadius: 16,
-                                      offset: Offset(0, 6)),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (image.isNotEmpty)
-                                    SizedBox(
-                                      height: 175,
-                                      width: double.infinity,
-                                      child: Stack(
-                                        children: [
-                                          Positioned.fill(
-                                            child: Image.network(
-                                              image,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  Container(
-                                                color: const Color(0xFFDDF4E8),
-                                                child: const Icon(
-                                                    Icons.event_rounded,
-                                                    color: Color(0xFF0F8A61),
-                                                    size: 40),
-                                              ),
-                                            ),
-                                          ),
-                                          Positioned(
-                                            left: 12,
-                                            top: 12,
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 9,
-                                                      vertical: 6),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white
-                                                    .withValues(alpha: .92),
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                      Icons
-                                                          .event_available_rounded,
-                                                      size: 14,
-                                                      color: Color(0xFF0F8A61)),
-                                                  SizedBox(width: 5),
-                                                  Text('Upcoming',
-                                                      style: TextStyle(
-                                                          color:
-                                                              Color(0xFF0F8A61),
-                                                          fontSize: 10.5,
-                                                          fontWeight:
-                                                              FontWeight.w900)),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                        14, 13, 14, 14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(e.title,
-                                            style: const TextStyle(
-                                                color: Color(0xFF173B30),
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w900)),
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 7),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFE4F7EF),
-                                            borderRadius:
-                                                BorderRadius.circular(11),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(
-                                                  Icons.calendar_month_rounded,
-                                                  size: 14,
-                                                  color: Color(0xFF0F8A61)),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                  '${e.date.month}/${e.date.day}/${e.date.year}',
-                                                  style: const TextStyle(
-                                                      color: Color(0xFF0F8A61),
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w800)),
-                                            ],
-                                          ),
-                                        ),
-                                        if (e.description.isNotEmpty) ...[
-                                          const SizedBox(height: 9),
-                                          Text(e.description,
-                                              maxLines: 3,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                  color: Color(0xFF6B8178),
-                                                  fontSize: 12,
-                                                  height: 1.4)),
-                                        ],
-                                        const SizedBox(height: 10),
-                                        Align(
-                                          alignment: Alignment.centerRight,
-                                          child: FilledButton.icon(
-                                            onPressed: () => showEventComments(
-                                                context,
-                                                eventId: e.id,
-                                                eventTitle: e.title),
-                                            icon: const Icon(
-                                                Icons.forum_outlined,
-                                                size: 15),
-                                            label: EventCommentCountLabel(
-                                                eventId: e.id,
-                                                style: const TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight:
-                                                        FontWeight.w600)),
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor:
-                                                  const Color(0xFFE4F7EF),
-                                              foregroundColor:
-                                                  const Color(0xFF0F8A61),
-                                              elevation: 0,
-                                              minimumSize: Size.zero,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 12,
-                                                      vertical: 8),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                ),
-                const SizedBox(height: 14),
-
-                _CommunitySection(
-                  title: 'Adviser and Officers',
-                  icon: Icons.badge_rounded,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        return Scaffold(
+          backgroundColor: _C.pageBg,
+          body: Column(children: [
+            _StudentOrgHeader(org: org),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: RefreshIndicator(
+                  onRefresh: () => _load(full: true),
+                  color: _C.green,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                        16 * s + side, 16, 16 * s + side, 28 + bottom),
                     children: [
-                      if (advisers.isNotEmpty ||
-                          org.adviser.trim().isNotEmpty) ...[
-                        const Text('Adviser',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF24463C))),
-                        const SizedBox(height: 10),
-                        _OrganizationPersonTile(
-                          person: advisers.isNotEmpty
-                              ? advisers.first
-                              : {
-                                  'name': org.adviser.trim(),
-                                  'role': 'Adviser',
-                                  'avatar_url': ''
-                                },
-                          fallbackIcon: Icons.school_rounded,
-                          wide: true,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      const Text('Officers',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF24463C))),
-                      const SizedBox(height: 10),
-                      if (org.officers.isEmpty && officers.isEmpty)
-                        const Text(
-                            'No officer profiles have been posted for this organization yet.',
-                            style: TextStyle(color: Color(0xFF6B8178)))
-                      else
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 12,
-                          children: [
-                            ...org.officers.map((raw) {
-                              final colon = raw.indexOf(':');
-                              final role = colon < 0
-                                  ? 'Officer'
-                                  : raw.substring(0, colon).trim();
-                              final name =
-                                  (colon < 0 ? raw : raw.substring(colon + 1))
-                                      .trim();
-                              final liveProfile = _orgPeople
-                                  .cast<Map<String, dynamic>?>()
-                                  .firstWhere(
-                                    (p) =>
-                                        p?['name']
-                                            ?.toString()
-                                            .trim()
-                                            .toLowerCase() ==
-                                        name.toLowerCase(),
-                                    orElse: () => null,
-                                  );
-                              final savedProfile = org.officerProfiles
-                                  .cast<OrgOfficerProfile?>()
-                                  .firstWhere(
-                                    (p) =>
-                                        p?.name.trim().toLowerCase() ==
-                                        name.toLowerCase(),
-                                    orElse: () => null,
-                                  );
-                              final liveAvatar = liveProfile?['avatar_url']
-                                      ?.toString()
-                                      .trim() ??
-                                  '';
-                              final savedAvatar =
-                                  savedProfile?.avatarUrl.trim() ?? '';
-                              return _OrganizationPersonTile(
-                                person: {
-                                  'name': name,
-                                  'role': savedProfile?.role ?? role,
-                                  'avatar_url': liveAvatar.isNotEmpty
-                                      ? liveAvatar
-                                      : savedAvatar,
-                                },
-                                fallbackIcon: Icons.badge_rounded,
-                              );
-                            }),
-                            if (org.officers.isEmpty)
-                              ...officers
-                                  .map((person) => _OrganizationPersonTile(
-                                        person: person,
-                                        fallbackIcon: Icons.badge_rounded,
-                                      )),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                _CommunitySection(
-                  title: 'Members',
-                  icon: Icons.groups_rounded,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE4F7EF),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(Icons.groups_rounded,
-                            color: Color(0xFF0F8A61)),
+                      _CommunitySection(
+                        title: 'Organization announcements',
+                        icon: Icons.campaign_rounded,
+                        child: _announcementsBody(),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Organization members',
-                                style: TextStyle(
-                                    color: Color(0xFF24463C),
-                                    fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 3),
-                            Text(
-                                '${memberRows.length} ${memberRows.length == 1 ? 'member' : 'members'}',
-                                style: const TextStyle(
-                                    color: Color(0xFF0F8A61),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800)),
-                          ],
-                        ),
+                      const SizedBox(height: 14),
+                      _CommunitySection(
+                        title: 'Upcoming events',
+                        icon: Icons.event_rounded,
+                        child: v.events.isEmpty
+                            ? const Text('No upcoming events posted yet.',
+                                style: TextStyle(color: _C.muted))
+                            : Column(children: [
+                                for (final e in v.events)
+                                  _UpcomingEventCard(
+                                      key: ValueKey(e.id), event: e),
+                              ]),
+                      ),
+                      const SizedBox(height: 14),
+                      _CommunitySection(
+                        title: 'Adviser and Officers',
+                        icon: Icons.badge_rounded,
+                        child: _OfficersSection(org: org, people: _people),
+                      ),
+                      const SizedBox(height: 14),
+                      _CommunitySection(
+                        title: 'Members',
+                        icon: Icons.groups_rounded,
+                        child: _MemberCount(count: v.memberCount),
+                      ),
+                      const SizedBox(height: 14),
+                      _CommunitySection(
+                        title: 'Community Chat',
+                        icon: Icons.forum_rounded,
+                        child: _ChatCard(org: org),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-
-                _CommunitySection(
-                  title: 'Community Chat',
-                  icon: Icons.forum_rounded,
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                            'Open your organization community. Messages are shared with members, officers, and the adviser in the same organization.',
-                            style: TextStyle(
-                                color: Color(0xFF496A5D),
-                                fontSize: 12,
-                                height: 1.4)),
-                        const SizedBox(height: 10),
-                        FilledButton.icon(
-                          onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => OrgCommunityChatScreen(
-                                      orgId: org.id, orgName: org.name))),
-                          icon: const Icon(Icons.forum_rounded),
-                          label: const Text('Open Community Chat'),
-                          style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF0F8A61),
-                              foregroundColor: Colors.white),
-                        ),
-                      ]),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ]),
+          ]),
+        );
+      },
     );
   }
 }
 
-class _StudentOrgHeader extends StatelessWidget {
-  final Organization org;
-  const _StudentOrgHeader({required this.org});
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 150,
-        width: double.infinity,
-        child: Container(
-          decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [Color(0xFF0F766E), Color(0xFF16A34A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight)),
-          child: Stack(children: [
-            SafeArea(
-                bottom: false,
-                child: Padding(
-                    padding: const EdgeInsets.fromLTRB(76, 12, 20, 0),
-                    child: Row(children: [
-                      _OrgLogo(asset: org.logoAsset, size: 60),
-                      const SizedBox(width: 14),
-                      Expanded(
-                          child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                            const Text('Member Space',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 21,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.1)),
-                            const SizedBox(height: 4),
-                            const Text('Stay connected with el teatro',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600)),
-                          ]))
-                    ]))),
-            Positioned(
-              left: 8,
-              top: MediaQuery.of(context).padding.top + 4,
-              child: IconButton(
-                tooltip: 'Back',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
-              ),
-            ),
-          ]),
-        ),
-      );
-}
-
-class _OrgLogo extends StatelessWidget {
-  final String asset;
-  final double size;
-
-  const _OrgLogo({required this.asset, required this.size});
+class _AnnouncementTile extends StatelessWidget {
+  const _AnnouncementTile({required this.n});
+  final Notification n;
 
   @override
   Widget build(BuildContext context) {
-    const fallbackColor = Color(0xFFE4F7EF);
-    const iconColor = Color(0xFF0F8A61);
-
-    Widget fallback() => Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: fallbackColor,
-            borderRadius: BorderRadius.circular(17),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: _C.tileBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _C.tileBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+                color: _C.softGreen, borderRadius: BorderRadius.circular(13)),
+            child: const Icon(Icons.campaign_rounded, color: _C.green),
           ),
-          alignment: Alignment.center,
-          child: const Icon(
-            Icons.groups_rounded,
-            color: iconColor,
-            size: 28,
-          ),
-        );
-
-    final value = asset.trim();
-    if (value.isEmpty) return fallback();
-
-    if (value.startsWith('data:')) {
-      try {
-        final comma = value.indexOf(',');
-        if (comma >= 0) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(17),
-            child: Image.memory(
-              base64Decode(value.substring(comma + 1)),
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => fallback(),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(n.title,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(n.message,
+                    style: const TextStyle(color: _C.body, height: 1.35)),
+                const SizedBox(height: 6),
+                Text(_mdy(n.date),
+                    style: const TextStyle(
+                        color: _C.green,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700)),
+              ],
             ),
-          );
-        }
-      } catch (_) {
-        return fallback();
-      }
-    }
-
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(17),
-        child: Image.network(
-          value,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => fallback(),
-        ),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(17),
-      child: Image.asset(
-        value,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => fallback(),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _OrganizationPersonTile extends StatelessWidget {
-  final Map<String, dynamic> person;
-  final IconData fallbackIcon;
-  final bool wide;
+class _UpcomingEventCard extends StatelessWidget {
+  const _UpcomingEventCard({super.key, required this.event});
+  final Event event;
 
+  @override
+  Widget build(BuildContext context) {
+    final e = event;
+    final image = (e.imageUrl != null && e.imageUrl!.isNotEmpty)
+        ? e.imageUrl!
+        : (e.imageUrls.isNotEmpty ? e.imageUrls.first : '');
+
+    return LayoutBuilder(builder: (context, c) {
+      // ~175dp on a 360dp phone; grows with the card, within sane bounds.
+      final imageHeight = math.min(260.0, math.max(150.0, c.maxWidth / 1.7));
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        clipBehavior: Clip.antiAlias,
+        decoration: _cardDeco(blur: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (image.isNotEmpty)
+              SizedBox(
+                height: imageHeight,
+                width: double.infinity,
+                child: Stack(children: [
+                  Positioned.fill(
+                    child: _SmartImage(
+                      source: image,
+                      width: double.infinity,
+                      height: imageHeight,
+                      radius: 0,
+                      bg: const Color(0xFFDDF4E8),
+                      icon: Icons.event_rounded,
+                      iconSize: 40,
+                    ),
+                  ),
+                  const Positioned(left: 12, top: 12, child: _UpcomingBadge()),
+                ]),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(e.title,
+                      style: const TextStyle(
+                          color: _C.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                        color: _C.softGreen,
+                        borderRadius: BorderRadius.circular(11)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.calendar_month_rounded,
+                            size: 14, color: _C.green),
+                        const SizedBox(width: 6),
+                        Text(_mdy(e.date),
+                            style: const TextStyle(
+                                color: _C.green,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                  if (e.description.isNotEmpty) ...[
+                    const SizedBox(height: 9),
+                    Text(e.description,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: _C.muted, fontSize: 12, height: 1.4)),
+                  ],
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: () => showEventComments(context,
+                          eventId: e.id, eventTitle: e.title),
+                      icon: const Icon(Icons.forum_outlined, size: 15),
+                      label: EventCommentCountLabel(
+                        eventId: e.id,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _C.softGreen,
+                        foregroundColor: _C.green,
+                        elevation: 0,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+class _UpcomingBadge extends StatelessWidget {
+  const _UpcomingBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .92),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_available_rounded, size: 14, color: _C.green),
+            SizedBox(width: 5),
+            Text('Upcoming',
+                style: TextStyle(
+                    color: _C.green,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Map<String, dynamic>? _liveProfileByName(
+        List<Map<String, dynamic>> people, String lowerName) =>
+    _firstWhereOrNull(
+        people, (p) => p['name']?.toString().trim().toLowerCase() == lowerName);
+
+String _roleOf(Map<String, dynamic> p) =>
+    p['role']?.toString().toLowerCase() ?? '';
+
+class _OfficersSection extends StatelessWidget {
+  const _OfficersSection({required this.org, required this.people});
+  final Organization org;
+  final List<Map<String, dynamic>> people;
+
+  /// Officer tile data: the org's own officer list when present (enriched with
+  /// live avatars / saved profiles), otherwise the live officer profiles.
+  List<Map<String, dynamic>> _officerTiles(List<Map<String, dynamic>> live) {
+    if (org.officers.isEmpty) return live;
+    return [
+      for (final raw in org.officers)
+        () {
+          final (role, name) = _parseOfficer(raw);
+          final key = name.toLowerCase();
+          final liveAvatar = _liveProfileByName(people, key)?['avatar_url']
+                  ?.toString()
+                  .trim() ??
+              '';
+          final saved = _firstWhereOrNull(
+              org.officerProfiles, (p) => p.name.trim().toLowerCase() == key);
+          final savedAvatar = saved?.avatarUrl.trim() ?? '';
+          return <String, dynamic>{
+            'name': name,
+            'role': saved?.role ?? role,
+            'avatar_url': liveAvatar.isNotEmpty ? liveAvatar : savedAvatar,
+          };
+        }(),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final advisers = people.where((p) => _roleOf(p) == 'adviser').toList();
+    final officers = people.where((p) => _roleOf(p) == 'officer').toList();
+    final tiles = _officerTiles(officers);
+    const labelStyle = TextStyle(fontWeight: FontWeight.w900, color: _C.ink2);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (advisers.isNotEmpty || org.adviser.trim().isNotEmpty) ...[
+          const Text('Adviser', style: labelStyle),
+          const SizedBox(height: 10),
+          _OrganizationPersonTile(
+            person: advisers.isNotEmpty
+                ? advisers.first
+                : {
+                    'name': org.adviser.trim(),
+                    'role': 'Adviser',
+                    'avatar_url': '',
+                  },
+            fallbackIcon: Icons.school_rounded,
+            wide: true,
+          ),
+          const SizedBox(height: 16),
+        ],
+        const Text('Officers', style: labelStyle),
+        const SizedBox(height: 10),
+        if (tiles.isEmpty)
+          const Text(
+              'No officer profiles have been posted for this organization yet.',
+              style: TextStyle(color: _C.muted))
+        else
+          LayoutBuilder(builder: (context, c) {
+            // Tiles are at least 132dp wide, at least 2 per row, and stretch
+            // to fill the row so no space is wasted on any screen width.
+            const minWidth = 132.0;
+            const gap = 10.0;
+            final cols =
+                math.max(2, ((c.maxWidth + gap) / (minWidth + gap)).floor());
+            final tileWidth = (c.maxWidth - (cols - 1) * gap) / cols;
+            return Wrap(
+              spacing: gap,
+              runSpacing: 12,
+              children: [
+                for (final p in tiles)
+                  SizedBox(
+                    width: tileWidth,
+                    child: _OrganizationPersonTile(
+                        person: p, fallbackIcon: Icons.badge_rounded),
+                  ),
+              ],
+            );
+          }),
+      ],
+    );
+  }
+}
+
+class _OrganizationPersonTile extends StatelessWidget {
   const _OrganizationPersonTile({
     required this.person,
     required this.fallbackIcon,
     this.wide = false,
   });
+
+  final Map<String, dynamic> person;
+  final IconData fallbackIcon;
+  final bool wide;
+
+  static String _roleLabel(String role) =>
+      role.isEmpty ? role : role[0].toUpperCase() + role.substring(1);
 
   @override
   Widget build(BuildContext context) {
@@ -1685,27 +1945,16 @@ class _OrganizationPersonTile extends StatelessWidget {
         : 'Organization member';
     final role = person['role']?.toString().trim() ?? '';
     final avatarUrl = person['avatar_url']?.toString().trim() ?? '';
+    final size = wide ? 82.0 : 86.0;
 
-    final image = Container(
-      width: wide ? 82 : 86,
-      height: wide ? 82 : 86,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE4F7EF),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFCBE8DC), width: 1.4),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: avatarUrl.isNotEmpty
-          ? Image.network(
-              avatarUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Icon(
-                fallbackIcon,
-                color: const Color(0xFF0F8A61),
-                size: 30,
-              ),
-            )
-          : Icon(fallbackIcon, color: const Color(0xFF0F8A61), size: 30),
+    final image = _SmartImage(
+      source: avatarUrl,
+      width: size,
+      height: size,
+      radius: 18,
+      borderColor: _C.border,
+      icon: fallbackIcon,
+      iconSize: 30,
     );
 
     if (wide) {
@@ -1719,7 +1968,7 @@ class _OrganizationPersonTile extends StatelessWidget {
             colors: [Color(0xFFF8FFFB), Color(0xFFE7F8F0)],
           ),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFCBE8DC)),
+          border: Border.all(color: _C.border),
         ),
         child: Row(
           children: [
@@ -1729,33 +1978,22 @@ class _OrganizationPersonTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF24463C),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
+                  Text(name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: _C.ink2,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900)),
                   const SizedBox(height: 4),
-                  Text(
-                    role.isEmpty ? 'Adviser' : _roleLabel(role),
-                    style: const TextStyle(
-                      color: Color(0xFF0F8A61),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text(role.isEmpty ? 'Adviser' : _roleLabel(role),
+                      style: const TextStyle(
+                          color: _C.green,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800)),
                   const SizedBox(height: 7),
-                  const Text(
-                    'Organization adviser',
-                    style: TextStyle(
-                      color: Color(0xFF6B8178),
-                      fontSize: 11,
-                    ),
-                  ),
+                  const Text('Organization adviser',
+                      style: TextStyle(color: _C.muted, fontSize: 11)),
                 ],
               ),
             ),
@@ -1765,7 +2003,6 @@ class _OrganizationPersonTile extends StatelessWidget {
     }
 
     return Container(
-      width: 132,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FFFB),
@@ -1773,90 +2010,212 @@ class _OrganizationPersonTile extends StatelessWidget {
         border: Border.all(color: const Color(0xFFD8EEE4)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x070F8A61),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
+              color: Color(0x070F8A61), blurRadius: 12, offset: Offset(0, 5)),
         ],
       ),
       child: Column(
         children: [
           image,
           const SizedBox(height: 8),
-          Text(
-            name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF24463C),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w900,
-              height: 1.2,
-            ),
-          ),
-          if (role.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              _roleLabel(role),
-              maxLines: 1,
+          Text(name,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF6B8178),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+                  color: _C.ink2,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                  height: 1.2)),
+          if (role.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(_roleLabel(role),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: _C.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600)),
           ],
         ],
       ),
     );
   }
+}
 
-  static String _roleLabel(String role) {
-    if (role.isEmpty) return role;
-    return role[0].toUpperCase() + role.substring(1);
+class _MemberCount extends StatelessWidget {
+  const _MemberCount({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+              color: _C.softGreen, borderRadius: BorderRadius.circular(14)),
+          child: const Icon(Icons.groups_rounded, color: _C.green),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Organization members',
+                  style:
+                      TextStyle(color: _C.ink2, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 3),
+              Text('$count ${count == 1 ? 'member' : 'members'}',
+                  style: const TextStyle(
+                      color: _C.green,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
+class _ChatCard extends StatelessWidget {
+  const _ChatCard({required this.org});
+  final Organization org;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+            'Open your organization community. Messages are shared with members, officers, and the adviser in the same organization.',
+            style: TextStyle(color: _C.chat, fontSize: 12, height: 1.4)),
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) =>
+                  OrgCommunityChatScreen(orgId: org.id, orgName: org.name))),
+          icon: const Icon(Icons.forum_rounded),
+          label: const Text('Open Community Chat'),
+          style: FilledButton.styleFrom(
+              backgroundColor: _C.green, foregroundColor: Colors.white),
+        ),
+      ],
+    );
+  }
+}
+
+class _StudentOrgHeader extends StatelessWidget {
+  const _StudentOrgHeader({required this.org});
+  final Organization org;
+
+  @override
+  Widget build(BuildContext context) {
+    final pad = MediaQuery.paddingOf(context);
+    final s = _sc(context);
+
+    // 150dp is a MINIMUM (it includes the status-bar inset); it grows with
+    // large text instead of overflowing.
+    return ConstrainedBox(
+      constraints:
+          const BoxConstraints(minWidth: double.infinity, minHeight: 150),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_C.teal, _C.primary],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(children: [
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(76, 12, 20, 0),
+              child: Row(children: [
+                _SmartImage(
+                    source: org.logoAsset, width: 60 * s, height: 60 * s),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Member Space',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1)),
+                      const SizedBox(height: 4),
+                      Text('Stay connected with ${org.name}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          Positioned(
+            left: pad.left + 8,
+            top: pad.top + 4,
+            child: IconButton(
+              tooltip: 'Back',
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Small shared widgets
+// =============================================================================
+
 class _CommunitySection extends StatelessWidget {
+  const _CommunitySection(
+      {required this.title, required this.icon, required this.child});
   final String title;
   final IconData icon;
   final Widget child;
-  const _CommunitySection(
-      {required this.title, required this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8DC)),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x080F8A61), blurRadius: 12, offset: Offset(0, 5))
-        ],
-      ),
+      decoration: _cardDeco(shadow: const Color(0x080F8A61), blur: 12, dy: 5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
             Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                    color: const Color(0xFFE4F7EF),
-                    borderRadius: BorderRadius.circular(11)),
-                child: Icon(icon, color: const Color(0xFF0F8A61), size: 18)),
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                  color: _C.softGreen, borderRadius: BorderRadius.circular(11)),
+              child: Icon(icon, color: _C.green, size: 18),
+            ),
             const SizedBox(width: 9),
-            Text(title,
-                style: const TextStyle(
-                    color: Color(0xFF173B30),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900)),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      color: _C.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900)),
+            ),
           ]),
           const SizedBox(height: 11),
           child,
@@ -1867,708 +2226,44 @@ class _CommunitySection extends StatelessWidget {
 }
 
 class _QuickEmpty extends StatelessWidget {
+  const _QuickEmpty(
+      {required this.icon, required this.title, required this.subtitle});
   final IconData icon;
   final String title;
   final String subtitle;
-  const _QuickEmpty(
-      {required this.icon, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
+    // Scrollable so large text sizes can never cause a RenderFlex overflow.
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                        colors: [Color(0xFF0F8A61), Color(0xFF20B77D)]),
-                    borderRadius: BorderRadius.circular(22)),
-                child: Icon(icon, color: Colors.white, size: 32)),
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                gradient:
+                    const LinearGradient(colors: [_C.green, Color(0xFF20B77D)]),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Icon(icon, color: Colors.white, size: 32),
+            ),
             const SizedBox(height: 16),
             Text(title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: Color(0xFF173B30),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900)),
+                    color: _C.ink, fontSize: 18, fontWeight: FontWeight.w900)),
             const SizedBox(height: 7),
             Text(subtitle,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: Color(0xFF6B8178), fontSize: 12.5, height: 1.45)),
+                    color: _C.muted, fontSize: 12.5, height: 1.45)),
           ],
         ),
       ),
     );
-  }
-}
-
-// =============================================================================
-// _HomeTab — shown when index == 0 (the hero header + welcome content)
-// =============================================================================
-class _HomeTab extends StatefulWidget {
-  const _HomeTab();
-
-  @override
-  State<_HomeTab> createState() => _HomeTabState();
-}
-
-class _HomeTabState extends State<_HomeTab> {
-  static const Color _primary = Color(0xFF16A34A);
-  static const Color _secondary = Color(0xFF0F766E);
-  static const Duration _postLifetime = Duration(days: 30);
-  bool _showAllEvents = false;
-
-  @override
-  void initState() {
-    super.initState();
-    AppState.instance.fetchEvents();
-    AnalyticsService.instance
-        .logUsage('open_student_dashboard', route: 'student/home');
-  }
-
-  ImageProvider? _headerAvatar() {
-    final url = AppState.instance.currentStudent?.avatarUrl ?? '';
-    if (url.startsWith('data:')) {
-      try {
-        return MemoryImage(base64Decode(url.substring(url.indexOf(',') + 1)));
-      } catch (_) {
-        return null;
-      }
-    }
-    return url.isNotEmpty ? NetworkImage(url) : null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: AppState.instance,
-      builder: (context, _) {
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final cutoff = now.subtract(_postLifetime);
-        final allActiveEvents = AppState.instance.events.where((event) {
-          final eventDay =
-              DateTime(event.date.year, event.date.month, event.date.day);
-          return !eventDay.isBefore(today) && !event.createdAt.isBefore(cutoff);
-        }).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        final events =
-            _showAllEvents ? allActiveEvents : allActiveEvents.take(3).toList();
-
-        return Column(
-          children: [
-            // The profile symbol in the hero is always synced with the
-            // student's saved profile through AppState.
-            AppHeader(
-              title: () {
-                final name = (AppState.instance.currentStudent?.name ?? '')
-                    .trim()
-                    .split(RegExp(r'\s+'))
-                    .where((p) => p.isNotEmpty)
-                    .take(2)
-                    .join(' ');
-                return name.isNotEmpty
-                    ? 'Welcome Back, $name 👋'
-                    : 'Welcome Back 👋';
-              }(),
-              subtitle: 'Manage your organizations and campus life',
-              status: 'STUDENT DASHBOARD',
-              avatarImage: _headerAvatar(),
-            ),
-            const _QuickActionsRow(),
-            // Scrolling intentionally starts at Upcoming Events.
-            Expanded(
-              child: Scrollbar(
-                thumbVisibility: true,
-                interactive: true,
-                thickness: 7,
-                radius: const Radius.circular(10),
-                child: ListView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.only(bottom: 96),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 4,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              color: _secondary,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Upcoming Events',
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF0F0D2E),
-                                        letterSpacing: -0.4)),
-                                Text(
-                                    'Latest posts from all campus organizations.',
-                                    style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: Color(0xFF6B6B8E),
-                                        fontWeight: FontWeight.w400)),
-                              ],
-                            ),
-                          ),
-                          if (allActiveEvents.length > 3)
-                            TextButton(
-                              onPressed: () => setState(
-                                  () => _showAllEvents = !_showAllEvents),
-                              child: Text(
-                                  _showAllEvents ? 'Latest 3' : 'View all'),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (events.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 40),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Container(
-                                width: 72,
-                                height: 72,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                      colors: [_primary, _secondary],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Icon(Icons.event_note_rounded,
-                                    color: Colors.white, size: 32),
-                              ),
-                              const SizedBox(height: 16),
-                              const Text('No events yet',
-                                  style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF0F0D2E))),
-                              const SizedBox(height: 6),
-                              const Text(
-                                  'Events from your organizations\nwill appear here.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 13.5,
-                                      color: Color(0xFF6B6B8E),
-                                      height: 1.55)),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                        child: Column(
-                          children: events
-                              .map((event) => _EventFeedCard(event: event))
-                              .toList(),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// =============================================================================
-// _NavItem — a single bottom nav tab button
-// =============================================================================
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final int index;
-  final int selectedIndex;
-  final double iconSize;
-  final double fontSize;
-  final Color primaryColor;
-  final VoidCallback onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.index,
-    required this.selectedIndex,
-    required this.iconSize,
-    required this.fontSize,
-    required this.primaryColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isSelected = index == selectedIndex;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? primaryColor.withValues(alpha: 0.10)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  icon,
-                  size: iconSize,
-                  color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: fontSize,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? primaryColor : const Color(0xFFCBD5E1),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// _EventFeedCard — rich card shown in the student home feed
-// =============================================================================
-// =============================================================================
-// _EventFeedCard — rich card with multi-image carousel
-// =============================================================================
-class _EventFeedCard extends StatefulWidget {
-  final Event event;
-  const _EventFeedCard({required this.event});
-
-  @override
-  State<_EventFeedCard> createState() => _EventFeedCardState();
-}
-
-class _EventFeedCardState extends State<_EventFeedCard> {
-  int _currentImageIndex = 0;
-
-  // Build the final list of image URLs to show
-  List<String> get _imageUrls {
-    if (widget.event.imageUrls.isNotEmpty) return widget.event.imageUrls;
-    if (widget.event.imageUrl != null && widget.event.imageUrl!.isNotEmpty) {
-      return [widget.event.imageUrl!];
-    }
-    return [];
-  }
-
-  ImageProvider _eventImageProvider(String url) {
-    if (url.startsWith('data:')) {
-      try {
-        final comma = url.indexOf(',');
-        if (comma >= 0) {
-          return MemoryImage(base64Decode(url.substring(comma + 1)));
-        }
-      } catch (_) {}
-    }
-    return NetworkImage(url);
-  }
-
-  Widget _buildImage(String url, double height) {
-    if (url.startsWith('data:')) {
-      try {
-        final comma = url.indexOf(',');
-        if (comma >= 0) {
-          return Image.memory(
-            base64Decode(url.substring(comma + 1)),
-            width: double.infinity,
-            height: height,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _imageFallback(height),
-          );
-        }
-      } catch (_) {}
-      return _imageFallback(height);
-    }
-
-    return Image.network(
-      url,
-      width: double.infinity,
-      height: height,
-      fit: BoxFit.cover,
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          height: height,
-          color: const Color(0xFFDCFCE7),
-          child: const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF16A34A),
-              strokeWidth: 2,
-            ),
-          ),
-        );
-      },
-      errorBuilder: (_, __, ___) => _imageFallback(height),
-    );
-  }
-
-  Widget _imageFallback(double height) => Container(
-        width: double.infinity,
-        height: height,
-        color: const Color(0xFFDCFCE7),
-        alignment: Alignment.center,
-        child: const Icon(
-          Icons.broken_image_rounded,
-          color: Color(0xFF16A34A),
-          size: 36,
-        ),
-      );
-
-  void _openZoom(BuildContext context, String url) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-            elevation: 0,
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.8,
-              maxScale: 4.0,
-              child:
-                  Image(image: _eventImageProvider(url), fit: BoxFit.contain),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final isUpcoming = !DateTime(widget.event.date.year,
-            widget.event.date.month, widget.event.date.day)
-        .isBefore(today);
-    final urls = _imageUrls;
-    final hasImages = urls.isNotEmpty;
-    final hasMultiple = urls.length > 1;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isUpcoming
-              ? const Color(0xFF16A34A).withValues(alpha: 0.18)
-              : const Color(0xFFE8E9F3),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF16A34A).withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Image / Carousel ─────────────────────────────────────
-          if (hasImages)
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-              child: Stack(
-                children: [
-                  // ── Carousel or single image ──────────────────────
-                  if (hasMultiple)
-                    SizedBox(
-                      height: 200,
-                      child: PageView.builder(
-                        itemCount: urls.length,
-                        onPageChanged: (index) =>
-                            setState(() => _currentImageIndex = index),
-                        itemBuilder: (_, index) => GestureDetector(
-                          onTap: () => _openZoom(context, urls[index]),
-                          child: _buildImage(urls[index], 200),
-                        ),
-                      ),
-                    )
-                  else
-                    // Single image — no carousel needed
-                    GestureDetector(
-                      onTap: () => _openZoom(context, urls.first),
-                      child: Image.network(
-                        urls.first,
-                        width: double.infinity,
-                        height: 200,
-                        fit: BoxFit.cover,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return Container(
-                            height: 200,
-                            color: const Color(0xFFDCFCE7),
-                            child: const Center(
-                              child: CircularProgressIndicator(
-                                color: Color(0xFF16A34A),
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          );
-                        },
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 200,
-                          color: const Color(0xFFDCFCE7),
-                          child: const Icon(Icons.broken_image_rounded,
-                              color: Color(0xFF16A34A), size: 36),
-                        ),
-                      ),
-                    ),
-
-                  // ── Dot indicators (only for multiple images) ─────
-                  if (hasMultiple)
-                    Positioned(
-                      bottom: 10,
-                      left: 0,
-                      right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: urls.asMap().entries.map((entry) {
-                          final isActive = entry.key == _currentImageIndex;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: isActive ? 18 : 6,
-                            height: 6,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.45),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-
-                  // ── Image counter badge (top-right) ───────────────
-                  if (hasMultiple)
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${_currentImageIndex + 1} / ${urls.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-          // ── Content ──────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Org name + status pill
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        widget.event.orgName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF0F766E),
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isUpcoming
-                            ? const Color(0xFFDCFCE7)
-                            : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        isUpcoming ? 'Upcoming' : 'Past',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: isUpcoming
-                              ? const Color(0xFF16A34A)
-                              : const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 8),
-
-                // Title
-                Text(
-                  widget.event.title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F0D2E),
-                    letterSpacing: -0.3,
-                    height: 1.2,
-                  ),
-                ),
-
-                // Description
-                if (widget.event.description.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.event.description,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF6B6B8E),
-                      height: 1.55,
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 12),
-
-                // Date row
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: isUpcoming
-                            ? const Color(0xFFDCFCE7)
-                            : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.calendar_today_rounded,
-                            size: 11,
-                            color: isUpcoming
-                                ? const Color(0xFF16A34A)
-                                : const Color(0xFF94A3B8),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _formatDate(widget.event.date),
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: isUpcoming
-                                  ? const Color(0xFF16A34A)
-                                  : const Color(0xFF94A3B8),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => showEventComments(context,
-                        eventId: widget.event.id,
-                        eventTitle: widget.event.title),
-                    icon: const Icon(Icons.forum_outlined, size: 17),
-                    label: EventCommentCountLabel(
-                        eventId: widget.event.id,
-                        style: const TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF15803D)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(DateTime dt) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 }

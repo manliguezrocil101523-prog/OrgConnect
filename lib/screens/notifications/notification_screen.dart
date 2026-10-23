@@ -7,495 +7,393 @@ class NotificationScreen extends StatefulWidget {
   final bool showBackButton;
 
   const NotificationScreen({super.key, this.showBackButton = true});
+
   @override
   State<NotificationScreen> createState() => _NotificationScreenState();
 }
 
-class _NotificationScreenState extends State<NotificationScreen>
-    with SingleTickerProviderStateMixin {
-  static const Color _primary = Color(0xFF16A34A);
-  static const Color _background = Color(0xFFF1F5F9);
+class _NotificationScreenState extends State<NotificationScreen> {
+  static const _primary = Color(0xFF16A34A);
+  static const _amber = Color(0xFFF59E0B);
+  static const _teal = Color(0xFF0F766E);
 
-  late final AnimationController _fadeCtrl;
-  late final Animation<double> _fadeAnim;
+  final _app = AppState.instance;
 
   @override
   void initState() {
     super.initState();
-    _fadeCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    )..forward();
-    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
-
-    AppState.instance.addListener(_onAppStateChanged);
-
-    // Force fresh fetch every time this screen opens
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await AppState.instance.loadStudentProfile();
-      await AppState.instance.fetchApplications();
-      await AppState.instance.fetchNotifications();
-    });
+    _app.addListener(_onAppStateChanged);
+    // Force a fresh fetch every time this screen opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
   }
 
   @override
   void dispose() {
-    _fadeCtrl.dispose();
-    AppState.instance.removeListener(_onAppStateChanged);
+    _app.removeListener(_onAppStateChanged);
     super.dispose();
   }
 
-  void _onAppStateChanged() => setState(() {});
+  // Guard: the listener can fire after the screen is gone.
+  void _onAppStateChanged() {
+    if (mounted) setState(() {});
+  }
 
-  void _markAsRead(String id) => AppState.instance.markNotificationRead(id);
+  Future<void> _loadAll() async {
+    try {
+      await _app.loadStudentProfile();
+      await _app.fetchApplications();
+      await _app.fetchNotifications();
+    } catch (e) {
+      debugPrint('NotificationScreen load failed: $e');
+    }
+  }
 
-  Future<void> _handleRefresh() async {
-    await AppState.instance.fetchNotifications();
+  Future<void> _refresh() async {
+    try {
+      await _app.fetchNotifications();
+    } catch (e) {
+      debugPrint('NotificationScreen refresh failed: $e');
+    }
+  }
+
+  void _open(Notification n) {
+    if (!n.read) _app.markNotificationRead(n.id);
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentStudent = AppState.instance.currentStudent;
-    final allNotifications = AppState.instance.notifications;
+    final student = _app.currentStudent;
+    final interviews = <Notification>[];
+    final members = <Notification>[];
 
-    final notifications = currentStudent == null
-        ? []
-        : allNotifications.where((n) {
-            final title = n.title.toLowerCase();
-            final message = n.message.toLowerCase();
-            final isInterview = title.contains('interview') ||
-                message.contains('scheduled interview');
-            final isMember = title.contains('congratulations') ||
-                message.contains('officially a member');
-            return (n.studentId == currentStudent.id ||
-                    n.studentId == currentStudent.studentId) &&
-                (isInterview || isMember);
-          }).toList();
+    if (student != null) {
+      // One student-facing card per organization and category
+      // (guards against duplicates from cached or realtime state).
+      final seen = <String>{};
+      for (final n in _app.notifications) {
+        if (n.studentId != student.id && n.studentId != student.studentId) {
+          continue;
+        }
+        final title = n.title.toLowerCase();
+        final isInterview = title.contains('interview');
+        final isMember = title.contains('congratulations') ||
+            n.message.toLowerCase().contains('officially a member');
+        if (!isInterview && !isMember) continue;
+        if (!seen.add('$isInterview${n.orgId ?? title}')) continue;
+        (isInterview ? interviews : members).add(n);
+      }
+    }
 
-    // Keep one student-facing workflow card per organization and category.
-    // fetchNotifications() already performs this normalization, but this
-    // second guard prevents duplicates from cached state or a realtime update
-    // from rendering more than one card.
-    final interviewSeen = <String>{};
-    final interviewNotifications = notifications.where((n) {
-      if (!n.title.toLowerCase().contains('interview')) return false;
-      final key = n.orgId ?? n.title.toLowerCase();
-      return interviewSeen.add(key);
-    }).toList();
-    final membershipSeen = <String>{};
-    final otherNotifications = notifications.where((n) {
-      final title = n.title.toLowerCase();
-      final message = n.message.toLowerCase();
-      final membership = title.contains('congratulations') ||
-          message.contains('officially a member');
-      if (!membership) return false;
-      final key = n.orgId ?? n.title.toLowerCase();
-      return membershipSeen.add(key);
-    }).toList();
+    Widget card(Notification n, int i, Color color, IconData icon) =>
+        _NotificationCard(
+          key: ValueKey(n.id),
+          notification: n,
+          index: i,
+          color: color,
+          icon: icon,
+          onTap: () => _open(n),
+        );
 
-    final unreadCount = notifications.where((n) => !n.read).length;
+    final isEmpty = interviews.isEmpty && members.isEmpty;
 
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: const Color(0xFFF1F5F9),
       body: Column(
         children: [
-          AppHeader(
-            title: 'Notifications',
-            subtitle: 'Interview and membership updates',
-            status: unreadCount > 0 ? '$unreadCount UNREAD' : 'ALL CAUGHT UP',
-            icon: Icons.notifications_rounded,
+          _Header(
             onBack: widget.showBackButton
                 ? () => Navigator.of(context).maybePop()
                 : null,
           ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _handleRefresh,
-              color: _primary,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  notifications.isEmpty
-                      ? SliverFillRemaining(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: RefreshIndicator(
+                  onRefresh: _refresh,
+                  color: _primary,
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      if (isEmpty)
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
                           child: _EmptyState(),
                         )
-                      : SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-                          sliver: SliverList(
-                            delegate: SliverChildListDelegate([
-                              Center(
-                                child: ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 540),
-                                  child: FadeTransition(
-                                    opacity: _fadeAnim,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        if (interviewNotifications
-                                            .isNotEmpty) ...[
-                                          const _SectionLabel(
-                                              text: 'Interview Notifications'),
-                                          const SizedBox(height: 12),
-                                          ...interviewNotifications
-                                              .asMap()
-                                              .entries
-                                              .map((e) => _InterviewCard(
-                                                    notification: e.value,
-                                                    index: e.key,
-                                                    onTap: () =>
-                                                        _markAsRead(e.value.id),
-                                                  )),
-                                          const SizedBox(height: 24),
-                                        ],
-                                        if (otherNotifications.isNotEmpty) ...[
-                                          const _SectionLabel(
-                                              text: 'Other Notifications'),
-                                          const SizedBox(height: 12),
-                                          ...otherNotifications
-                                              .asMap()
-                                              .entries
-                                              .map((e) => _GeneralCard(
-                                                    notification: e.value,
-                                                    index: e.key,
-                                                    onTap: () =>
-                                                        _markAsRead(e.value.id),
-                                                  )),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ]),
+                      else
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            20,
+                            16,
+                            32 + MediaQuery.paddingOf(context).bottom,
+                          ),
+                          sliver: SliverList.list(
+                            children: [
+                              if (interviews.isNotEmpty) ...[
+                                const _SectionLabel('Interview Notifications'),
+                                for (var i = 0; i < interviews.length; i++)
+                                  card(interviews[i], i, _amber,
+                                      Icons.schedule_rounded),
+                              ],
+                              if (members.isNotEmpty) ...[
+                                if (interviews.isNotEmpty)
+                                  const SizedBox(height: 12),
+                                const _SectionLabel('Other Notifications'),
+                                for (var i = 0; i < members.length; i++)
+                                  card(members[i], i, _teal,
+                                      Icons.celebration_rounded),
+                              ],
+                            ],
                           ),
                         ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  final VoidCallback? onBack;
+  const _Header({this.onBack});
+
+  static const double contentHeight = 72; // 👈 base height
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+
+    return Container(
+      width: double.infinity,
+      height: contentHeight + topInset, // 👈 CHANGE 1: 72 + topInset
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        gradient: AppHeader.brandGradient,
+      ),
+      child: Stack(
+        children: [
+          Positioned(right: -45, top: -70, child: _orb(170)),
+          Positioned(right: 45, bottom: -70, child: _orb(125)),
+
+          // 👈 CHANGE 2: Positioned.fill + topInset-only padding,
+          // so the Row is centered inside the 72px content area
+          Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                onBack == null ? 20 : 8,
+                topInset,
+                20,
+                0,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (onBack != null)
+                    IconButton(
+                      onPressed: onBack,
+                      tooltip: 'Back',
+                      icon: const Icon(Icons.chevron_left_rounded,
+                          color: Colors.white, size: 32),
+                    ),
+                  const Expanded(
+                    child: Text(
+                      'Notifications',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
         ],
       ),
-    ); // closes Scaffold
-  }
-}
-
-// =============================================================================
-// _NotificationHeroHeader
-// =============================================================================
-// =============================================================================
-// _InterviewCard
-// =============================================================================
-class _InterviewCard extends StatelessWidget {
-  final Notification notification;
-  final int index;
-  final VoidCallback onTap;
-
-  static const Color _amber = Color(0xFFF59E0B);
-
-  const _InterviewCard({
-    required this.notification,
-    required this.index,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isUnread = !notification.read;
-
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300 + index * 60),
-      curve: Curves.easeOut,
-      builder: (context, value, child) => Opacity(
-        opacity: value,
-        child: Transform.translate(
-          offset: Offset(0, 16 * (1 - value)),
-          child: child,
-        ),
-      ),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: isUnread
-                ? Border.all(color: _amber.withValues(alpha: 0.40), width: 1.5)
-                : Border.all(color: const Color(0xFFE2E8F0), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: isUnread
-                    ? _amber.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.04),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: _amber.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.schedule_rounded,
-                    color: _amber,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              notification.title,
-                              style: TextStyle(
-                                fontWeight: isUnread
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                fontSize: 14,
-                                color: const Color(0xFF0F172A),
-                              ),
-                            ),
-                          ),
-                          if (isUnread)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: _amber,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        notification.message,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF64748B),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.access_time_rounded,
-                            size: 12,
-                            color: Color(0xFF94A3B8),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatTimestamp(notification.date),
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: Color(0xFF94A3B8),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (isUnread) ...[
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: _amber.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text(
-                                'New',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: _amber,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
+
+  Widget _orb(double size) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: .07),
+        ),
+      );
 }
 
 // =============================================================================
-// _GeneralCard
+// _NotificationCard — shared by interview and membership notifications
 // =============================================================================
-class _GeneralCard extends StatelessWidget {
+class _NotificationCard extends StatelessWidget {
   final Notification notification;
   final int index;
+  final Color color;
+  final IconData icon;
   final VoidCallback onTap;
 
-  static const Color _teal = Color(0xFF0F766E);
-
-  const _GeneralCard({
+  const _NotificationCard({
+    super.key,
     required this.notification,
     required this.index,
+    required this.color,
+    required this.icon,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isUnread = !notification.read;
+    final unread = !notification.read;
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300 + index * 60),
+      duration: Duration(milliseconds: 300 + index.clamp(0, 8) * 60),
       curve: Curves.easeOut,
-      builder: (context, value, child) => Opacity(
-        opacity: value,
-        child: Transform.translate(
-          offset: Offset(0, 16 * (1 - value)),
-          child: child,
-        ),
+      builder: (_, v, child) => Opacity(
+        opacity: v,
+        child:
+            Transform.translate(offset: Offset(0, 16 * (1 - v)), child: child),
       ),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: isUnread
-                ? Border.all(color: _teal.withValues(alpha: 0.35), width: 1.5)
-                : Border.all(color: const Color(0xFFE2E8F0), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: isUnread
-                    ? _teal.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.04),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: unread
+                ? color.withValues(alpha: 0.40)
+                : const Color(0xFFE2E8F0),
+            width: unread ? 1.5 : 1,
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isUnread
-                        ? _teal.withValues(alpha: 0.12)
-                        : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: unread
+                  ? color.withValues(alpha: 0.10)
+                  : Colors.black.withValues(alpha: 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: unread
+                          ? color.withValues(alpha: 0.12)
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon,
+                        size: 22,
+                        color: unread ? color : const Color(0xFF94A3B8)),
                   ),
-                  child: Icon(
-                    Icons.calendar_today_rounded,
-                    color: isUnread ? _teal : const Color(0xFF94A3B8),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              notification.title,
-                              style: TextStyle(
-                                fontWeight: isUnread
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                fontSize: 14,
-                                color: isUnread
-                                    ? const Color(0xFF0F172A)
-                                    : const Color(0xFF64748B),
-                              ),
-                            ),
-                          ),
-                          if (isUnread)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: _teal,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        notification.message,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF64748B),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.access_time_rounded,
-                            size: 12,
-                            color: Color(0xFF94A3B8),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatTimestamp(notification.date),
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: Color(0xFF94A3B8),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (isUnread) ...[
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: _teal.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text(
-                                'New',
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                notification.title,
                                 style: TextStyle(
-                                  fontSize: 10,
-                                  color: _teal,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  fontWeight: unread
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: unread
+                                      ? const Color(0xFF0F172A)
+                                      : const Color(0xFF64748B),
                                 ),
                               ),
                             ),
+                            if (unread)
+                              Container(
+                                width: 8,
+                                height: 8,
+                                margin: const EdgeInsets.only(left: 8),
+                                decoration: BoxDecoration(
+                                    color: color, shape: BoxShape.circle),
+                              ),
                           ],
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          _prettyMessage(notification.message),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.access_time_rounded,
+                                    size: 12, color: Color(0xFF94A3B8)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _timeAgo(notification.date),
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (unread)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  'New',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: color,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -508,45 +406,47 @@ class _GeneralCard extends StatelessWidget {
 // _EmptyState
 // =============================================================================
 class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: const Color(0xFF16A34A).withValues(alpha: 0.08),
-              shape: BoxShape.circle,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFF16A34A).withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.notifications_off_rounded,
+                  size: 36, color: Color(0xFF16A34A)),
             ),
-            child: const Icon(
-              Icons.notifications_off_rounded,
-              size: 36,
-              color: Color(0xFF16A34A),
+            const SizedBox(height: 20),
+            const Text(
+              'No notifications yet',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'No notifications yet',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
+            const SizedBox(height: 6),
+            const Text(
+              "You're all caught up!\nCheck back later for updates.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.5,
+                color: Color(0xFF64748B),
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "You're all caught up!\nCheck back later for updates.",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.5,
-              color: const Color(0xFF64748B),
-              height: 1.5,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -557,50 +457,81 @@ class _EmptyState extends StatelessWidget {
 // =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;
-  const _SectionLabel({required this.text});
+  const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 3,
-          height: 14,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF16A34A), Color(0xFF0F766E)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF16A34A), Color(0xFF0F766E)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.circular(2),
             ),
-            borderRadius: BorderRadius.circular(2),
           ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          text.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.6,
-            color: Color(0xFF94A3B8),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text.toUpperCase(),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.6,
+                color: Color(0xFF94A3B8),
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-// ─── Shared timestamp helper ───────────────────────────────────────────────
-String _formatTimestamp(DateTime timestamp) {
-  final diff = DateTime.now().difference(timestamp);
-  if (diff.inDays > 0) {
-    return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
-  }
-  if (diff.inHours > 0) {
-    return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
-  }
-  if (diff.inMinutes > 0) {
-    return '${diff.inMinutes} minute${diff.inMinutes > 1 ? 's' : ''} ago';
-  }
+// ─── Helpers ────────────────────────────────────────────────────────────────
+String _timeAgo(DateTime t) {
+  final d = DateTime.now().difference(t);
+  String unit(int n, String s) => '$n $s${n > 1 ? 's' : ''} ago';
+  if (d.inDays > 0) return unit(d.inDays, 'day');
+  if (d.inHours > 0) return unit(d.inHours, 'hour');
+  if (d.inMinutes > 0) return unit(d.inMinutes, 'minute');
   return 'Just now';
+}
+
+/// Display-only: turns "2026-10-24 22:13:00.000" inside a message into
+/// "Oct 24, 2026 at 10:13 PM". The stored message is never modified.
+String _prettyMessage(String message) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  return message.replaceAllMapped(
+    RegExp(r'\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?'),
+    (m) {
+      final d = DateTime.tryParse(m[0]!);
+      if (d == null) return m[0]!;
+      final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+      final min = d.minute.toString().padLeft(2, '0');
+      return '${months[d.month - 1]} ${d.day}, ${d.year} at $h:$min '
+          '${d.hour < 12 ? 'AM' : 'PM'}';
+    },
+  );
 }

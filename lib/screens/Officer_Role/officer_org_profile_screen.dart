@@ -46,6 +46,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
 
   bool _isSaving = false;
   late Organization _org;
+  bool _orgLoaded = true;
   List<Map<String, dynamic>> _orgPeople = <Map<String, dynamic>>[];
 
   @override
@@ -53,9 +54,17 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     super.initState();
 
     // Find org from AppState
-    _org = AppState.instance.organizations.firstWhere(
-      (o) => o.id == widget.orgId,
-    );
+    final foundOrgs =
+        AppState.instance.organizations.where((o) => o.id == widget.orgId);
+    _orgLoaded = foundOrgs.isNotEmpty;
+    _org = _orgLoaded
+        ? foundOrgs.first
+        : Organization(
+            id: widget.orgId,
+            name: '',
+            logoAsset: '',
+            shortDesc: '',
+          );
 
     // Pre-fill all controllers
     _nameCtrl = TextEditingController(text: _org.name);
@@ -65,7 +74,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     _visionCtrl = TextEditingController(text: _org.vision);
     _goalsCtrl = TextEditingController(text: _org.goals);
     _adviserCtrl = TextEditingController(text: _org.adviser);
-    _socialLinkCtrl = TextEditingController(text: _facebookNameFromStoredValue(_org.socialLink));
+    _socialLinkCtrl = TextEditingController(
+        text: _facebookNameFromStoredValue(_org.socialLink));
 
     _officers = List<String>.from(_org.officers);
     _officerProfiles = List<OrgOfficerProfile>.from(_org.officerProfiles);
@@ -203,10 +213,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   Future<void> _editAdviserProfile() async {
     final adviser = _personByRole('adviser');
     if (adviser == null || adviser['id'] == null) {
-      _snack('The adviser account could not be found for this organization.', isError: true);
+      _snack('The adviser account could not be found for this organization.',
+          isError: true);
       return;
     }
-    final nameCtrl = TextEditingController(text: adviser['name']?.toString() ?? _adviserCtrl.text);
+    final nameCtrl = TextEditingController(
+        text: adviser['name']?.toString() ?? _adviserCtrl.text);
     Uint8List? pickedBytes;
     String? pickedExt;
     final currentAvatar = adviser['avatar_url']?.toString() ?? '';
@@ -214,7 +226,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Edit Adviser'),
           content: SingleChildScrollView(
             child: SizedBox(
@@ -222,7 +235,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 GestureDetector(
                   onTap: () async {
-                    final pick = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+                    final pick = await FilePicker.platform
+                        .pickFiles(type: FileType.image, withData: true);
                     if (pick?.files.single.bytes == null) return;
                     setDialogState(() {
                       pickedBytes = pick!.files.single.bytes;
@@ -236,36 +250,56 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFE7F7EF),
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: _primary.withValues(alpha: .35), width: 2),
+                      border: Border.all(
+                          color: _primary.withValues(alpha: .35), width: 2),
                     ),
                     child: pickedBytes != null
                         ? Image.memory(pickedBytes!, fit: BoxFit.cover)
                         : currentAvatar.trim().isNotEmpty
-                            ? CachedNetworkImage(imageUrl: currentAvatar, fit: BoxFit.cover, alignment: Alignment.center,
-                                errorWidget: (_, __, ___) => const Icon(Icons.person_rounded, size: 42, color: _primary))
-                            : const Icon(Icons.add_a_photo_rounded, size: 38, color: _primary),
+                            ? CachedNetworkImage(
+                                imageUrl: currentAvatar,
+                                fit: BoxFit.cover,
+                                alignment: Alignment.center,
+                                errorWidget: (_, __, ___) => const Icon(
+                                    Icons.person_rounded,
+                                    size: 42,
+                                    color: _primary))
+                            : const Icon(Icons.add_a_photo_rounded,
+                                size: 38, color: _primary),
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text('Tap the picture to choose a new adviser photo.', textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                Text('Tap the picture to choose a new adviser photo.',
+                    textAlign: TextAlign.center,
+                    style:
+                        TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                 const SizedBox(height: 16),
                 TextField(
                   controller: nameCtrl,
                   textCapitalization: TextCapitalization.words,
                   maxLines: 2,
-                  decoration: InputDecoration(labelText: 'Adviser full name', prefixIcon: const Icon(Icons.person_rounded),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                  decoration: InputDecoration(
+                      labelText: 'Adviser full name',
+                      prefixIcon: const Icon(Icons.person_rounded),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12))),
                 ),
               ]),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-            FilledButton(onPressed: () {
-              final name = nameCtrl.text.trim();
-              if (name.isNotEmpty) Navigator.pop(dialogContext, {'name': name, 'bytes': pickedBytes, 'ext': pickedExt});
-            }, child: const Text('Save Adviser')),
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () {
+                  final name = nameCtrl.text.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.pop(dialogContext,
+                        {'name': name, 'bytes': pickedBytes, 'ext': pickedExt});
+                  }
+                },
+                child: const Text('Save Adviser')),
           ],
         ),
       ),
@@ -276,11 +310,20 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       var avatarUrl = currentAvatar;
       final bytes = save['bytes'] as Uint8List?;
       if (bytes != null) {
-        avatarUrl = await _uploadOfficerPhoto(bytes, save['ext']?.toString() ?? 'jpg') ?? avatarUrl;
+        avatarUrl = await _uploadOfficerPhoto(
+                bytes, save['ext']?.toString() ?? 'jpg') ??
+            avatarUrl;
       }
-      final changes = <String, dynamic>{'name': save['name'], 'avatar_url': avatarUrl};
-      await Supabase.instance.client.from('profiles').update(changes).eq('id', adviser['id'].toString());
-      await Supabase.instance.client.from('organizations')
+      final changes = <String, dynamic>{
+        'name': save['name'],
+        'avatar_url': avatarUrl
+      };
+      await Supabase.instance.client
+          .from('profiles')
+          .update(changes)
+          .eq('id', adviser['id'].toString());
+      await Supabase.instance.client
+          .from('organizations')
           .update({'adviser': save['name'].toString()}).eq('id', widget.orgId);
       if (!mounted) return;
       setState(() {
@@ -309,7 +352,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(existing == null ? 'Add Officer' : 'Edit Officer'),
           content: SingleChildScrollView(
             child: SizedBox(
@@ -334,7 +378,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFE7F7EF),
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: _primary.withValues(alpha: .35), width: 2),
+                        border: Border.all(
+                            color: _primary.withValues(alpha: .35), width: 2),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: pickedBytes != null
@@ -344,7 +389,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                                   imageUrl: currentAvatar,
                                   fit: BoxFit.cover,
                                   placeholder: (_, __) => const Center(
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   ),
                                   errorWidget: (_, __, ___) => const Icon(
                                     Icons.person_rounded,
@@ -373,7 +419,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                     decoration: InputDecoration(
                       labelText: 'Officer name',
                       prefixIcon: const Icon(Icons.person_rounded),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -383,7 +430,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                       labelText: 'Designation',
                       hintText: 'e.g. President',
                       prefixIcon: const Icon(Icons.badge_rounded),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ],
@@ -440,7 +488,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     setState(() {
       _officers.add('${profile.role}: ${profile.name}');
       _officerProfiles.removeWhere(
-        (item) => item.name.trim().toLowerCase() == profile.name.trim().toLowerCase(),
+        (item) =>
+            item.name.trim().toLowerCase() == profile.name.trim().toLowerCase(),
       );
       _officerProfiles.add(profile);
     });
@@ -449,16 +498,18 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   Future<void> _editOfficer(int index) async {
     final raw = _officers[index];
     final split = raw.indexOf(':');
-    final currentName = split == -1 ? raw.trim() : raw.substring(split + 1).trim();
-    final currentRole = split == -1 ? 'Officer' : raw.substring(0, split).trim();
+    final currentName =
+        split == -1 ? raw.trim() : raw.substring(split + 1).trim();
+    final currentRole =
+        split == -1 ? 'Officer' : raw.substring(0, split).trim();
     final existing = _officerProfiles.cast<OrgOfficerProfile?>().firstWhere(
-      (p) => p?.name.trim().toLowerCase() == currentName.toLowerCase(),
-      orElse: () => OrgOfficerProfile(
-        name: currentName,
-        role: currentRole,
-        avatarUrl: _existingOfficerAvatar(currentName),
-      ),
-    );
+          (p) => p?.name.trim().toLowerCase() == currentName.toLowerCase(),
+          orElse: () => OrgOfficerProfile(
+            name: currentName,
+            role: currentRole,
+            avatarUrl: _existingOfficerAvatar(currentName),
+          ),
+        );
     final updated = await _showOfficerEditor(existing: existing);
     if (updated == null) return;
     setState(() {
@@ -467,7 +518,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         (item) => item.name.trim().toLowerCase() == currentName.toLowerCase(),
       );
       _officerProfiles.removeWhere(
-        (item) => item.name.trim().toLowerCase() == updated.name.trim().toLowerCase(),
+        (item) =>
+            item.name.trim().toLowerCase() == updated.name.trim().toLowerCase(),
       );
       _officerProfiles.add(updated);
     });
@@ -490,6 +542,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   // ── Save all changes ──────────────────────────────────────────────────────
   Future<void> _save() async {
     if (_isSaving) return;
+    if (!_orgLoaded) {
+      _snack(
+          'Organization data is still loading. Go back and reopen this page.',
+          isError: true);
+      return;
+    }
 
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
@@ -497,8 +555,11 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       return;
     }
     final facebookName = _socialLinkCtrl.text.trim();
-    if (facebookName.contains('://') && !facebookName.toLowerCase().contains('facebook.com')) {
-      _snack('Please enter the organization Facebook name or a Facebook page URL.', isError: true);
+    if (facebookName.contains('://') &&
+        !facebookName.toLowerCase().contains('facebook.com')) {
+      _snack(
+          'Please enter the organization Facebook name or a Facebook page URL.',
+          isError: true);
       return;
     }
 
@@ -523,7 +584,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       // Build updated org object
       final updated = _org.copyWith(
         name: name,
-        acronym: '',
+        acronym: _org.acronym,
         category: _categoryCtrl.text.trim(),
         about: _aboutCtrl.text.trim(),
         mission: _missionCtrl.text.trim(),
@@ -533,7 +594,11 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         socialLink: facebookName,
         officers: _officers,
         officerProfiles: _officerProfiles,
-        activitiesHighlights: _highlights,
+        activitiesHighlights: [
+          ..._highlights,
+          ..._org.activitiesHighlights
+              .where((i) => i.type != 'image' && i.type != 'video'),
+        ],
         logoAsset: finalLogoAsset,
       );
 
@@ -751,12 +816,20 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                               ),
                               const SizedBox(height: 12),
                               Center(
-                                child: _ProfilePersonEditorCard(
+                                  child: _ProfilePersonEditorCard(
                                 label: 'Adviser',
-                                name: _personByRole('adviser')?['name']?.toString().trim().isNotEmpty == true
-                                    ? _personByRole('adviser')!['name'].toString()
+                                name: _personByRole('adviser')?['name']
+                                            ?.toString()
+                                            .trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? _personByRole('adviser')!['name']
+                                        .toString()
                                     : _adviserCtrl.text.trim(),
-                                avatarUrl: _personByRole('adviser')?['avatar_url']?.toString() ?? '',
+                                avatarUrl:
+                                    _personByRole('adviser')?['avatar_url']
+                                            ?.toString() ??
+                                        '',
                                 width: 172,
                                 onEdit: _editAdviserProfile,
                               )),
@@ -770,8 +843,13 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                                 onRemove: (i) => setState(() {
                                   final raw = _officers.removeAt(i);
                                   final split = raw.indexOf(':');
-                                  final name = (split == -1 ? raw : raw.substring(split + 1)).trim();
-                                  _officerProfiles.removeWhere((p) => p.name.trim().toLowerCase() == name.toLowerCase());
+                                  final name = (split == -1
+                                          ? raw
+                                          : raw.substring(split + 1))
+                                      .trim();
+                                  _officerProfiles.removeWhere((p) =>
+                                      p.name.trim().toLowerCase() ==
+                                      name.toLowerCase());
                                 }),
                               ),
 
@@ -888,7 +966,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFB9E4CF)),
-        boxShadow: [BoxShadow(color: _primary.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [
+          BoxShadow(
+              color: _primary.withValues(alpha: 0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 6))
+        ],
       ),
       child: TextField(
         controller: controller,
@@ -966,7 +1049,8 @@ class _LogoPicker extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.transparent,
-              border: Border.all(color: primary.withValues(alpha: 0.28), width: 2),
+              border:
+                  Border.all(color: primary.withValues(alpha: 0.28), width: 2),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.12),
@@ -1079,48 +1163,89 @@ class _ProfilePersonEditorCard extends StatelessWidget {
             width: width,
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
-                colors: [Color(0xFFFFFFFF), Color(0xFFF3FCF6)]),
+              gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFFFFFF), Color(0xFFF3FCF6)]),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFB9E4CF), width: 1.2),
-              boxShadow: const [BoxShadow(color: Color(0x0D0F8A61), blurRadius: 14, offset: Offset(0, 6))],
+              boxShadow: const [
+                BoxShadow(
+                    color: Color(0x0D0F8A61),
+                    blurRadius: 14,
+                    offset: Offset(0, 6))
+              ],
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: SizedBox(
-                  height: 122,
-                  child: avatarUrl.trim().isNotEmpty
-                      ? CachedNetworkImage(imageUrl: avatarUrl.trim(), fit: BoxFit.cover, alignment: Alignment.center,
-                          placeholder: (_, __) => _personFallback(), errorWidget: (_, __, ___) => _personFallback())
-                      : _personFallback(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(color: const Color(0xFFE3F7EA), borderRadius: BorderRadius.circular(999)),
-                child: Text(displayRole, softWrap: true, textAlign: TextAlign.center,
-                  style: const TextStyle(color: Color(0xFF15803D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .5)),
-              ),
-              const SizedBox(height: 7),
-              Text(displayName, softWrap: true, textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14.5, height: 1.15, fontWeight: FontWeight.w900)),
-            ]),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: SizedBox(
+                      height: 122,
+                      child: avatarUrl.trim().isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: avatarUrl.trim(),
+                              fit: BoxFit.cover,
+                              alignment: Alignment.center,
+                              placeholder: (_, __) => _personFallback(),
+                              errorWidget: (_, __, ___) => _personFallback())
+                          : _personFallback(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFE3F7EA),
+                        borderRadius: BorderRadius.circular(999)),
+                    child: Text(displayRole,
+                        softWrap: true,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: Color(0xFF15803D),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .5)),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(displayName,
+                      softWrap: true,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontSize: 14.5,
+                          height: 1.15,
+                          fontWeight: FontWeight.w900)),
+                ]),
           ),
           if (onEdit != null)
-            Positioned(top: 6, right: 6, child: Material(
-              color: Colors.white, shape: const CircleBorder(), elevation: 2,
-              child: IconButton(tooltip: 'Edit adviser', onPressed: onEdit, padding: const EdgeInsets.all(7), constraints: const BoxConstraints(),
-                icon: const Icon(Icons.edit_rounded, size: 16, color: Color(0xFF16A34A))),
-            )),
+            Positioned(
+                top: 6,
+                right: 6,
+                child: Material(
+                  color: Colors.white,
+                  shape: const CircleBorder(),
+                  elevation: 2,
+                  child: IconButton(
+                      tooltip: 'Edit adviser',
+                      onPressed: onEdit,
+                      padding: const EdgeInsets.all(7),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.edit_rounded,
+                          size: 16, color: Color(0xFF16A34A))),
+                )),
         ],
       ),
     );
   }
 
-  Widget _personFallback() => Container(color: const Color(0xFFE7F7EF),
-    child: const Center(child: Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 42)));
+  Widget _personFallback() => Container(
+      color: const Color(0xFFE7F7EF),
+      child: const Center(
+          child:
+              Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 42)));
 }
 
 class _OfficerPeopleEditor extends StatelessWidget {
@@ -1165,7 +1290,8 @@ class _OfficerPeopleEditor extends StatelessWidget {
   String _profileAvatar(String name) {
     final target = name.trim().toLowerCase();
     for (final profile in profiles) {
-      if (profile.name.trim().toLowerCase() == target && profile.avatarUrl.trim().isNotEmpty) {
+      if (profile.name.trim().toLowerCase() == target &&
+          profile.avatarUrl.trim().isNotEmpty) {
         return profile.avatarUrl.trim();
       }
     }
@@ -1242,7 +1368,8 @@ class _OfficerPeopleEditor extends StatelessWidget {
                                         decoration: BoxDecoration(
                                           color: Colors.white,
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: const Color(0xFFB9E4CF)),
+                                          border: Border.all(
+                                              color: const Color(0xFFB9E4CF)),
                                           boxShadow: const [
                                             BoxShadow(
                                               color: Color(0x12000000),
@@ -1267,7 +1394,8 @@ class _OfficerPeopleEditor extends StatelessWidget {
                                         decoration: BoxDecoration(
                                           color: Colors.white,
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: Colors.red.shade100),
+                                          border: Border.all(
+                                              color: Colors.red.shade100),
                                           boxShadow: const [
                                             BoxShadow(
                                               color: Color(0x12000000),
@@ -1301,7 +1429,8 @@ class _OfficerPeopleEditor extends StatelessWidget {
               label: const Text('Add Officer'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF16A34A),
-                side: BorderSide(color: const Color(0xFF16A34A).withValues(alpha: .4)),
+                side: BorderSide(
+                    color: const Color(0xFF16A34A).withValues(alpha: .4)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(11),
                 ),
@@ -1375,7 +1504,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
           final details = await showDialog<Map<String, String>>(
             context: context,
             builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
               title: const Text('Add activity picture'),
               content: SingleChildScrollView(
                 child: Column(
@@ -1385,7 +1515,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                       f.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -1478,7 +1609,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                       f.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -1548,10 +1680,18 @@ class _MediaEditCardState extends State<_MediaEditCard> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
+        gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFB9E4CF)),
-        boxShadow: [BoxShadow(color: const Color(0xFF16A34A).withValues(alpha: 0.07), blurRadius: 14, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+              color: const Color(0xFF16A34A).withValues(alpha: 0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 5))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1564,7 +1704,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
           else if (visibleItems.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('No highlights yet. Add an activity picture or video.',
+              child: Text(
+                  'No highlights yet. Add an activity picture or video.',
                   style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
             )
           else
@@ -1613,7 +1754,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                               : Container(
                                   width: 56,
                                   height: 56,
-                                  color: widget.accentColor.withValues(alpha: 0.08),
+                                  color: widget.accentColor
+                                      .withValues(alpha: 0.08),
                                   child: Icon(Icons.text_snippet_rounded,
                                       color: widget.accentColor, size: 26),
                                 ),
@@ -1640,7 +1782,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                                   : Colors.grey.shade700,
                             ),
                           ),
-                          if (item.title.trim().isNotEmpty || item.caption.trim().isNotEmpty) ...[
+                          if (item.title.trim().isNotEmpty ||
+                              item.caption.trim().isNotEmpty) ...[
                             const SizedBox(height: 3),
                             Text(
                               item.title.trim().isNotEmpty
@@ -1673,7 +1816,8 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                     GestureDetector(
                       onTap: () {
                         final target = item;
-                        final updated = [...widget.items]..removeWhere((candidate) => identical(candidate, target));
+                        final updated = [...widget.items]..removeWhere(
+                            (candidate) => identical(candidate, target));
                         widget.onChanged(updated);
                       },
                       child: Icon(Icons.remove_circle_outline_rounded,
@@ -1732,4 +1876,3 @@ class _MediaEditCardState extends State<_MediaEditCard> {
     );
   }
 }
-

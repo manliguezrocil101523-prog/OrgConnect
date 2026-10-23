@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -231,7 +232,6 @@ class Member {
 }
 
 /// Organization event
-/// Organization event
 class Event {
   final String id;
   final String title;
@@ -242,9 +242,9 @@ class Event {
   final String? imageUrl;
   final List<String> imageUrls;
   final DateTime createdAt;
-  final String venue; // NEW (events.venue)
-  final String? startTime; // NEW (events.start_time, text)
-  final String? endTime; // NEW (events.end_time, text)
+  final String venue;
+  final String? startTime;
+  final String? endTime;
 
   Event({
     required this.id,
@@ -351,7 +351,6 @@ class OrgMediaItem {
   });
 
   factory OrgMediaItem.fromJson(dynamic raw) {
-    // Backward compat: old plain strings become text items
     if (raw is String) {
       return OrgMediaItem(type: 'text', content: raw);
     }
@@ -502,6 +501,15 @@ class Organization {
       );
 }
 
+/// Exception thrown when submitting an application fails.
+class ApplicationSubmitException implements Exception {
+  final String message;
+  ApplicationSubmitException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 /// Simple singleton app state using ChangeNotifier.
 class AppState extends ChangeNotifier {
   AppState._internal() {
@@ -519,10 +527,16 @@ class AppState extends ChangeNotifier {
   List<Organization> organizations = [];
   bool isLoadingOrganizations = false;
 
+  /// org id -> number of members (from the get_org_member_counts RPC)
+  Map<String, int> orgMemberCounts = {};
+  int memberCountFor(String orgId) => orgMemberCounts[orgId] ?? 0;
+
   UserRole? selectedRole;
   StudentProfile? currentStudent;
   SharedPreferences? _prefs;
   String? currentOfficerOrgId;
+  String? lastApplicationError;
+  String? lastMemberUpdateError;
 
   // ── Theme ────────────────────────────────────────────────────────────────
   bool isDark = false; // default = light mode
@@ -536,7 +550,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    isDark = prefs.getBool('admin_is_dark') ?? false; // false = light default
+    isDark = prefs.getBool('admin_is_dark') ?? false;
     notifyListeners();
   }
 
@@ -583,58 +597,66 @@ class AppState extends ChangeNotifier {
           .select('*')
           .order('created_at', ascending: true);
 
-      organizations.clear();
+      final loadedOrgs = <Organization>[];
       for (var item in response) {
-        List<String> officers = [];
-        List<OrgOfficerProfile> officerProfiles = [];
-        List<OrgMediaItem> activitiesHighlights = [];
         try {
-          final rawOfficers = item['officers'];
-          if (rawOfficers != null) {
-            if (rawOfficers is List) {
-              officers = List<String>.from(rawOfficers);
+          List<String> officers = [];
+          List<OrgOfficerProfile> officerProfiles = [];
+          List<OrgMediaItem> activitiesHighlights = [];
+          try {
+            final rawOfficers = item['officers'];
+            if (rawOfficers != null && rawOfficers is List) {
+              officers = rawOfficers.map((e) => e.toString()).toList();
             }
-          }
-        } catch (_) {}
-        try {
-          final rawOfficerProfiles = item['officer_profiles'];
-          if (rawOfficerProfiles is List) {
-            officerProfiles = rawOfficerProfiles
-                .map((e) => OrgOfficerProfile.fromJson(e))
-                .where((p) => p.name.trim().isNotEmpty)
-                .toList();
-          }
-        } catch (_) {}
-        try {
-          final rawActivities = item['activities_highlights'];
-          if (rawActivities != null && rawActivities is List) {
-            activitiesHighlights =
-                rawActivities.map((e) => OrgMediaItem.fromJson(e)).toList();
-          }
-        } catch (_) {}
+          } catch (_) {}
+          try {
+            final rawOfficerProfiles = item['officer_profiles'];
+            if (rawOfficerProfiles is List) {
+              officerProfiles = rawOfficerProfiles
+                  .map((e) => OrgOfficerProfile.fromJson(e))
+                  .where((p) => p.name.trim().isNotEmpty)
+                  .toList();
+            }
+          } catch (_) {}
+          try {
+            final rawActivities = item['activities_highlights'];
+            if (rawActivities != null && rawActivities is List) {
+              activitiesHighlights =
+                  rawActivities.map((e) => OrgMediaItem.fromJson(e)).toList();
+            }
+          } catch (_) {}
 
-        organizations.add(Organization(
-          id: item['id'],
-          name: item['name'] ?? '',
-          logoAsset: item['logo_asset'] ?? '',
-          shortDesc: item['short_desc'] ?? '',
-          acronym: item['acronym'] ?? '',
-          category: item['category'] ?? '',
-          about: item['about'] ?? '',
-          mission: item['mission'] ?? '',
-          vision: item['vision'] ?? '',
-          goals: item['goals'] ?? '',
-          missionVision: item['mission_vision'] ?? '',
-          adviser: item['adviser'] ?? '',
-          contactEmail: item['contact_email'] ?? '',
-          contactPhone: item['contact_phone'] ?? '',
-          socialLink: item['social_link'] ?? '',
-          officers: officers,
-          officerProfiles: officerProfiles,
-          activitiesHighlights: activitiesHighlights,
-          officerPassword: item['officer_password'] ?? 'officer123',
-        ));
+          loadedOrgs.add(Organization(
+            id: item['id']?.toString() ?? '',
+            name: item['name'] ?? '',
+            logoAsset: item['logo_asset'] ?? '',
+            shortDesc: item['short_desc'] ?? '',
+            acronym: item['acronym'] ?? '',
+            category: item['category'] ?? '',
+            about: item['about'] ?? '',
+            mission: item['mission'] ?? '',
+            vision: item['vision'] ?? '',
+            goals: item['goals'] ?? '',
+            missionVision: item['mission_vision'] ?? '',
+            adviser: item['adviser'] ?? '',
+            contactEmail: item['contact_email'] ?? '',
+            contactPhone: item['contact_phone'] ?? '',
+            socialLink: item['social_link'] ?? '',
+            officers: officers,
+            officerProfiles: officerProfiles,
+            activitiesHighlights: activitiesHighlights,
+            officerPassword: item['officer_password'] ?? 'officer123',
+          ));
+        } catch (rowErr) {
+          debugPrint('Error parsing organization row: $rowErr');
+        }
       }
+
+      organizations
+        ..clear()
+        ..addAll(loadedOrgs);
+
+      fetchOrgMemberCounts();
     } catch (e) {
       debugPrint('Error fetching organizations from Supabase: $e');
     } finally {
@@ -643,13 +665,37 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Loads member counts per organization through the SECURITY DEFINER RPC
+  Future<void> fetchOrgMemberCounts() async {
+    try {
+      final response =
+          await supabase.Supabase.instance.client.rpc('get_org_member_counts');
+      if (response is List) {
+        final counts = <String, int>{};
+        for (final row in response) {
+          final orgId = row['org_id']?.toString() ?? '';
+          if (orgId.isEmpty) continue;
+          counts[orgId] =
+              int.tryParse(row['member_count']?.toString() ?? '0') ?? 0;
+        }
+        orgMemberCounts = counts;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching org member counts: $e');
+    }
+  }
+
 // ── Real-time subscriptions ───────────────────────────────────────────────
+  bool _realtimeSubscribed = false;
+  final Map<String, Timer> _realtimeDebounceTimers = {};
+
   void _subscribeToRealtime() {
+    if (_realtimeSubscribed) return;
+    _realtimeSubscribed = true;
+
     final client = supabase.Supabase.instance.client;
 
-    // Central realtime fan-out. Screens that listen to AppState therefore
-    // update immediately when another user changes shared data. Individual
-    // chat screens still maintain their own message channel for low latency.
     void subscribe(String table, Future<void> Function() refresh) {
       client
           .channel('app-realtime-$table')
@@ -657,7 +703,17 @@ class AppState extends ChangeNotifier {
             event: supabase.PostgresChangeEvent.all,
             schema: 'public',
             table: table,
-            callback: (_) => refresh(),
+            callback: (_) {
+              _realtimeDebounceTimers[table]?.cancel();
+              _realtimeDebounceTimers[table] =
+                  Timer(const Duration(milliseconds: 350), () async {
+                try {
+                  await refresh();
+                } catch (e) {
+                  debugPrint('Realtime refresh error for $table: $e');
+                }
+              });
+            },
           )
           .subscribe();
     }
@@ -667,6 +723,7 @@ class AppState extends ChangeNotifier {
     subscribe('events', fetchEvents);
     subscribe('members', () async {
       await fetchMembers();
+      await fetchOrgMemberCounts();
       await _syncCurrentStudentMemberships();
       await fetchNotifications();
       notifyListeners();
@@ -693,11 +750,6 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     });
     subscribe('event_requests', () async {
-      // Event request screens query their own scoped rows; notify the shared
-      // state so open dashboards rebuild without a manual refresh.
-      notifyListeners();
-    });
-    subscribe('event_views', () async {
       notifyListeners();
     });
     subscribe('student_impact', () async {
@@ -706,15 +758,6 @@ class AppState extends ChangeNotifier {
     subscribe('org_financial_transactions', () async {
       notifyListeners();
     });
-    subscribe('usage_logs', () async {
-      notifyListeners();
-    });
-    subscribe('application_assets', () async {
-      notifyListeners();
-    });
-    // Tables used by screens that query Supabase directly. Notify all open
-    // AppState listeners on changes so shared widgets and dashboards rebuild;
-    // screens with private query state should also reload in their own channel.
     subscribe('org_chat_messages', () async {
       notifyListeners();
     });
@@ -722,10 +765,29 @@ class AppState extends ChangeNotifier {
 
   // ── Status helper ─────────────────────────────────────────────────────────
 
+  static String _statusToDb(ApplicationStatus status) {
+    switch (status) {
+      case ApplicationStatus.pending:
+        return 'pending';
+      case ApplicationStatus.interviewed:
+        return 'interviewed';
+      case ApplicationStatus.forApproval:
+        return 'for_approval';
+      case ApplicationStatus.approved:
+        return 'approved';
+      case ApplicationStatus.accepted:
+        return 'accepted';
+      case ApplicationStatus.interviewScheduled:
+        return 'interview_scheduled';
+      case ApplicationStatus.declined:
+        return 'declined';
+    }
+  }
+
   /// Converts a Supabase status string back to the [ApplicationStatus] enum.
-  /// Falls back to [ApplicationStatus.pending] for any unrecognised value.
   ApplicationStatus _parseStatus(String? status) {
-    final normalized = (status ?? '').trim().toLowerCase();
+    final normalized =
+        (status ?? '').trim().toLowerCase().replaceAll(RegExp(r'[_\s-]'), '');
     switch (normalized) {
       case 'interviewed':
         return ApplicationStatus.interviewed;
@@ -747,139 +809,43 @@ class AppState extends ChangeNotifier {
 
   // ── Applications ──────────────────────────────────────────────────────────
 
-  /// Fetches all rows from the Supabase `applications` table and populates
-  /// the local [applications] list. Called once on startup.
   Future<void> fetchApplications() async {
     try {
       final client = supabase.Supabase.instance.client;
-      final byId = <String, Map<String, dynamic>>{};
-
-      // Officers still need their organization's applicant queue, but an
-      // officer is also a member/student and must be able to see their own
-      // applications to other organizations. Fetch both scopes and merge by
-      // application id so one screen never hides a valid application.
-      if (currentOfficerOrgId != null &&
-          currentOfficerOrgId!.trim().isNotEmpty) {
-        final officerRows = await client
-            .from('applications')
-            .select('*')
-            .eq('org_id', currentOfficerOrgId!);
-        for (final row in (officerRows as List)) {
-          final map = Map<String, dynamic>.from(row);
-          final id = map['id']?.toString() ?? '';
-          if (id.isNotEmpty) byId[id] = map;
-        }
-      } else {
-        final rows = await client.from('applications').select('*');
-        for (final row in (rows as List)) {
-          final map = Map<String, dynamic>.from(row);
-          final id = map['id']?.toString() ?? '';
-          if (id.isNotEmpty) byId[id] = map;
-        }
-      }
+      final response = await client.from('applications').select('*');
 
       final authUserId = client.auth.currentUser?.id;
-      if (authUserId != null && authUserId.isNotEmpty) {
-        try {
-          final ownRows = await client
-              .from('applications')
-              .select('*')
-              .eq('user_id', authUserId);
-          for (final row in (ownRows as List)) {
-            final map = Map<String, dynamic>.from(row);
-            final id = map['id']?.toString() ?? '';
-            if (id.isNotEmpty) byId[id] = map;
-          }
-        } catch (e) {
-          debugPrint('Could not load applications by auth user: $e');
-        }
-      }
-
       final schoolStudentId = currentStudent?.studentId.trim() ?? '';
-      if (schoolStudentId.isNotEmpty) {
-        try {
-          final ownRows = await client
-              .from('applications')
-              .select('*')
-              .eq('student_id', schoolStudentId);
-          for (final row in (ownRows as List)) {
-            final map = Map<String, dynamic>.from(row);
-            final id = map['id']?.toString() ?? '';
-            if (id.isNotEmpty) byId[id] = map;
+      final officerOrgId = currentOfficerOrgId?.trim() ?? '';
+
+      final filteredRows = <Map<String, dynamic>>[];
+      for (final row in (response as List)) {
+        final map = Map<String, dynamic>.from(row);
+        final rowOrgId = map['org_id']?.toString() ?? '';
+        final rowUserId = map['user_id']?.toString() ?? '';
+        final rowStudentId = map['student_id']?.toString() ?? '';
+
+        if (officerOrgId.isNotEmpty) {
+          if (rowOrgId == officerOrgId ||
+              (authUserId != null &&
+                  authUserId.isNotEmpty &&
+                  rowUserId == authUserId) ||
+              (schoolStudentId.isNotEmpty && rowStudentId == schoolStudentId)) {
+            filteredRows.add(map);
           }
-        } catch (e) {
-          debugPrint('Could not load applications by student id: $e');
+        } else {
+          filteredRows.add(map);
         }
       }
 
-      // Some older application rows were created before user_id/student_id
-      // was consistently populated. The student's email is also stored on
-      // every application, so use it as a third ownership key. This makes
-      // older approved applications (for example El Teatro) appear together
-      // with newer applications (for example Student Catholic Action).
-      final studentEmail = currentStudent?.email.trim() ?? '';
-      if (studentEmail.isNotEmpty) {
-        try {
-          final ownRows = await client
-              .from('applications')
-              .select('*')
-              .ilike('email', studentEmail);
-          for (final row in (ownRows as List)) {
-            final map = Map<String, dynamic>.from(row);
-            final id = map['id']?.toString() ?? '';
-            if (id.isNotEmpty) byId[id] = map;
-          }
-        } catch (e) {
-          debugPrint('Could not load applications by email: $e');
-        }
-      }
-
-      // Final compatibility fallback: if the RLS policy allows the signed-in
-      // user to read the application table, inspect all visible rows and keep
-      // only rows that belong to this student. This recovers older El Teatro
-      // records whose ownership column was left blank during migration.
-      if (byId.isEmpty && currentStudent != null) {
-        try {
-          final visibleRows = await client.from('applications').select('*');
-          final normalizedName = currentStudent!.name.trim().toLowerCase();
-          final normalizedEmail = currentStudent!.email.trim().toLowerCase();
-          final normalizedStudentId =
-              currentStudent!.studentId.trim().toLowerCase();
-          for (final row in (visibleRows as List)) {
-            final map = Map<String, dynamic>.from(row);
-            final rowName = map['name']?.toString().trim().toLowerCase() ?? '';
-            final rowEmail =
-                map['email']?.toString().trim().toLowerCase() ?? '';
-            final rowStudentId =
-                map['student_id']?.toString().trim().toLowerCase() ?? '';
-            if ((normalizedEmail.isNotEmpty && rowEmail == normalizedEmail) ||
-                (normalizedStudentId.isNotEmpty &&
-                    rowStudentId == normalizedStudentId) ||
-                (normalizedName.isNotEmpty && rowName == normalizedName)) {
-              final id = map['id']?.toString() ?? '';
-              if (id.isNotEmpty) byId[id] = map;
-            }
-          }
-        } catch (e) {
-          debugPrint(
-              'Could not use visible application compatibility fallback: $e');
-        }
-      }
-
-      // My Applications must reflect real application records only.
-      // Do not reconstruct/synthesize applications from memberships. A member
-      // record is not an application record, and using it here can make a
-      // deleted/old application reappear after the user is preparing to apply
-      // again.
+      final parsedList = filteredRows.map(_applicationFromRow).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       applications
         ..clear()
-        ..addAll(byId.values.map(_applicationFromRow).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+        ..addAll(parsedList);
 
       await _syncCurrentStudentMemberships();
-      // Rebuild notifications after applications are available so older
-      // approval messages can be upgraded with the actual applicant name.
       await fetchNotifications();
       notifyListeners();
     } catch (e) {
@@ -891,33 +857,34 @@ class AppState extends ChangeNotifier {
     required String orgName,
     required String studentId,
     required String name,
-    required String course, // NEW
+    required String course,
     required String yearSection,
     required String contact,
     required String email,
     required String facebook,
     required String reason,
     required String skills,
-    required String experience, // NEW
-    required String emergencyContact, // NEW
+    required String experience,
+    required String emergencyContact,
     String? orgId,
     String profilePicUrl = '',
     List<String> attachments = const [],
   }) async {
     final currentUser = supabase.Supabase.instance.client.auth.currentUser;
 
-    // Guard: user must be logged in
     if (currentUser == null) {
       throw Exception('User not logged in');
     }
 
-    final found = orgId == null || orgId.isEmpty
-        ? _findOrgByName(orgName)
-        : _findOrgById(orgId);
+    final resolvedOrgId = (orgId != null && orgId.trim().isNotEmpty)
+        ? orgId.trim()
+        : _findOrgByName(orgName)?.id;
+
     final app = Application(
       id: _genId(),
+      userId: currentUser.id,
       orgName: orgName,
-      orgId: found?.id,
+      orgId: resolvedOrgId,
       studentId: studentId,
       name: name,
       contact: contact,
@@ -934,6 +901,7 @@ class AppState extends ChangeNotifier {
       profilePicUrl: profilePicUrl,
     );
     applications.add(app);
+    notifyListeners();
 
     try {
       await supabase.Supabase.instance.client.from('applications').insert({
@@ -941,18 +909,15 @@ class AppState extends ChangeNotifier {
         'org_name': app.orgName,
         'org_id': app.orgId,
         'student_id': app.studentId,
-        'user_id': currentUser.id, // ✅ auth UUID, satisfies RLS
+        'user_id': currentUser.id,
         'name': app.name,
         'contact': app.contact,
         'email': app.email,
         'reason': app.reason,
         'skills': app.skills,
-        // Store attachments as a real JSONB array. Passing jsonEncode(...) here
-        // stores the entire list as a JSON string, which made the Officer UI
-        // receive "[]" instead of an attachment array.
         'attachments': app.attachments,
         'created_at': app.createdAt.toIso8601String(),
-        'status': app.status.toString().split('.').last,
+        'status': _statusToDb(app.status),
         'course': app.course,
         'year_section': app.yearSection,
         'facebook': app.facebook,
@@ -965,9 +930,21 @@ class AppState extends ChangeNotifier {
           'SUCCESS: Application inserted with user_id: ${currentUser.id}');
     } catch (e) {
       debugPrint('Error persisting application to Supabase: $e');
-      // Do not report a successful submission when the database rejected it.
       applications.removeWhere((a) => a.id == app.id);
       notifyListeners();
+      if (e is supabase.PostgrestException) {
+        final code = e.code;
+        final msg = e.message.toLowerCase();
+        if (code == '23505' || msg.contains('already submitted')) {
+          throw ApplicationSubmitException(
+              'You have already applied to this organization.');
+        } else if (code == '42501') {
+          throw ApplicationSubmitException(
+              'You do not have permission to submit this application. Please log in again.');
+        } else if (e.message.trim().isNotEmpty) {
+          throw ApplicationSubmitException(e.message);
+        }
+      }
       rethrow;
     }
 
@@ -976,53 +953,96 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> declineApplication(String applicationId, String reason) async {
+    lastApplicationError = null;
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
     final app = applications[idx];
-    applications[idx] =
-        app.copyWith(status: ApplicationStatus.declined, declineReason: reason);
     final client = supabase.Supabase.instance.client;
+
     try {
-      await client.from('applications').update({
-        'status': 'declined',
-        'decline_reason': reason,
-        'updated_at': DateTime.now().toIso8601String()
-      }).eq('id', applicationId);
-      await client.from('notifications').insert({
-        'id': _genId(),
-        'title': 'Application update',
-        'message':
-            'We are sorry, your application to ${app.orgName} was not approved. Reason: $reason',
-        'student_id': app.userId ?? app.studentId,
-        'org_id': app.orgId
-      });
+      final res = await client
+          .from('applications')
+          .update({
+            'status': _statusToDb(ApplicationStatus.declined),
+            'decline_reason': reason,
+            'updated_at': DateTime.now().toIso8601String()
+          })
+          .eq('id', applicationId)
+          .select('id');
+
+      if (res is List && res.isEmpty) {
+        lastApplicationError =
+            'Failed to decline application (permission denied or record not found).';
+        return false;
+      }
+
+      applications[idx] = app.copyWith(
+          status: ApplicationStatus.declined, declineReason: reason);
+
+      try {
+        await client.from('notifications').insert({
+          'id': _genId(),
+          'title': 'Application update',
+          'message':
+              'We are sorry, your application to ${app.orgName} was not approved. Reason: $reason',
+          'student_id': app.userId ?? app.studentId,
+          'org_id': app.orgId
+        });
+      } catch (notifErr) {
+        debugPrint('Error inserting decline notification: $notifErr');
+      }
+
+      notifyListeners();
+      return true;
     } catch (e) {
+      lastApplicationError =
+          e is supabase.PostgrestException && e.message.trim().isNotEmpty
+              ? e.message
+              : e.toString();
       debugPrint('Error declining application: $e');
+      return false;
     }
-    notifyListeners();
-    return true;
   }
 
   bool setApplicationStatus(String applicationId, ApplicationStatus status) {
+    lastApplicationError = null;
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
+    final oldStatus = applications[idx].status;
     applications[idx] = applications[idx].copyWith(status: status);
+    notifyListeners();
 
-    // ✅ ADD THIS — save to Supabase
+    // The list can be refreshed (realtime) before the database answers, so
+    // the row is looked up again by id instead of reusing the old index.
+    void revert() {
+      final current = applications.indexWhere((a) => a.id == applicationId);
+      if (current == -1) return;
+      applications[current] = applications[current].copyWith(status: oldStatus);
+      notifyListeners();
+    }
+
     supabase.Supabase.instance.client
         .from('applications')
-        .update({'status': status.toString().split('.').last})
+        .update({'status': _statusToDb(status)})
         .eq('id', applicationId)
-        .then((_) {}, onError: (Object e, StackTrace stack) {
+        .select('id')
+        .then((res) {
+          if (res.isEmpty) {
+            lastApplicationError = 'Failed to update application status.';
+            revert();
+          }
+        }, onError: (Object e, StackTrace stack) {
+          lastApplicationError = e.toString();
           debugPrint('Error updating status: $e');
+          revert();
         });
 
-    notifyListeners();
     return true;
   }
 
   Future<bool> approveApplication(String applicationId,
       {String defaultPosition = 'Member'}) async {
+    lastApplicationError = null;
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
 
@@ -1030,9 +1050,6 @@ class AppState extends ChangeNotifier {
     final client = supabase.Supabase.instance.client;
     final orgId = app.orgId ?? _findOrgByName(app.orgName)?.id;
 
-    // Resolve the student's actual profiles.id. The members table links to
-    // profiles through profile_id, so do not assume applications.user_id and
-    // profiles.id are identical in older records.
     String? profileId;
     try {
       if (app.userId != null && app.userId!.trim().isNotEmpty) {
@@ -1071,12 +1088,6 @@ class AppState extends ChangeNotifier {
     profileId ??= app.userId;
 
     try {
-      // Read the authoritative database status first. Some older records can
-      // still be `interviewed` in Supabase while the officer screen already
-      // shows `For Approval` locally. In that case, repair the persisted
-      // workflow state before performing the final approval. This keeps the
-      // application eligible without requiring the student to submit a
-      // duplicate application.
       final remote = await client
           .from('applications')
           .select('status, interview_at')
@@ -1089,22 +1100,29 @@ class AppState extends ChangeNotifier {
       if (remoteStatus == 'interviewed' && remoteInterviewAt != null) {
         await client
             .from('applications')
-            .update({'status': 'for_approval'}).eq('id', applicationId);
+            .update({'status': _statusToDb(ApplicationStatus.forApproval)}).eq(
+                'id', applicationId);
       }
 
-      await client
+      final res = await client
           .from('applications')
-          .update({'status': 'approved'}).eq('id', applicationId);
+          .update({'status': _statusToDb(ApplicationStatus.approved)})
+          .eq('id', applicationId)
+          .select('id');
+
+      if (res is List && res.isEmpty) {
+        lastApplicationError = 'Failed to approve application.';
+        return false;
+      }
     } catch (e) {
+      lastApplicationError =
+          e is supabase.PostgrestException && e.message.trim().isNotEmpty
+              ? e.message
+              : e.toString();
       debugPrint('Error updating application status: $e');
       return false;
     }
 
-    // The application status change is the authoritative approval action.
-    // Update the local state immediately, then perform membership/cache and
-    // notification synchronization independently so a secondary sync issue
-    // cannot incorrectly show "Failed to approve" after the application was
-    // already approved in Supabase.
     applications[idx] = app.copyWith(status: ApplicationStatus.approved);
     notifyListeners();
 
@@ -1129,8 +1147,6 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      // The notification is created only after the application itself has
-      // successfully changed to approved.
       await addNotification(Notification(
         id: _genId(),
         title: 'Congratulations!',
@@ -1157,9 +1173,34 @@ class AppState extends ChangeNotifier {
 
   Future<bool> scheduleInterview(
       String applicationId, DateTime interviewAt) async {
+    lastApplicationError = null;
     final idx = applications.indexWhere((a) => a.id == applicationId);
     if (idx == -1) return false;
     final app = applications[idx];
+    final client = supabase.Supabase.instance.client;
+
+    try {
+      final res = await client
+          .from('applications')
+          .update({
+            'status': _statusToDb(ApplicationStatus.interviewed),
+            'interview_at': interviewAt.toIso8601String(),
+          })
+          .eq('id', app.id)
+          .select('id');
+
+      if (res is List && res.isEmpty) {
+        lastApplicationError = 'Failed to schedule interview.';
+        return false;
+      }
+    } catch (e) {
+      lastApplicationError =
+          e is supabase.PostgrestException && e.message.trim().isNotEmpty
+              ? e.message
+              : e.toString();
+      debugPrint('Error saving interview schedule to Supabase: $e');
+      return false;
+    }
 
     applications[idx] = app.copyWith(
       status: ApplicationStatus.interviewed,
@@ -1168,7 +1209,6 @@ class AppState extends ChangeNotifier {
 
     final orgId = app.orgId ?? _findOrgByName(app.orgName)?.id;
 
-    // Fetch the correct profile UUID for this student from Supabase
     await addNotification(Notification(
       id: _genId(),
       title: 'Interview Scheduled',
@@ -1178,14 +1218,6 @@ class AppState extends ChangeNotifier {
       orgId: orgId,
       studentId: app.userId,
     ));
-    try {
-      await supabase.Supabase.instance.client.from('applications').update({
-        'status': 'interviewed',
-        'interview_at': interviewAt.toIso8601String(),
-      }).eq('id', app.id);
-    } catch (e) {
-      debugPrint('Error saving interview schedule to Supabase: $e');
-    }
 
     notifyListeners();
     return true;
@@ -1203,7 +1235,6 @@ class AppState extends ChangeNotifier {
     final client = supabase.Supabase.instance.client;
     final resolvedOrgId = orgId ?? _findOrgByName(orgName)?.id;
 
-    // Do not create duplicate membership rows for the same student/org.
     if (profileId != null && profileId.isNotEmpty && resolvedOrgId != null) {
       try {
         final existing = await client
@@ -1231,9 +1262,6 @@ class AppState extends ChangeNotifier {
           return member;
         }
 
-        // Backfill an older member row that has the same name/org but no
-        // profile_id yet. This prevents duplicate memberships when migrating
-        // records created by older app versions.
         final oldRows = await client
             .from('members')
             .select('id,name,position,org_name,org_id,profile_id')
@@ -1309,8 +1337,6 @@ class AppState extends ChangeNotifier {
       return member;
     } catch (e) {
       debugPrint('Error saving member to Supabase: $e');
-      // Return a local representation so the officer UI remains responsive,
-      // but do not pretend that the server record was created.
       final member = Member(
         id: newId,
         name: name,
@@ -1325,14 +1351,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  String? lastMemberUpdateError;
-
   Future<bool> updateMember(Member member) async {
     final client = supabase.Supabase.instance.client;
     lastMemberUpdateError = null;
     try {
-      // Only change editable membership fields. Keeping org_id/profile_id
-      // untouched avoids needless foreign-key/RLS failures on a position edit.
       final response = await client
           .from('members')
           .update({
@@ -1376,12 +1398,18 @@ class AppState extends ChangeNotifier {
 
   Future<bool> removeMember(String id) async {
     try {
-      await supabase.Supabase.instance.client
+      final res = await supabase.Supabase.instance.client
           .from('members')
           .delete()
-          .eq('id', id);
+          .eq('id', id)
+          .select('id');
+
+      if (res is List && res.isEmpty) {
+        return false;
+      }
     } catch (e) {
       debugPrint('Error deleting member from Supabase: $e');
+      return false;
     }
 
     final before = members.length;
@@ -1403,14 +1431,11 @@ class AppState extends ChangeNotifier {
 
   String _sanitizePosition(String? raw) {
     if (raw == null) return 'Member';
-    // Try exact match first
     if (_validPositions.contains(raw)) return raw;
-    // Try case-insensitive match
     final lower = raw.toLowerCase();
     for (final p in _validPositions) {
       if (p.toLowerCase() == lower) return p;
     }
-    // No match — default to Member
     return 'Member';
   }
 
@@ -1421,8 +1446,6 @@ class AppState extends ChangeNotifier {
             ? organizationId.trim()
             : currentOfficerOrgId;
     try {
-      // Use the exact organization membership key. The database can contain
-      // valid members even when their profile role is still "student".
       final List<dynamic> response;
       if (requestedOrgId != null && requestedOrgId.isNotEmpty) {
         response = await client
@@ -1450,8 +1473,6 @@ class AppState extends ChangeNotifier {
         ));
       }
 
-      // Replace only the requested organization's cache, preserving any other
-      // organization members that may already be in memory.
       if (requestedOrgId != null && requestedOrgId.isNotEmpty) {
         members.removeWhere((m) => m.orgId == requestedOrgId);
         members.addAll(loaded);
@@ -1462,7 +1483,6 @@ class AppState extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      // Preserve the last known cache if the read fails; do not silently clear it.
       debugPrint(
           'Error fetching members from Supabase for org $requestedOrgId: $e');
     }
@@ -1477,47 +1497,53 @@ class AppState extends ChangeNotifier {
           .select('*')
           .order('date', ascending: true);
 
-      events.clear();
+      final loadedEvents = <Event>[];
       for (var item in response) {
-        // Parse image_urls array
-        List<String> imageUrls = [];
         try {
-          final raw = item['image_urls'];
-          if (raw != null && raw is List) {
-            imageUrls = List<String>.from(raw);
+          List<String> imageUrls = [];
+          try {
+            final raw = item['image_urls'];
+            if (raw != null && raw is List) {
+              imageUrls = raw.map((e) => e.toString()).toList();
+            }
+          } catch (_) {}
+
+          final singleUrl = item['image_url'] as String?;
+          if (imageUrls.isEmpty && singleUrl != null && singleUrl.isNotEmpty) {
+            imageUrls = [singleUrl];
           }
-        } catch (_) {}
 
-        // Fallback: if imageUrls empty but image_url exists, use it
-        final singleUrl = item['image_url'] as String?;
-        if (imageUrls.isEmpty && singleUrl != null && singleUrl.isNotEmpty) {
-          imageUrls = [singleUrl];
+          final createdAt =
+              DateTime.tryParse(item['created_at']?.toString() ?? '')
+                      ?.toLocal() ??
+                  DateTime.parse(item['date']).toLocal();
+
+          loadedEvents.add(Event(
+            id: item['id']?.toString() ?? '',
+            title: item['title'] ?? '',
+            date: DateTime.parse(item['date']).toLocal(),
+            description: item['description'] ?? '',
+            orgName: item['org_name'] ?? '',
+            orgId: item['org_id']?.toString(),
+            imageUrl: singleUrl,
+            imageUrls: imageUrls,
+            createdAt: createdAt,
+            venue: item['venue']?.toString() ?? '',
+            startTime: (item['start_time']?.toString().trim().isEmpty ?? true)
+                ? null
+                : item['start_time'].toString().trim(),
+            endTime: (item['end_time']?.toString().trim().isEmpty ?? true)
+                ? null
+                : item['end_time'].toString().trim(),
+          ));
+        } catch (rowErr) {
+          debugPrint('Error parsing event row: $rowErr');
         }
-
-        final createdAt =
-            DateTime.tryParse(item['created_at']?.toString() ?? '')
-                    ?.toLocal() ??
-                DateTime.parse(item['date']).toLocal();
-
-        events.add(Event(
-          id: item['id'],
-          title: item['title'],
-          date: DateTime.parse(item['date']).toLocal(),
-          description: item['description'] ?? '',
-          orgName: item['org_name'] ?? '',
-          orgId: item['org_id'],
-          imageUrl: singleUrl,
-          imageUrls: imageUrls,
-          createdAt: createdAt,
-          venue: item['venue']?.toString() ?? '',
-          startTime: (item['start_time']?.toString().trim().isEmpty ?? true)
-              ? null
-              : item['start_time'].toString().trim(),
-          endTime: (item['end_time']?.toString().trim().isEmpty ?? true)
-              ? null
-              : item['end_time'].toString().trim(),
-        ));
       }
+
+      events
+        ..clear()
+        ..addAll(loadedEvents);
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching events from Supabase: $e');
@@ -1531,11 +1557,10 @@ class AppState extends ChangeNotifier {
     required String orgName,
     String? orgId,
     String? imageUrl,
-    List<String> imageUrls = const [], // ← NEW
+    List<String> imageUrls = const [],
   }) async {
     String newId = _genId();
 
-    // Use first image as imageUrl for backward compat
     final firstUrl = imageUrls.isNotEmpty ? imageUrls.first : imageUrl;
 
     try {
@@ -1548,7 +1573,7 @@ class AppState extends ChangeNotifier {
             'org_name': orgName,
             'org_id': orgId,
             'image_url': firstUrl,
-            'image_urls': imageUrls, // ← NEW
+            'image_urls': imageUrls,
           })
           .select()
           .single();
@@ -1583,17 +1608,26 @@ class AppState extends ChangeNotifier {
         event.imageUrls.isNotEmpty ? event.imageUrls.first : event.imageUrl;
 
     try {
-      await supabase.Supabase.instance.client.from('events').update({
-        'title': event.title,
-        'date': event.date.toIso8601String(),
-        'description': event.description,
-        'org_name': event.orgName,
-        'org_id': event.orgId,
-        'image_url': firstUrl,
-        'image_urls': event.imageUrls, // ← NEW
-      }).eq('id', event.id);
+      final res = await supabase.Supabase.instance.client
+          .from('events')
+          .update({
+            'title': event.title,
+            'date': event.date.toIso8601String(),
+            'description': event.description,
+            'org_name': event.orgName,
+            'org_id': event.orgId,
+            'image_url': firstUrl,
+            'image_urls': event.imageUrls,
+          })
+          .eq('id', event.id)
+          .select('id');
+
+      if (res is List && res.isEmpty) {
+        return false;
+      }
     } catch (e) {
       debugPrint('Error updating event in Supabase: $e');
+      return false;
     }
 
     events[idx] = event;
@@ -1603,12 +1637,18 @@ class AppState extends ChangeNotifier {
 
   Future<bool> removeEvent(String id) async {
     try {
-      await supabase.Supabase.instance.client
+      final res = await supabase.Supabase.instance.client
           .from('events')
           .delete()
-          .eq('id', id);
+          .eq('id', id)
+          .select('id');
+
+      if (res is List && res.isEmpty) {
+        return false;
+      }
     } catch (e) {
       debugPrint('Error deleting event from Supabase: $e');
+      return false;
     }
 
     final before = events.length;
@@ -1719,7 +1759,6 @@ class AppState extends ChangeNotifier {
         } catch (_) {}
       }
 
-      // Determine the organizations this student is actually a member of.
       final memberOrgIds = <String>{};
       final memberOrgNames = <String>{};
       final memberOrganizations = <String, String>{};
@@ -1742,9 +1781,6 @@ class AppState extends ChangeNotifier {
           }
         } catch (_) {}
 
-        // Compatibility fallback for legacy members that were created before
-        // profile_id was populated. The student's exact name is the only
-        // available legacy link in that table.
         if (memberOrgIds.isEmpty && student.name.trim().isNotEmpty) {
           try {
             final rows = await client
@@ -1765,11 +1801,7 @@ class AppState extends ChangeNotifier {
           } catch (_) {}
         }
       }
-      // Do not use the cached joinedOrgIds list as a notification source.\n      // It may contain stale membership data from an older app version.\n
-      // Only real application records can authorize student-specific
-      // application/interview/approval notifications. This prevents stale
-      // notifications from an organization that the student no longer has an
-      // application for from reappearing in the UI.
+
       final applicationOrgIds = <String>{};
       final applicationOrgNames = <String>{};
       Future<void> collectStudentApplications(
@@ -1802,9 +1834,6 @@ class AppState extends ChangeNotifier {
             .select('*')
             .order('created_at', ascending: false);
       } catch (e) {
-        // Do not stop the notification screen here. A student's approval
-        // message can still be synthesized from approved applications or
-        // members below even when the notifications table is blocked by RLS.
         debugPrint('Error loading notification rows: $e');
       }
 
@@ -1820,18 +1849,11 @@ class AppState extends ChangeNotifier {
           final isOrgAnnouncement =
               !isPersonal && orgId != null && memberOrgIds.contains(orgId);
 
-          // Personal messages belong only to their student. Notifications with
-          // no student_id are organization-wide announcements and are shown to
-          // members of that organization.
           if (!belongsToCurrentStudent && !isOrgAnnouncement) continue;
 
           final rawTitle = item['title']?.toString() ?? '';
           final rawMessage = item['message']?.toString() ?? '';
 
-          // Students should not receive internal Admin / CSO and final-posting
-          // workflow updates. Those steps are handled between officers and the
-          // adviser; students only see adviser announcements and the normal
-          // student-facing interview/membership notifications.
           if (student != null &&
               orgId != null &&
               _isStudentHiddenWorkflowNotification(rawTitle, rawMessage)) {
@@ -1841,11 +1863,6 @@ class AppState extends ChangeNotifier {
           var title = rawTitle;
           var message = rawMessage;
 
-          // A student must see only one workflow notification per organization
-          // and category. The database can contain legacy duplicates, so the
-          // UI intentionally keeps the newest row because the query is ordered
-          // newest-first. Interview notices are one category; the final
-          // membership/congratulations notice is a separate category.
           if (belongsToCurrentStudent && orgId != null && orgId.isNotEmpty) {
             final lowerTitle = rawTitle.toLowerCase();
             final lowerMessage = rawMessage.toLowerCase();
@@ -1864,10 +1881,6 @@ class AppState extends ChangeNotifier {
             }
           }
 
-          // Student-specific notifications must belong to an organization for
-          // which a real application currently exists. Membership history,
-          // cached state, and old notification rows cannot resurrect an old
-          // application in the Notifications screen.
           if (belongsToCurrentStudent &&
               orgId != null &&
               !applicationOrgIds.contains(orgId)) {
@@ -1897,10 +1910,6 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      // Notifications are strictly database-backed here. Do not create or
-      // reconstruct notification rows from applications or memberships.
-      // A notification appears only after an actual notification row exists.
-
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching notifications: $e');
@@ -1917,10 +1926,6 @@ class AppState extends ChangeNotifier {
       final isMembership = title.contains('congratulations') ||
           message.contains('officially a member');
 
-      // Workflow notifications are idempotent: repeated scheduling/approval
-      // actions update the existing student+organization notification instead
-      // of creating another card. The final membership notice is written only
-      // by approveApplication(), after the application is actually approved.
       if (notification.studentId != null &&
           notification.studentId!.isNotEmpty &&
           notification.orgId != null &&
@@ -2084,14 +2089,16 @@ class AppState extends ChangeNotifier {
 
   Future<void> removeOrganization(String orgId) async {
     try {
-      await supabase.Supabase.instance.client
-          .from('organizations')
-          .delete()
-          .eq('id', orgId);
+      await supabase.Supabase.instance.client.rpc(
+        'admin_delete_organization',
+        params: {'p_org_id': orgId},
+      );
       organizations.removeWhere((o) => o.id == orgId);
+      await fetchOrgMemberCounts();
+      await fetchMembers();
       notifyListeners();
     } catch (e) {
-      debugPrint('Error deleting organization from Supabase: $e');
+      debugPrint('Error deleting organization from Supabase via RPC: $e');
     }
   }
 
@@ -2216,8 +2223,42 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // ── New Helper Methods ────────────────────────────────────────────────────
+
+  Application? applicationForOrg(String orgId) {
+    if (orgId.trim().isEmpty) return null;
+    final org = _findOrgById(orgId);
+    final orgNameLower = org?.name.trim().toLowerCase() ?? '';
+
+    final matching = applications.where((a) {
+      if (a.orgId != null && a.orgId == orgId) return true;
+      if (orgNameLower.isNotEmpty &&
+          a.orgName.trim().toLowerCase() == orgNameLower) return true;
+      return false;
+    }).toList();
+
+    if (matching.isEmpty) return null;
+    matching.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return matching.first;
+  }
+
+  bool isMemberOfOrg(String orgId) {
+    if (orgId.trim().isEmpty) return false;
+    if (currentStudent != null &&
+        currentStudent!.joinedOrgIds.contains(orgId)) {
+      return true;
+    }
+    if (currentStudent != null && currentStudent!.id.isNotEmpty) {
+      for (final m in members) {
+        if (m.orgId == orgId && m.profileId == currentStudent!.id) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   Future<String> uploadAvatar(Uint8List bytes, String userId) async {
-    // Use a unique filename every upload to bust CDN + Flutter image cache
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final path = '$userId/$timestamp.jpg';
 
@@ -2286,29 +2327,33 @@ class AppState extends ChangeNotifier {
 
   Future<void> loadStudentProfile() async {
     _prefs ??= await SharedPreferences.getInstance();
+    final userId = supabase.Supabase.instance.client.auth.currentUser?.id;
 
-    // 1. Load from SharedPreferences first (fast, offline fallback)
-    final profileJson = _prefs!.getString('student_profile');
-    if (profileJson != null) {
-      try {
-        final data = jsonDecode(profileJson) as Map<String, dynamic>;
-        currentStudent = StudentProfile(
-          id: data['id'] ?? '',
-          name: data['name'] ?? '',
-          email: data['email'] ?? '',
-          studentId: data['studentId'] ?? '',
-          contact: data['contact'] ?? '',
-          facebook: data['facebook'] ?? '',
-          avatarUrl: data['avatarUrl'] ?? '',
-          joinedOrgIds: List<String>.from(data['joinedOrgIds'] ?? []),
-        );
-      } catch (_) {}
+    if (userId != null && userId.isNotEmpty) {
+      final profileJson = _prefs!.getString('student_profile');
+      if (profileJson != null) {
+        try {
+          final data = jsonDecode(profileJson) as Map<String, dynamic>;
+          final cachedId = data['id']?.toString() ?? '';
+          if (cachedId == userId) {
+            currentStudent = StudentProfile(
+              id: cachedId,
+              name: data['name'] ?? '',
+              email: data['email'] ?? '',
+              studentId: data['studentId'] ?? '',
+              contact: data['contact'] ?? '',
+              facebook: data['facebook'] ?? '',
+              avatarUrl: data['avatarUrl'] ?? '',
+              joinedOrgIds: List<String>.from(data['joinedOrgIds'] ?? []),
+            );
+          }
+        } catch (_) {}
+      }
     }
 
-    // 2. Always fetch fresh data from Supabase (gets latest avatar_url)
     try {
       final userId = supabase.Supabase.instance.client.auth.currentUser?.id;
-      if (userId != null) {
+      if (userId != null && userId.isNotEmpty) {
         final response = await supabase.Supabase.instance.client
             .from('profiles')
             .select()
@@ -2327,7 +2372,6 @@ class AppState extends ChangeNotifier {
             joinedOrgIds: _parseJoinedOrgIds(response['joined_org_ids']),
           );
 
-          // Update SharedPreferences with the latest data
           await _prefs!.setString(
               'student_profile',
               jsonEncode({
@@ -2341,9 +2385,6 @@ class AppState extends ChangeNotifier {
                 'joinedOrgIds': currentStudent!.joinedOrgIds,
               }));
 
-          // Applications can finish loading before the profile request.
-          // Refresh them now that the real student id is known so legacy
-          // applications (including older rows without user_id) are visible.
           await fetchApplications();
           notifyListeners();
         }
@@ -2366,7 +2407,6 @@ class AppState extends ChangeNotifier {
               .where((e) => e.isNotEmpty)
               .toList();
         }
-        // PostgreSQL text[] can sometimes arrive in {id,id} form.
         final trimmed = raw.trim();
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
           return trimmed
@@ -2392,7 +2432,6 @@ class AppState extends ChangeNotifier {
 
     final joinedIds = <String>{};
 
-    // Existing membership records.
     try {
       final rows = await client
           .from('members')
@@ -2406,9 +2445,6 @@ class AppState extends ChangeNotifier {
       debugPrint('Error loading member rows: $e');
     }
 
-    // Approved applications are a second source of truth. This is important
-    // for older approved applications whose members/profile cache was never
-    // updated.
     Future<void> collectApproved(String column, String value) async {
       try {
         final rows =
@@ -2439,15 +2475,12 @@ class AppState extends ChangeNotifier {
       await collectApproved('student_id', studentId);
     }
 
-    // Save the cache to the local profile and Supabase. The UI does not rely
-    // solely on this cache, but keeping it updated makes the dashboard count
-    // and Joined Orgs entry point reflect membership immediately.
     final nextIds = joinedIds.toList()..sort();
     final existing = [...student.joinedOrgIds]..sort();
     final changed = nextIds.length != existing.length ||
         nextIds.asMap().entries.any((e) => e.value != existing[e.key]);
 
-    if (!changed) return; // nothing to write -> no realtime echo
+    if (!changed) return;
 
     currentStudent = student.copyWith(joinedOrgIds: nextIds);
     await _saveStudentProfileLocalOnly();

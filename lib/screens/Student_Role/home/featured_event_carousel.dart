@@ -6,6 +6,22 @@ import '../../../core/app_state.dart';
 import 'home_event_utils.dart';
 import 'home_tokens.dart';
 
+// ---------------------------------------------------------------------------
+// VISUAL TUNING (safe to change, nothing else depends on these)
+// ---------------------------------------------------------------------------
+
+/// How much of the screen width each card takes. Below 1.0 the next card
+/// "peeks" in from the side so people know they can swipe.
+/// Set to 1.0 to go back to a single full-width card with no peek.
+const double _kViewportFraction = 1.0;
+
+/// Space on each side of a card inside its page (creates the gap between
+/// neighbouring cards while swiping).
+const double _kPageGap = 0;
+
+/// How strongly the poster behind the card is blurred.
+const double _kBackdropBlur = 22;
+
 /// Presents up to five campus events in an autoplaying featured banner.
 class FeaturedEventCarousel extends StatefulWidget {
   const FeaturedEventCarousel({
@@ -22,7 +38,8 @@ class FeaturedEventCarousel extends StatefulWidget {
 }
 
 class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
-  final PageController _pageController = PageController(viewportFraction: 1);
+  final PageController _pageController =
+      PageController(viewportFraction: _kViewportFraction);
 
   Timer? _autoplayTimer;
   DateTime? _pauseAutoplayUntil;
@@ -31,6 +48,10 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
   bool _animationsDisabled = false;
 
   List<Event> get _events => widget.events.take(5).toList(growable: false);
+
+  // ------------------------------------------------------------------------
+  // LOGIC (unchanged): lifecycle, autoplay timer, pause on touch
+  // ------------------------------------------------------------------------
 
   @override
   void didChangeDependencies() {
@@ -104,24 +125,23 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
     );
   }
 
+  /// Clean banner: the poster fills the whole card, with a dark fade only at
+  /// the bottom so the white text stays readable on any image.
   Widget _buildBanner(
     BuildContext context,
     Event event,
     double width,
     double height,
   ) {
-    final isWide = width >= 340;
     final cover = eventCoverImage(event);
-    final description = event.description.trim();
-    final imageWidth = width * 0.42;
-    final textRightPadding = isWide ? imageWidth + 8 : 16.0;
-    final metaMaxWidth = isWide ? 105.0 : 132.0;
+    final metaMaxWidth = (width - 32) * 0.5;
 
     final metaItems = <Widget>[
       _FeaturedMetaItem(
         icon: Icons.calendar_month_outlined,
         label: formatDateShort(event.date),
         maxWidth: metaMaxWidth,
+        filled: true,
       ),
       if (event.timeLabel.trim().isNotEmpty)
         _FeaturedMetaItem(
@@ -153,143 +173,125 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
+                  // 1. Base: brand green (only visible if there is no image
+                  //    or the image fails to load).
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: HC.heroGradient,
                     ),
                   ),
-                  if (isWide)
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      bottom: 0,
-                      width: imageWidth,
-                      child: EventImage(
-                        url: cover ?? '',
-                        fit: BoxFit.cover,
-                        fallback: eventGradientFallback(),
-                      ),
-                    )
-                  else if (cover != null)
+
+                  // 2. The poster, full card, no color tint.
+                  if (cover != null)
                     Positioned.fill(
-                      child: Opacity(
-                        opacity: 0.35,
-                        child: EventImage(
-                          url: cover,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                  if (isWide)
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      bottom: 0,
-                      width: imageWidth,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                              stops: const <double>[0, 0.44, 1],
-                              colors: <Color>[
-                                HC.dark,
-                                HC.dark.withValues(alpha: 0.58),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
-                        ),
+                      child: EventImage(
+                        url: cover,
+                        fit: BoxFit.cover,
+                        fallback: const SizedBox.shrink(),
                       ),
                     )
                   else
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: <Color>[
-                                HC.dark.withValues(alpha: 0.92),
-                                HC.dark.withValues(alpha: 0.85),
-                                HC.dark.withValues(alpha: 0.90),
-                              ],
-                            ),
+                    Positioned(
+                      top: 0,
+                      bottom: 0,
+                      right: 22,
+                      child: Center(
+                        child: Icon(
+                          Icons.auto_awesome_rounded,
+                          size: height * 0.55,
+                          color: Colors.white.withValues(alpha: 0.10),
+                        ),
+                      ),
+                    ),
+
+                  // 3. Neutral dark fade: light at the top (badge), clear in
+                  //    the middle (poster stays visible), strong at the bottom
+                  //    (text).
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const <double>[0.0, 0.40, 1.0],
+                            colors: <Color>[
+                              Colors.black.withValues(alpha: 0.25),
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.80),
+                            ],
                           ),
                         ),
                       ),
                     ),
+                  ),
+
+                  // 4. Content: badge on top, details at the bottom.
                   Positioned.fill(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        14,
-                        textRightPadding,
-                        14,
-                      ),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Container(
-                            constraints: BoxConstraints(
-                              maxWidth: isWide ? 145 : 170,
-                            ),
+                            constraints: const BoxConstraints(maxWidth: 160),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 9,
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.35),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.55),
+                                color: Colors.white.withValues(alpha: 0.40),
                               ),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: const Text(
-                              'FEATURED EVENT',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.8,
-                              ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Icon(
+                                  Icons.auto_awesome_rounded,
+                                  size: 10,
+                                  color: Colors.white,
+                                ),
+                                SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    'FEATURED EVENT',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 7),
+                          const Spacer(),
                           Text(
                             event.title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
-                              height: 1.12,
+                              fontSize: 19,
+                              height: 1.1,
                               fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
                             ),
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 7),
                           Wrap(
                             spacing: 8,
                             runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: metaItems,
                           ),
-                          if (description.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 4),
-                            Text(
-                              description,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.88),
-                                fontSize: 11,
-                                height: 1.2,
-                              ),
-                            ),
-                          ],
-                          const Spacer(),
+                          const SizedBox(height: 10),
                           Align(
                             alignment: Alignment.centerLeft,
                             child: ElevatedButton(
@@ -297,9 +299,11 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: HC.dark,
-                                elevation: 0,
+                                elevation: 3,
+                                shadowColor:
+                                    Colors.black.withValues(alpha: 0.35),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
+                                  horizontal: 13,
                                   vertical: 8,
                                 ),
                                 minimumSize: const Size(0, 34),
@@ -326,33 +330,59 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
                       ),
                     ),
                   ),
+
+                  // 5. Page indicator (unchanged).
                   if (_events.length > 1)
                     Positioned(
-                      right: 14,
-                      bottom: 13,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: List<Widget>.generate(_events.length, (
-                          index,
-                        ) {
-                          final isActive = index == _currentPage;
+                      right: 12,
+                      bottom: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.30),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List<Widget>.generate(_events.length, (
+                            index,
+                          ) {
+                            final isActive = index == _currentPage;
 
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            margin: const EdgeInsets.only(left: 4),
-                            width: isActive ? 16 : 5,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(
-                                alpha: isActive ? 1 : 0.45,
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              margin: EdgeInsets.only(left: index == 0 ? 0 : 4),
+                              width: isActive ? 16 : 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(
+                                  alpha: isActive ? 1 : 0.50,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          );
-                        }),
+                            );
+                          }),
+                        ),
                       ),
                     ),
+
+                  // 6. Hairline inner border (unchanged).
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -384,33 +414,39 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
             : MediaQuery.sizeOf(context).width -
                 (HomeLayout.of(context).hPad * 2);
 
-        final height = (width * 0.58).clamp(190.0, 250.0).toDouble();
+        final height = (width * 0.60).clamp(200.0, 260.0).toDouble();
+
+        // Width of one card after the peek fraction and the gap are applied.
+        final cardWidth = (width * _kViewportFraction) - (_kPageGap * 2);
 
         return SizedBox(
           width: width,
           height: height,
           child: Listener(
             onPointerDown: (_) => _pauseAutoplay(),
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: events.length,
-              onPageChanged: (index) {
-                if (!mounted) {
-                  return;
-                }
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: events.length,
+                onPageChanged: (index) {
+                  if (!mounted) {
+                    return;
+                  }
 
-                setState(() {
-                  _currentPage = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                return _buildBanner(
-                  context,
-                  events[index],
-                  width,
-                  height,
-                );
-              },
+                  setState(() {
+                    _currentPage = index;
+                  });
+                },
+                itemBuilder: (context, index) {
+                  return _buildBanner(
+                    context,
+                    events[index],
+                    cardWidth,
+                    height,
+                  );
+                },
+              ),
             ),
           ),
         );
@@ -420,44 +456,63 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
 }
 
 /// Displays a compact icon and label within the featured banner.
+/// When [filled] is true it is drawn as a soft pill (used for the date).
 class _FeaturedMetaItem extends StatelessWidget {
   const _FeaturedMetaItem({
     required this.icon,
     required this.label,
     required this.maxWidth,
+    this.filled = false,
   });
 
   final IconData icon;
   final String label;
   final double maxWidth;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            icon,
-            size: 12,
-            color: Colors.white.withValues(alpha: 0.95),
-          ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.95),
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-              ),
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(
+          icon,
+          size: 12,
+          color: Colors.white.withValues(alpha: 0.95),
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.95),
+              fontSize: 10,
+              fontWeight: filled ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: filled
+          ? DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 3,
+                ),
+                child: content,
+              ),
+            )
+          : content,
     );
   }
 }

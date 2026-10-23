@@ -5,7 +5,7 @@ abstract class HC {
   static const primary = Color(0xFF0F8A61);
   static const bright = Color(0xFF1A9E6B);
   static const dark = Color(0xFF064E3B);
-  static const bg = Color(0xFFF1FAF6);
+  static const bg = Colors.white;
   static const mint = Color(0xFFE4F7EF);
   static const ink = Color(0xFF173B30);
   static const muted = Color(0xFF6B8178);

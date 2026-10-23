@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/unified_login_page.dart';
-import '../../widgets/app_header.dart';
 
 class AdminProfileScreen extends StatefulWidget {
   const AdminProfileScreen({super.key});
@@ -14,17 +13,28 @@ class AdminProfileScreen extends StatefulWidget {
 }
 
 class _AdminProfileScreenState extends State<AdminProfileScreen> {
-  static const _primary = Color(0xFF16A34A);
-  static const _bg = Color(0xFFF3FAF5);
-  static const _slate0F = Color(0xFF0F2D22);
-  static const _slate94 = Color(0xFF64748B);
-  static const _red = Color(0xFFDC2626);
+  // ───────────────────────── Design tokens ─────────────────────────
+  static const _primary = Color(0xFF059669); // emerald (text / buttons)
+  static const _primaryLight = Color(0xFF10B981); // emerald (badges / checks)
+  static const _primarySoft = Color(0xFFECFDF5); // emerald tint
+  static const _primaryBorder = Color(0xFFA7F3D0);
+  static const _bg = Color(0xFFF9FAFB);
+  static const _border = Color(0xFFE5E7EB);
+  static const _text = Color(0xFF111827);
+  static const _muted = Color(0xFF6B7280);
+  static const _hint = Color(0xFF9CA3AF);
+  static const _red = Color(0xFFEF4444);
+  static const _redSoft = Color(0xFFFEE2E2);
 
+  static const double _desktopBreakpoint = 1024;
+
+  // ───────────────────────── State / logic (unchanged) ─────────────────────────
   final _db = Supabase.instance.client;
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _contact = TextEditingController();
   final _facebook = TextEditingController();
+  final _scroll = ScrollController();
 
   Uint8List? _avatarBytes;
   String _avatarUrl = '';
@@ -45,6 +55,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     _email.dispose();
     _contact.dispose();
     _facebook.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -79,8 +90,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-
 
   Future<String?> _uploadAvatar() async {
     if (_avatarBytes == null) return null;
@@ -154,7 +163,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
               _IconBox(icon: Icons.lock_reset_rounded, color: _primary),
@@ -182,7 +191,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                     ),
                   ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
@@ -203,7 +212,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                     ),
                   ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
@@ -290,7 +299,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Log out?'),
         content: const Text(
           'You will need to sign in again to access the admin dashboard.',
@@ -335,6 +344,20 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     return null;
   }
 
+  // Same behaviour as the old header "Edit / Cancel" button.
+  void _toggleEditing() {
+    setState(() {
+      _editing = !_editing;
+      if (!_editing) _avatarBytes = null;
+    });
+  }
+
+  // Used by the avatar camera badge: opens edit mode (never closes it).
+  void _startEditing() {
+    if (!_editing) setState(() => _editing = true);
+  }
+
+  // ───────────────────────── Build ─────────────────────────
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -346,8 +369,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       );
     }
 
+    final isDesktop = MediaQuery.of(context).size.width > _desktopBreakpoint;
     final avatar = _imageProvider();
     final displayName = _name.text.trim().isEmpty ? 'Admin' : _name.text.trim();
+    final hPad = isDesktop ? 32.0 : 16.0;
 
     return Scaffold(
       backgroundColor: _bg,
@@ -355,230 +380,27 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         children: [
           Column(
             children: [
-              AppHeader(
-                title: 'Profile',
-                subtitle: displayName,
-                status: 'ORGANIZATION ADMIN',
-                avatarUrl: _avatarUrl,
-                trailing: TextButton.icon(
-                  onPressed: () => setState(() {
-                    _editing = !_editing;
-                    if (!_editing) _avatarBytes = null;
-                  }),
-                  icon: Icon(
-                    _editing ? Icons.close_rounded : Icons.edit_rounded,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                  label: Text(
-                    _editing ? 'Cancel' : 'Edit',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: .18),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                ),
-              ),
+              if (!isDesktop) _buildMobileTopBar(displayName, avatar),
               Expanded(
                 child: Scrollbar(
-                  thumbVisibility: true,
+                  controller: _scroll,
+                  thumbVisibility: isDesktop,
                   child: SingleChildScrollView(
+                    controller: _scroll,
                     physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 48),
+                    padding: EdgeInsets.fromLTRB(
+                      hPad,
+                      isDesktop ? 32 : 16,
+                      hPad,
+                      40,
+                    ),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 540),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _sectionLabel('Profile Details'),
-                            const SizedBox(height: 12),
-                            if (_editing) ...[
-                              _editCard(
-                                'Full Name',
-                                _name,
-                                Icons.person_rounded,
-                                _primary,
-                              ),
-                              _editCard(
-                                'Email',
-                                _email,
-                                Icons.email_rounded,
-                                const Color(0xFF0D9488),
-                              ),
-                              _editCard(
-                                'Contact',
-                                _contact,
-                                Icons.phone_rounded,
-                                _primary,
-                              ),
-                              _editCard(
-                                'Facebook / Social link',
-                                _facebook,
-                                Icons.facebook_rounded,
-                                const Color(0xFF2563EB),
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton.icon(
-                                onPressed: _saving ? null : _save,
-                                icon: _saving
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(Icons.check_rounded),
-                                label: Text(
-                                  _saving ? 'Saving...' : 'Save Profile',
-                                ),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _primary,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(double.infinity, 52),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                              ),
-                            ] else ...[
-                              _infoCard(
-                                Icons.person_rounded,
-                                'FULL NAME',
-                                _name.text,
-                                _primary,
-                              ),
-                              _infoCard(
-                                Icons.email_rounded,
-                                'EMAIL',
-                                _email.text,
-                                const Color(0xFF0D9488),
-                              ),
-                              _infoCard(
-                                Icons.phone_rounded,
-                                'CONTACT',
-                                _contact.text,
-                                _primary,
-                              ),
-                              _infoCard(
-                                Icons.facebook_rounded,
-                                'FACEBOOK',
-                                _facebook.text,
-                                const Color(0xFF2563EB),
-                              ),
-                            ],
-                            const SizedBox(height: 20),
-                            _sectionLabel('Account & Security'),
-                            const SizedBox(height: 12),
-                            Container(
-                              decoration: _cardDecoration(),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Column(
-                                  children: [
-                                    ListTile(
-                                      onTap: _changePassword,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 8,
-                                      ),
-                                      leading: const _IconBox(
-                                        icon: Icons.lock_reset_rounded,
-                                        color: _primary,
-                                      ),
-                                      title: const Text(
-                                        'Change Password',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: _slate0F,
-                                        ),
-                                      ),
-                                      subtitle: const Text(
-                                        'Update your account password securely',
-                                        style: TextStyle(
-                                          fontSize: 11.5,
-                                          color: _slate94,
-                                        ),
-                                      ),
-                                      trailing: const Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: _primary,
-                                      ),
-                                    ),
-                                    Divider(
-                                      height: 1,
-                                      indent: 76,
-                                      endIndent: 20,
-                                      color: Colors.grey.shade100,
-                                    ),
-                                    ListTile(
-                                      onTap: _logout,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 8,
-                                      ),
-                                      leading: const _IconBox(
-                                        icon: Icons.logout_rounded,
-                                        color: _red,
-                                      ),
-                                      title: const Text(
-                                        'Log Out',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: _red,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        _email.text.trim().isNotEmpty
-                                            ? 'Logged in as: ${_email.text.trim()}'
-                                            : 'Tap to sign out',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          color: _slate94,
-                                        ),
-                                      ),
-                                      trailing: Container(
-                                        width: 30,
-                                        height: 30,
-                                        decoration: BoxDecoration(
-                                          color: _red.withValues(alpha: .08),
-                                          borderRadius:
-                                              BorderRadius.circular(9),
-                                        ),
-                                        child: const Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: _red,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            const Center(
-                              child: Text(
-                                'OrgConnect Admin / CSO • Profile',
-                                style: TextStyle(
-                                  color: Color(0xFF94A3A8),
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                          ],
+                        constraints: const BoxConstraints(maxWidth: 1120),
+                        child: _buildBody(
+                          isDesktop: isDesktop,
+                          displayName: displayName,
+                          avatar: avatar,
                         ),
                       ),
                     ),
@@ -587,106 +409,369 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               ),
             ],
           ),
-          if (_showZoom)
-            Positioned.fill(
-              child: Material(
-                color: Colors.black.withValues(alpha: .72),
-                child: SafeArea(
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _showZoom = false),
-                          child: Container(
-                            width: 270,
-                            height: 270,
-                            padding: const EdgeInsets.all(5),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: CircleAvatar(
-                              backgroundColor: Color(0xFFE8F5EC),
-                              backgroundImage: avatar,
-                              child: avatar == null
-                                  ? const Icon(
-                                      Icons.person_rounded,
-                                      color: _primary,
-                                      size: 100,
-                                    )
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 12,
-                        right: 16,
-                        child: IconButton(
-                          onPressed: () => setState(() => _showZoom = false),
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                            size: 30,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          if (_showZoom) _buildZoomOverlay(avatar),
         ],
       ),
     );
   }
 
+  Widget _buildBody({
+    required bool isDesktop,
+    required String displayName,
+    required ImageProvider? avatar,
+  }) {
+    final details = _buildProfileDetailsCard();
+    final security = _buildSecurityCard();
 
-  Widget _sectionLabel(String text) => Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (isDesktop) ...[
+          _buildPageTitle(),
+          const SizedBox(height: 20),
+        ],
+        _buildHeader(
+          isDesktop: isDesktop,
+          displayName: displayName,
+          avatar: avatar,
+        ),
+        const SizedBox(height: 20),
+        if (isDesktop)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 6, child: details),
+              const SizedBox(width: 24),
+              Expanded(flex: 5, child: security),
+            ],
+          )
+        else ...[
+          details,
+          const SizedBox(height: 16),
+          security,
+        ],
+        const SizedBox(height: 28),
+        _buildFooter(),
+      ],
+    );
+  }
+
+  // ───────────────────────── Top bars ─────────────────────────
+  Widget _buildMobileTopBar(String displayName, ImageProvider? avatar) {
+    final initial = displayName.substring(0, 1).toUpperCase();
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: _border)),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Profile',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: _text,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Manage your account',
+                      style: TextStyle(fontSize: 12, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _showZoom = true),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: _primarySoft,
+                  backgroundImage: avatar,
+                  child: avatar == null
+                      ? Text(
+                          initial,
+                          style: const TextStyle(
+                            color: _primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPageTitle() => const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 4,
-            height: 20,
-            decoration: BoxDecoration(
-              color: _primary,
-              borderRadius: BorderRadius.circular(4),
+          Text(
+            'Profile',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: _text,
+              letterSpacing: -.3,
             ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(height: 4),
           Text(
-            text.toUpperCase(),
-            style: const TextStyle(
-              color: Color(0xFF087F5B),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-            ),
+            'Manage your personal information and account security.',
+            style: TextStyle(fontSize: 14, color: _muted),
           ),
         ],
       );
 
-  Widget _infoCard(IconData icon, String label, String value, Color color) {
+  // ───────────────────────── Header card ─────────────────────────
+  Widget _buildHeader({
+    required bool isDesktop,
+    required String displayName,
+    required ImageProvider? avatar,
+  }) {
+    final email = _email.text.trim();
+
+    final summary = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: isDesktop ? 22 : 18,
+            fontWeight: FontWeight.w700,
+            color: _text,
+            letterSpacing: -.2,
+          ),
+        ),
+        if (email.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            email,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13.5, color: _muted),
+          ),
+        ],
+        const SizedBox(height: 10),
+        _buildRoleBadge(),
+      ],
+    );
+
+    return Container(
+      padding: EdgeInsets.all(isDesktop ? 24 : 18),
+      decoration: _cardDecoration(),
+      child: isDesktop
+          ? Row(
+              children: [
+                _buildAvatar(avatar, displayName, 88),
+                const SizedBox(width: 20),
+                Expanded(child: summary),
+                const SizedBox(width: 16),
+                _buildEditButton(),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    _buildAvatar(avatar, displayName, 68),
+                    const SizedBox(width: 14),
+                    Expanded(child: summary),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildEditButton(),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildAvatar(ImageProvider? avatar, String displayName, double size) {
+    final initial = displayName.substring(0, 1).toUpperCase();
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _showZoom = true),
+            child: Container(
+              width: size,
+              height: size,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _primaryBorder, width: 2),
+              ),
+              child: CircleAvatar(
+                backgroundColor: _primarySoft,
+                backgroundImage: avatar,
+                child: avatar == null
+                    ? Text(
+                        initial,
+                        style: TextStyle(
+                          color: _primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: size * .34,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+          Positioned(
+            right: -2,
+            bottom: -2,
+            child: GestureDetector(
+              onTap: _startEditing,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: _primaryLight,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(
+                  Icons.camera_alt_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleBadge() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: _primarySoft,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _primaryBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(
+                color: _primaryLight,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'ORGANIZATION ADMIN',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: _primary,
+                letterSpacing: .6,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _buildEditButton() => OutlinedButton.icon(
+        onPressed: _toggleEditing,
+        icon: Icon(
+          _editing ? Icons.close_rounded : Icons.edit_outlined,
+          size: 18,
+        ),
+        label: Text(_editing ? 'Cancel' : 'Edit Profile'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _text,
+          side: const BorderSide(color: _border),
+          minimumSize: const Size(0, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+
+  // ───────────────────────── Profile details ─────────────────────────
+  Widget _buildProfileDetailsCard() => _buildSectionCard(
+        title: 'Profile Details',
+        subtitle: _editing
+            ? 'Update your information, then save your changes.'
+            : 'Your personal information and contact details.',
+        child: _editing ? _buildEditForm() : _buildInfoList(),
+      );
+
+  Widget _buildInfoList() => Column(
+        children: [
+          _buildInfoTile(
+            icon: Icons.person_outline_rounded,
+            label: 'FULL NAME',
+            value: _name.text,
+            color: _primary,
+          ),
+          const SizedBox(height: 10),
+          _buildInfoTile(
+            icon: Icons.mail_outline_rounded,
+            label: 'EMAIL',
+            value: _email.text,
+            color: const Color(0xFF0D9488),
+          ),
+          const SizedBox(height: 10),
+          _buildInfoTile(
+            icon: Icons.phone_outlined,
+            label: 'CONTACT NUMBER',
+            value: _contact.text,
+            color: const Color(0xFF0284C7),
+          ),
+          const SizedBox(height: 10),
+          _buildInfoTile(
+            icon: Icons.facebook_rounded,
+            label: 'FACEBOOK',
+            value: _facebook.text,
+            color: const Color(0xFF2563EB),
+          ),
+        ],
+      );
+
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
     final empty = value.trim().isEmpty;
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(15),
-      decoration: _cardDecoration(),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: _bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
       child: Row(
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  color.withValues(alpha: .14),
-                  color.withValues(alpha: .06),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: color, size: 21),
-          ),
+          _IconBox(icon: icon, color: color),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -695,22 +780,22 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                 Text(
                   label,
                   style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: _slate94,
-                    letterSpacing: .9,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: _muted,
+                    letterSpacing: .8,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   empty ? 'Not added yet' : value,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14.5,
                     height: 1.25,
-                    fontWeight: empty ? FontWeight.w400 : FontWeight.w700,
-                    color: empty ? const Color(0xFFCBD5E1) : _slate0F,
+                    fontWeight: empty ? FontWeight.w400 : FontWeight.w600,
+                    color: empty ? _hint : _text,
                     fontStyle: empty ? FontStyle.italic : FontStyle.normal,
                   ),
                 ),
@@ -722,42 +807,325 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
             empty
                 ? Icons.add_circle_outline_rounded
                 : Icons.check_circle_rounded,
-            color:
-                empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
-            size: 18,
+            color: empty ? const Color(0xFFD1D5DB) : _primaryLight,
+            size: 20,
           ),
         ],
       ),
     );
   }
 
-  Widget _editCard(
-    String label,
-    TextEditingController controller,
-    IconData icon,
-    Color color,
-  ) =>
-      Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: _cardDecoration(),
+  Widget _buildEditForm() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildEditField(
+            label: 'Full Name',
+            controller: _name,
+            icon: Icons.person_outline_rounded,
+          ),
+          _buildEditField(
+            label: 'Email',
+            controller: _email,
+            icon: Icons.mail_outline_rounded,
+            keyboardType: TextInputType.emailAddress,
+          ),
+          _buildEditField(
+            label: 'Contact Number',
+            controller: _contact,
+            icon: Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+          ),
+          _buildEditField(
+            label: 'Facebook / Social link',
+            controller: _facebook,
+            icon: Icons.facebook_rounded,
+            keyboardType: TextInputType.url,
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _saving ? null : _toggleEditing,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _text,
+                    side: const BorderSide(color: _border),
+                    minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_rounded, size: 20),
+                  label: Text(_saving ? 'Saving...' : 'Save Profile'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 48),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+  Widget _buildEditField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    TextInputType? keyboardType,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 14),
         child: TextField(
           controller: controller,
+          keyboardType: keyboardType,
+          style: const TextStyle(fontSize: 14.5, color: _text),
           decoration: InputDecoration(
             labelText: label,
-            prefixIcon: Icon(icon, color: color),
+            labelStyle: const TextStyle(color: _muted, fontSize: 14),
+            floatingLabelStyle: const TextStyle(color: _primary),
+            prefixIcon: Icon(icon, color: _muted, size: 20),
             filled: true,
             fillColor: Colors.white,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: BorderSide(color: color.withValues(alpha: .10)),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: const BorderSide(color: _primary, width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _primaryLight, width: 1.5),
+            ),
+          ),
+        ),
+      );
+
+  // ───────────────────────── Account & security ─────────────────────────
+  Widget _buildSecurityCard() {
+    final email = _email.text.trim();
+    return _buildSectionCard(
+      title: 'Account & Security',
+      subtitle: 'Manage your password and active session.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildGroupLabel('PASSWORD'),
+          _buildActionTile(
+            icon: Icons.vpn_key_outlined,
+            color: _primary,
+            title: 'Change Password',
+            subtitle: 'Update your account password securely',
+            onTap: _changePassword,
+          ),
+          const SizedBox(height: 22),
+          _buildGroupLabel('SESSION'),
+          _buildActionTile(
+            icon: Icons.logout_rounded,
+            color: _red,
+            title: 'Log Out',
+            titleColor: _red,
+            subtitle:
+                email.isNotEmpty ? 'Logged in as: $email' : 'Tap to sign out',
+            background: _red.withValues(alpha: .04),
+            borderColor: _redSoft,
+            onTap: _logout,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupLabel(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, left: 2),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: _hint,
+            letterSpacing: 1,
+          ),
+        ),
+      );
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Color titleColor = _text,
+    Color background = _bg,
+    Color borderColor = _border,
+  }) =>
+      Material(
+        color: background,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: borderColor),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                _IconBox(icon: icon, color: color),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: titleColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: _muted,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: color == _red ? _red : _hint,
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  // ───────────────────────── Shared pieces ─────────────────────────
+  Widget _buildSectionCard({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) =>
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: _cardDecoration(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _text,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 13, color: _muted, height: 1.35),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: _border),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
+      );
+
+  Widget _buildFooter() => const Center(
+        child: Text(
+          'OrgConnect Admin • CSO Workspace v1.0',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _hint, fontSize: 12),
+        ),
+      );
+
+  Widget _buildZoomOverlay(ImageProvider? avatar) => Positioned.fill(
+        child: Material(
+          color: Colors.black.withValues(alpha: .72),
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Center(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showZoom = false),
+                    child: Container(
+                      width: 270,
+                      height: 270,
+                      padding: const EdgeInsets.all(5),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: CircleAvatar(
+                        backgroundColor: _primarySoft,
+                        backgroundImage: avatar,
+                        child: avatar == null
+                            ? const Icon(
+                                Icons.person_rounded,
+                                color: _primary,
+                                size: 100,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  right: 16,
+                  child: IconButton(
+                    onPressed: () => setState(() => _showZoom = false),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -765,13 +1133,13 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   BoxDecoration _cardDecoration() => BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade100),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: _primary.withValues(alpha: .055),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: _text.withValues(alpha: .04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       );
@@ -780,17 +1148,18 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 class _IconBox extends StatelessWidget {
   final IconData icon;
   final Color color;
+  final double size;
 
-  const _IconBox({required this.icon, required this.color});
+  const _IconBox({required this.icon, required this.color, this.size = 40});
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 40,
-        height: 40,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           color: color.withValues(alpha: .10),
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: color, size: 19),
+        child: Icon(icon, color: color, size: size * .48),
       );
 }

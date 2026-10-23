@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart' hide Notification;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 import '../../../core/app_state.dart';

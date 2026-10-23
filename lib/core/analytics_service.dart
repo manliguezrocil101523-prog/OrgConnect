@@ -10,7 +10,14 @@ class EventComment {
   final String comment;
   final DateTime createdAt;
 
-  EventComment({required this.id, required this.eventId, required this.userName, this.userId, this.avatarUrl, required this.comment, required this.createdAt});
+  EventComment(
+      {required this.id,
+      required this.eventId,
+      required this.userName,
+      this.userId,
+      this.avatarUrl,
+      required this.comment,
+      required this.createdAt});
 
   factory EventComment.fromMap(Map<String, dynamic> row) => EventComment(
         id: row['id']?.toString() ?? '',
@@ -19,7 +26,8 @@ class EventComment {
         userId: row['user_id']?.toString(),
         avatarUrl: row['avatar_url']?.toString(),
         comment: row['comment']?.toString() ?? '',
-        createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '') ??
+            DateTime.now(),
       );
 }
 
@@ -30,7 +38,12 @@ class OrgAnalyticsRow {
   final int comments;
   final int views;
 
-  const OrgAnalyticsRow({required this.name, required this.members, required this.events, required this.comments, required this.views});
+  const OrgAnalyticsRow(
+      {required this.name,
+      required this.members,
+      required this.events,
+      required this.comments,
+      required this.views});
 }
 
 class AnalyticsSnapshot {
@@ -42,15 +55,25 @@ class AnalyticsSnapshot {
   final List<OrgAnalyticsRow> organizations;
   final Map<String, int> usageByAction;
 
-  const AnalyticsSnapshot({required this.activeMembers, required this.totalMembers, required this.totalEvents, required this.totalComments, required this.totalViews, required this.organizations, required this.usageByAction});
+  const AnalyticsSnapshot(
+      {required this.activeMembers,
+      required this.totalMembers,
+      required this.totalEvents,
+      required this.totalComments,
+      required this.totalViews,
+      required this.organizations,
+      required this.usageByAction});
 }
 
 class AnalyticsService {
   AnalyticsService._();
   static final instance = AnalyticsService._();
   final SupabaseClient _db = Supabase.instance.client;
+  DateTime? _lastSeenWrite;
+  String? _lastSeenUser;
 
-  Future<void> logUsage(String action, {String? route, Map<String, dynamic>? metadata}) async {
+  Future<void> logUsage(String action,
+      {String? route, Map<String, dynamic>? metadata}) async {
     try {
       final userId = _db.auth.currentUser?.id;
       await _db.from('usage_logs').insert({
@@ -59,8 +82,15 @@ class AnalyticsService {
         'route': route,
         'metadata': metadata ?? <String, dynamic>{},
       });
-      if (userId != null) {
-        await _db.from('profiles').update({'last_seen_at': DateTime.now().toIso8601String()}).eq('id', userId);
+      final nowTs = DateTime.now();
+      if (userId != null &&
+          (_lastSeenUser != userId ||
+              _lastSeenWrite == null ||
+              nowTs.difference(_lastSeenWrite!).inMinutes >= 5)) {
+        _lastSeenUser = userId;
+        _lastSeenWrite = nowTs;
+        await _db.from('profiles').update(
+            {'last_seen_at': nowTs.toUtc().toIso8601String()}).eq('id', userId);
       }
     } catch (_) {
       // Telemetry must never block the app when the optional analytics table is absent.
@@ -69,18 +99,32 @@ class AnalyticsService {
 
   Future<void> logEventView(String eventId) async {
     try {
-      await _db.from('event_views').insert({'event_id': eventId, 'user_id': _db.auth.currentUser?.id});
+      await _db
+          .from('event_views')
+          .insert({'event_id': eventId, 'user_id': _db.auth.currentUser?.id});
     } catch (_) {}
   }
 
   Future<List<EventComment>> fetchComments(String eventId) async {
     try {
-      final rows = await _db.from('event_comments').select().eq('event_id', eventId).order('created_at', ascending: true);
-      final mapped = (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
-      final ids = mapped.map((r) => r['user_id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet().toList();
+      final rows = await _db
+          .from('event_comments')
+          .select()
+          .eq('event_id', eventId)
+          .order('created_at', ascending: true);
+      final mapped =
+          (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+      final ids = mapped
+          .map((r) => r['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
       if (ids.isNotEmpty) {
         try {
-          final profiles = await _db.from('profiles').select('id,avatar_url').inFilter('id', ids);
+          final profiles = await _db
+              .from('profiles')
+              .select('id,avatar_url')
+              .inFilter('id', ids);
           final avatars = <String, String>{};
           for (final raw in profiles as List) {
             final row = Map<String, dynamic>.from(raw as Map);
@@ -89,7 +133,9 @@ class AnalyticsService {
           }
           for (final row in mapped) {
             final id = row['user_id']?.toString();
-            if (id != null && avatars.containsKey(id)) row['avatar_url'] = avatars[id];
+            if (id != null && avatars.containsKey(id)) {
+              row['avatar_url'] = avatars[id];
+            }
           }
         } catch (_) {}
       }
@@ -99,7 +145,8 @@ class AnalyticsService {
     }
   }
 
-  Future<bool> addComment({required String eventId, required String comment}) async {
+  Future<bool> addComment(
+      {required String eventId, required String comment}) async {
     if (comment.trim().isEmpty) return false;
 
     // The app's student state and Supabase session must stay in sync.
@@ -121,7 +168,11 @@ class AnalyticsService {
       if (user == null) {
         name = 'Guest';
       } else {
-        final profile = await _db.from('profiles').select('name').eq('id', user.id).maybeSingle();
+        final profile = await _db
+            .from('profiles')
+            .select('name')
+            .eq('id', user.id)
+            .maybeSingle();
         final profileName = profile?['name']?.toString().trim();
         final localName = AppState.instance.currentStudent?.name.trim();
         name = profileName?.isNotEmpty == true
@@ -163,7 +214,8 @@ class AnalyticsService {
       }
 
       try {
-        final profiles = await _db.from('profiles').select('id,active,last_seen_at,role');
+        final profiles =
+            await _db.from('profiles').select('id,active,last_seen_at,role');
         final now = DateTime.now();
         activeMembers = (profiles as List).where((p) {
           final role = p['role']?.toString();
@@ -210,16 +262,27 @@ class AnalyticsService {
       }
     } catch (_) {}
 
-    return AnalyticsSnapshot(activeMembers: activeMembers, totalMembers: totalMembers, totalEvents: totalEvents, totalComments: totalComments, totalViews: totalViews, organizations: rows, usageByAction: usage);
+    return AnalyticsSnapshot(
+        activeMembers: activeMembers,
+        totalMembers: totalMembers,
+        totalEvents: totalEvents,
+        totalComments: totalComments,
+        totalViews: totalViews,
+        organizations: rows,
+        usageByAction: usage);
   }
 
-  Future<List<Map<String, dynamic>>> loadImpactForStudent(String studentId) async {
+  Future<List<Map<String, dynamic>>> loadImpactForStudent(
+      String studentId) async {
     try {
-      final rows = await _db.from('student_impact').select().eq('student_id', studentId).order('updated_at', ascending: false);
+      final rows = await _db
+          .from('student_impact')
+          .select()
+          .eq('student_id', studentId)
+          .order('updated_at', ascending: false);
       return (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return [];
     }
   }
 }
-

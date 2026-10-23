@@ -108,7 +108,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       setState(() {
         _requests = List<Map<String, dynamic>>.from(results[0] as List);
         _events = List<Map<String, dynamic>>.from(results[1] as List)
-          ..sort((a, b) => ('${b['date'] ?? b['created_at'] ?? ''}').compareTo('${a['date'] ?? a['created_at'] ?? ''}'));
+          ..sort((a, b) => ('${b['date'] ?? b['created_at'] ?? ''}')
+              .compareTo('${a['date'] ?? a['created_at'] ?? ''}'));
         // Announcements are adviser-authored posts. Proposal workflow notifications
         // share the notifications table, so exclude them from the Announcements feed.
         _posts =
@@ -443,10 +444,37 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     }
   }
 
+  bool _publishing = false;
+
   Future<void> _publish(Map<String, dynamic> r) async {
+    if (_publishing) return;
+    _publishing = true;
+    var claimed = false;
+    var eventSaved = false;
+    final now = DateTime.now();
     try {
       final imgs = _images(r);
-      final now = DateTime.now();
+      // Step 1: claim the proposal so it can never be published twice.
+      final claim = await _db
+          .from('event_requests')
+          .update({
+            'status': 'published',
+            'published_at': now.toIso8601String(),
+            'adviser_reviewed_at': now.toIso8601String(),
+            'reviewed_by': _db.auth.currentUser?.id,
+            'updated_at': now.toIso8601String()
+          })
+          .eq('id', r['id'])
+          .eq('status', 'creative_submitted')
+          .select();
+      if ((claim as List).isEmpty) {
+        _snack('This proposal was already published or changed. Refreshing.',
+            true);
+        await _load();
+        return;
+      }
+      claimed = true;
+      // Step 2: create the public event.
       await _db.from('events').insert({
         'title': r['title'],
         'date': _publicDate(r),
@@ -455,14 +483,15 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         'org_id': widget.orgId,
         'image_url': imgs.isEmpty ? null : imgs.first,
         'image_urls': imgs,
+        'venue': (r['venue'] ?? '').toString().trim(),
+        'start_time': (r['start_time'] ?? '').toString().trim().isEmpty
+            ? null
+            : r['start_time'].toString().trim(),
+        'end_time': (r['end_time'] ?? '').toString().trim().isEmpty
+            ? null
+            : r['end_time'].toString().trim(),
       });
-      await _db.from('event_requests').update({
-        'status': 'published',
-        'published_at': now.toIso8601String(),
-        'adviser_reviewed_at': now.toIso8601String(),
-        'reviewed_by': _db.auth.currentUser?.id,
-        'updated_at': now.toIso8601String()
-      }).eq('id', r['id']);
+      eventSaved = true;
       try {
         await _db.from('notifications').insert({
           'id': DateTime.now().microsecondsSinceEpoch.toString(),
@@ -478,7 +507,20 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       _snack('Event published successfully.');
       await _load();
     } catch (e) {
+      if (claimed && !eventSaved) {
+        // Event was not created, so put the proposal back for another try.
+        try {
+          await _db.from('event_requests').update({
+            'status': 'creative_submitted',
+            'published_at': null,
+            'updated_at': DateTime.now().toIso8601String()
+          }).eq('id', r['id']);
+        } catch (_) {}
+        await _load();
+      }
       _snack('Could not publish event: $e', true);
+    } finally {
+      _publishing = false;
     }
   }
 
@@ -612,10 +654,15 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                   label: 'Home'),
               NavigationDestination(
                   icon: _hasUnreadProposalNotice
-                      ? Badge(label: const Text('!'), child: const Icon(Icons.assignment_outlined))
+                      ? Badge(
+                          label: const Text('!'),
+                          child: const Icon(Icons.assignment_outlined))
                       : const Icon(Icons.assignment_outlined),
                   selectedIcon: _hasUnreadProposalNotice
-                      ? Badge(label: const Text('!'), child: const Icon(Icons.assignment_rounded, color: green))
+                      ? Badge(
+                          label: const Text('!'),
+                          child: const Icon(Icons.assignment_rounded,
+                              color: green))
                       : const Icon(Icons.assignment_rounded, color: green),
                   label: 'Proposals'),
               const NavigationDestination(
@@ -734,9 +781,17 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             _empty(
                 'No published events yet. Approved event creatives will appear here.')
           else
-            ...(_showAllPublishedEvents ? _events : _events.take(5).toList()).map(_eventCard),
+            ...(_showAllPublishedEvents ? _events : _events.take(5).toList())
+                .map(_eventCard),
           if (_events.length > 5)
-            Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => setState(() => _showAllPublishedEvents = !_showAllPublishedEvents), child: Text(_showAllPublishedEvents ? 'Show Less' : 'View All Events'))),
+            Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                    onPressed: () => setState(() =>
+                        _showAllPublishedEvents = !_showAllPublishedEvents),
+                    child: Text(_showAllPublishedEvents
+                        ? 'Show Less'
+                        : 'View All Events'))),
           const SizedBox(height: 18),
           _sectionHeader(
               'Announcements', 'Updates shared with your organization', null),
@@ -881,7 +936,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               ],
               if (eventId.isNotEmpty) ...[
                 const SizedBox(height: 10),
-const SizedBox(height: 6),
+                const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
@@ -889,7 +944,8 @@ const SizedBox(height: 6),
                         eventId: eventId,
                         eventTitle: e['title']?.toString() ?? 'Event'),
                     icon: const Icon(Icons.forum_rounded, size: 16),
-                    label: EventCommentCountLabel(eventId: eventId, style: const TextStyle(fontSize: 12)),
+                    label: EventCommentCountLabel(
+                        eventId: eventId, style: const TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
                         foregroundColor: green,
                         side: const BorderSide(color: line),
@@ -977,9 +1033,16 @@ const SizedBox(height: 6),
               style: const TextStyle(color: muted, fontWeight: FontWeight.w700))
         ]),
         const SizedBox(height: 10),
-        ...(_showAllProposals ? _requests : _requests.take(5).toList()).map(_proposalCard),
+        ...(_showAllProposals ? _requests : _requests.take(5).toList())
+            .map(_proposalCard),
         if (_requests.length > 5)
-          Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => setState(() => _showAllProposals = !_showAllProposals), child: Text(_showAllProposals ? 'Show Less' : 'View All Proposals'))),
+          Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                  onPressed: () =>
+                      setState(() => _showAllProposals = !_showAllProposals),
+                  child: Text(
+                      _showAllProposals ? 'Show Less' : 'View All Proposals'))),
         if (_requests.isEmpty)
           _empty('No proposals have been submitted by officers yet.'),
       ]);

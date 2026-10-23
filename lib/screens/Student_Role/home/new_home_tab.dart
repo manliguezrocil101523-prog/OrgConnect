@@ -6,9 +6,10 @@ import '../../../core/analytics_service.dart';
 import '../../../core/app_state.dart';
 import 'home_data.dart';
 import 'home_tokens.dart';
-import 'home_events_section.dart';
 import 'home_recommended_section.dart';
+import 'home_events_section.dart';
 import 'home_search_page.dart';
+import 'all_upcoming_events_page.dart';
 
 /// New student Home tab. Navigation is handed in by the dashboard shell, so
 /// this file never touches the shell's private screens.
@@ -92,45 +93,72 @@ class _NewHomeTabState extends State<NewHomeTab> {
         animation: AppState.instance,
         builder: (context, _) {
           final l = HomeLayout.of(context);
-          return RefreshIndicator(
-            color: HC.primary,
-            onRefresh: _refresh,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics()),
-              padding: EdgeInsets.zero,
-              children: [
-                _Hero(
-                  layout: l,
-                  greeting: _greeting(),
-                  avatar: _avatar(),
-                  hasUnread: HomeData.unreadNotificationCount() > 0,
-                  onBell: widget.onOpenNotifications,
-                  onAvatar: () => widget.onSwitchTab(3),
-                  onSearch: () => _openSearch(),
-                  onFilter: () => _openSearch(openFilters: true),
-                ),
-                _Centered(
-                  layout: l,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(l.hPad, 18, l.hPad, 0),
-                    child: _QuickActions(
-                      applicationBadge: HomeData.inProgressApplicationCount(),
-                      onDiscover: () => widget.onSwitchTab(1),
-                      onEvents: () => widget.onSwitchTab(2),
-                      onApplications: widget.onOpenApplications,
-                      onJoined: widget.onOpenJoinedOrgs,
-                    ),
+          return Column(
+            children: [
+              // ── FIXED: header, greeting, search bar (never scrolls) ──
+              // ── FIXED: header, greeting, search bar (never scrolls) ──
+              _Hero(
+                layout: l,
+                greeting: _greeting(),
+                avatar: _avatar(),
+                hasUnread: HomeData.unreadNotificationCount() > 0,
+                onBell: widget.onOpenNotifications,
+                onAvatar: () => widget.onSwitchTab(3),
+                onSearch: () => _openSearch(),
+                onFilter: () => _openSearch(openFilters: true),
+              ),
+
+              // Small gap so scrolling content disappears below the
+              // search bar instead of right at its edge.
+              const SizedBox(height: 12),
+
+              // ── SCROLLS: quick cards, events, recommended ──
+              Expanded(
+                child: RefreshIndicator(
+                  color: HC.primary,
+                  onRefresh: _refresh,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics()),
+                    padding: EdgeInsets.zero,
+                    children: [
+                      _Centered(
+                        layout: l,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                              l.hPad, 6, l.hPad, 0), // Changed from 18 to 6
+                          child: _QuickActions(
+                            applicationBadge:
+                                HomeData.inProgressApplicationCount(),
+                            onDiscover: () => widget.onSwitchTab(1),
+                            onEvents: () => widget.onSwitchTab(2),
+                            onApplications: widget.onOpenApplications,
+                            onJoined: widget.onOpenJoinedOrgs,
+                          ),
+                        ),
+                      ),
+                      _Centered(
+                        layout: l,
+                        child: HomeEventsSection(
+                          onViewAll: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AllUpcomingEventsPage(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      _Centered(
+                        layout: l,
+                        child: HomeRecommendedSection(
+                          onViewAll: () => widget.onSwitchTab(1),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                _Centered(
-                  layout: l,
-                  child: HomeRecommendedSection(
-                    onViewAll: () => widget.onSwitchTab(1),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
@@ -303,7 +331,7 @@ class _Logo extends StatelessWidget {
             const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
         child: ClipOval(
           child: Image.asset(
-            'assets/icon/app_logo.png',
+            'assets/icon/app_logo_green.png',
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) =>
                 const Icon(Icons.groups_rounded, color: HC.primary),
@@ -414,7 +442,8 @@ class _SearchBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  const Icon(Icons.search_rounded, color: HC.primary, size: 23),
+                  const Icon(Icons.search_rounded,
+                      color: Colors.black, size: 23),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
@@ -435,8 +464,8 @@ class _SearchBar extends StatelessWidget {
                     child: const SizedBox(
                       width: 44,
                       height: 44,
-                      child:
-                          Icon(Icons.tune_rounded, color: HC.primary, size: 22),
+                      child: Icon(Icons.tune_rounded,
+                          color: Colors.black, size: 22),
                     ),
                   ),
                 ],
@@ -550,13 +579,13 @@ class _QuickCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Container(
+                    SizedBox(
                       width: iconBox,
                       height: iconBox,
-                      decoration: const BoxDecoration(
-                          color: HC.mint, shape: BoxShape.circle),
-                      child: Icon(a.icon,
-                          color: HC.primary, size: roomy ? 22 : 19),
+                      child: Center(
+                        child: Icon(a.icon,
+                            color: HC.primary, size: roomy ? 25 : 22),
+                      ),
                     ),
                     const Spacer(),
                     if (a.badge > 0) _Badge(count: a.badge),
@@ -588,9 +617,9 @@ class _QuickCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (roomy)
-                      const Icon(Icons.arrow_forward_rounded,
-                          size: 16, color: HC.primary),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_rounded,
+                        size: roomy ? 16 : 14, color: Colors.black),
                   ],
                 ),
               ],

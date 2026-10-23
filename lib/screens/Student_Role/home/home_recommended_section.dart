@@ -147,23 +147,9 @@ class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
           padding: EdgeInsets.symmetric(horizontal: layout.hPad),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: HC.mint,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.groups_rounded,
-                  size: 22,
-                  color: HC.primary,
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Recommended for You',
+                  'Recommended For You',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -178,7 +164,7 @@ class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
                 style: TextButton.styleFrom(
                   minimumSize: const Size(44, 44),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  foregroundColor: HC.primary,
+                  foregroundColor: Colors.black,
                   tapTargetSize: MaterialTapTargetSize.padded,
                 ),
                 child: const Text(

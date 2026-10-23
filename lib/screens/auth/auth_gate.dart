@@ -25,10 +25,10 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   // ── Assets ────────────────────────────────────────────────────────────────
-  static const String _kLogoAsset = 'assets/icon/app_logo.png';
+  static const String _kLogoAsset = 'assets/icon/app_logo_green.png';
 
   // ── Palette ───────────────────────────────────────────────────────────────
-  static const Color _kBg = Color(0xFFF1F8F4);
+  static const Color _kBg = Color(0xFFFFFFFF);
   static const Color _kTitle = Color(0xFF17352A);
   static const Color _kSubtitle = Color(0xFF6B8178);
   static const Color _kBorder = Color(0xFFDCEBE4);
@@ -237,7 +237,7 @@ class _AuthGateState extends State<AuthGate> {
                   ),
                 ],
               ),
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(12),
               child: Image.asset(
                 _kLogoAsset,
                 fit: BoxFit.contain,
@@ -263,19 +263,6 @@ class _AuthGateState extends State<AuthGate> {
                 color: _kTitle,
                 letterSpacing: -0.4,
                 height: 1.0,
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            // ── Status label ───────────────────────────────────────────────
-            const Text(
-              'Loading your session...',
-              style: TextStyle(
-                fontSize: 13,
-                color: _kSubtitle,
-                fontWeight: FontWeight.w400,
-                letterSpacing: 0.1,
               ),
             ),
 

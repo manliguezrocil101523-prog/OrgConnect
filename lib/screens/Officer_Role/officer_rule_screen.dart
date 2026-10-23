@@ -91,7 +91,11 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
       final now = DateTime.now();
       final filtered = rows.where((event) {
         final status = event['status']?.toString().toLowerCase() ?? '';
-        final published = !event.containsKey('status') || status.isEmpty || status == 'published' || status == 'approved' || status == 'posted';
+        final published = !event.containsKey('status') ||
+            status.isEmpty ||
+            status == 'published' ||
+            status == 'approved' ||
+            status == 'posted';
         final date = DateTime.tryParse(event['date']?.toString() ?? '');
         return published && (date == null || !date.isBefore(now));
       }).toList();
@@ -123,7 +127,8 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           margin: EdgeInsets.only(
             bottom: MediaQuery.of(context).size.height - 140,
             left: 40,
@@ -159,7 +164,6 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
     if (_selectedIndex == 3) return;
     setState(() => _selectedIndex = 3);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -315,7 +319,9 @@ class _HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final displayName = userName.isNotEmpty ? userName : 'Officer';
-    final cleanOrgName = orgName.replaceAll(RegExp(r'tiatro', caseSensitive: false), 'teatro').trim();
+    final cleanOrgName = orgName
+        .replaceAll(RegExp(r'tiatro', caseSensitive: false), 'teatro')
+        .trim();
     final cleanPosition = position.trim().isEmpty ? 'Officer' : position.trim();
     final orgStatus = '$cleanOrgName $cleanPosition';
     final upcoming = _upcomingCount();
@@ -380,7 +386,8 @@ class _HomeTab extends StatelessWidget {
                     const SizedBox(height: 22),
                     _OfficerSectionHeader(
                       title: 'Posted Events',
-                      subtitle: 'Events approved and posted by the adviser, with their pictures',
+                      subtitle:
+                          'Events approved and posted by the adviser, with their pictures',
                     ),
                     const SizedBox(height: 10),
                     if (loadingEvents)
@@ -785,7 +792,7 @@ class _OfficerEventCard extends StatelessWidget {
                 ],
                 if (eventId.isNotEmpty) ...[
                   const SizedBox(height: 7),
-Align(
+                  Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
                       onPressed: () => showEventComments(
@@ -794,7 +801,10 @@ Align(
                         eventTitle: title,
                       ),
                       icon: const Icon(Icons.forum_outlined, size: 17),
-                      label: EventCommentCountLabel(eventId: eventId, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                      label: EventCommentCountLabel(
+                          eventId: eventId,
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w800)),
                       style: TextButton.styleFrom(
                         foregroundColor: _green,
                         textStyle: const TextStyle(
@@ -896,7 +906,8 @@ class _OfficerOrganizationsTab extends StatelessWidget {
   void _openMembers(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => OfficerMembersScreen(organizationId: orgId)),
+      MaterialPageRoute(
+          builder: (_) => OfficerMembersScreen(organizationId: orgId)),
     );
   }
 
@@ -937,7 +948,8 @@ class _OfficerOrganizationsTab extends StatelessWidget {
   void _openBrowseOrganizations(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const OrgListScreen(showBackButton: true)),
+      MaterialPageRoute(
+          builder: (_) => const OrgListScreen(showBackButton: true)),
     );
   }
 
@@ -951,10 +963,11 @@ class _OfficerOrganizationsTab extends StatelessWidget {
       );
 
   Widget _organizationHero() {
-    final org = AppState.instance.organizations.cast<Organization?>().firstWhere(
-      (item) => item?.id == orgId,
-      orElse: () => null,
-    );
+    final org =
+        AppState.instance.organizations.cast<Organization?>().firstWhere(
+              (item) => item?.id == orgId,
+              orElse: () => null,
+            );
     final logo = org?.logoAsset.trim() ?? '';
 
     Widget logoWidget() {
@@ -1112,7 +1125,8 @@ class _OfficerOrganizationsTab extends StatelessWidget {
                   _feature(
                     icon: Icons.assignment_rounded,
                     title: 'Applications',
-                    subtitle: 'Review and manage applications for your organization.',
+                    subtitle:
+                        'Review and manage applications for your organization.',
                     onTap: () => _openApplications(context),
                   ),
                   const SizedBox(height: 10),
@@ -1126,28 +1140,32 @@ class _OfficerOrganizationsTab extends StatelessWidget {
                   _feature(
                     icon: Icons.badge_rounded,
                     title: 'Organization profile',
-                    subtitle: 'Edit the public organization information, officers, and highlights.',
+                    subtitle:
+                        'Edit the public organization information, officers, and highlights.',
                     onTap: () => _openOrgProfile(context),
                   ),
                   const SizedBox(height: 10),
                   _feature(
                     icon: Icons.forum_rounded,
                     title: 'Community Chat',
-                    subtitle: 'Open the organization conversation with members and officers.',
+                    subtitle:
+                        'Open the organization conversation with members and officers.',
                     onTap: () => _openCommunity(context),
                   ),
                   const SizedBox(height: 10),
                   _feature(
                     icon: Icons.groups_rounded,
                     title: 'Orgs Joined',
-                    subtitle: 'See every organization you belong to, including your position in each one.',
+                    subtitle:
+                        'See every organization you belong to, including your position in each one.',
                     onTap: () => _openJoinedOrganizations(context),
                   ),
                   const SizedBox(height: 10),
                   _feature(
                     icon: Icons.explore_rounded,
                     title: 'Browse Organizations',
-                    subtitle: 'Explore other organizations and apply to ones you want to join.',
+                    subtitle:
+                        'Explore other organizations and apply to ones you want to join.',
                     onTap: () => _openBrowseOrganizations(context),
                   ),
                 ],
@@ -1239,10 +1257,6 @@ class _OfficerOrganizationsTab extends StatelessWidget {
     );
   }
 }
-
-
-
-
 
 class _NavItem extends StatelessWidget {
   final IconData icon;
@@ -1341,13 +1355,12 @@ class _OfficerJoinedOrganizationsScreenState
       if (userId != null && userId.isNotEmpty) {
         final rows = await Supabase.instance.client
             .from('members')
-            .select('org_id, organization_id, org_name, position')
+            .select('org_id, org_name, position')
             .eq('profile_id', userId);
 
         for (final raw in (rows as List)) {
           final row = Map<String, dynamic>.from(raw as Map);
-          final id =
-              (row['org_id'] ?? row['organization_id'])?.toString().trim();
+          final id = row['org_id']?.toString().trim();
           final name = row['org_name']?.toString().trim() ?? '';
           if (id != null && id.isNotEmpty) ids.add(id);
           if (name.isNotEmpty) names.add(name.toLowerCase());
@@ -1422,16 +1435,16 @@ class _OfficerJoinedOrganizationsScreenState
         // account is visible even when the organization cache is still loading.
         if (widget.currentOrgId.isNotEmpty &&
             !joined.any((org) => org.id == widget.currentOrgId)) {
-          final current = AppState.instance.organizations.cast<Organization?>()
-              .firstWhere(
-                (org) => org?.id == widget.currentOrgId,
-                orElse: () => null,
-              );
+          final current =
+              AppState.instance.organizations.cast<Organization?>().firstWhere(
+                    (org) => org?.id == widget.currentOrgId,
+                    orElse: () => null,
+                  );
           if (current != null) joined.insert(0, current);
         }
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF1FAF6),
+          backgroundColor: const Color(0xFFFFFFFF),
           body: Column(
             children: [
               const _OfficerJoinedHeader(),
@@ -1466,15 +1479,13 @@ class _OfficerJoinedOrganizationsScreenState
                           )
                         : ListView.separated(
                             physics: const BouncingScrollPhysics(),
-                            padding:
-                                const EdgeInsets.fromLTRB(18, 18, 18, 36),
+                            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
                             itemCount: joined.length,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 12),
                             itemBuilder: (_, i) {
                               final org = joined[i];
-                              final isCurrent =
-                                  org.id == widget.currentOrgId;
+                              final isCurrent = org.id == widget.currentOrgId;
                               return _OfficerJoinedOrgCard(
                                 org: org,
                                 isCurrentOrganization: isCurrent,
@@ -1614,7 +1625,6 @@ class _OfficerJoinedOrgCard extends StatefulWidget {
 
 class _OfficerJoinedOrgCardState extends State<_OfficerJoinedOrgCard> {
   String _position = 'Member';
-
 
   @override
   void initState() {

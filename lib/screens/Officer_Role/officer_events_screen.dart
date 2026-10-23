@@ -36,6 +36,7 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   List<Map<String, dynamic>> _requests = <Map<String, dynamic>>[];
   bool _loading = true;
   bool _canSubmitProposals = false;
+  bool _busy = false;
   static const _finalBriefMarker = '[ADVISER_FINAL_LAYOUT_REQUESTED]';
 
   @override
@@ -58,7 +59,8 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
       final position = row?['position']?.toString().toLowerCase().trim() ?? '';
       if (!mounted) return;
       setState(() {
-        _canSubmitProposals = position == 'president' || position == 'vice president';
+        _canSubmitProposals =
+            position == 'president' || position == 'vice president';
       });
     } catch (_) {
       if (mounted) setState(() => _canSubmitProposals = false);
@@ -86,7 +88,12 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   }
 
   Future<void> _createRequest() async {
-    if (!_canSubmitProposals) { _snack('Only the President or Vice President can send proposals to the adviser.', true); return; }
+    if (!_canSubmitProposals) {
+      _snack(
+          'Only the President or Vice President can send proposals to the adviser.',
+          true);
+      return;
+    }
     final title = TextEditingController();
     final desc = TextEditingController();
     DateTime selected = DateTime.now().add(const Duration(days: 1));
@@ -95,12 +102,14 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, ss) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           title: const Row(
             children: [
               Icon(Icons.auto_awesome_rounded, color: green),
               SizedBox(width: 10),
-              Text('New Activity Proposal', style: TextStyle(fontWeight: FontWeight.w900)),
+              Text('New Activity Proposal',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
             ],
           ),
           content: SingleChildScrollView(
@@ -127,7 +136,8 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
                   maxLines: 5,
                   decoration: InputDecoration(
                     labelText: 'Proposal details',
-                    hintText: 'Explain the purpose, participants, venue, and needed resources.',
+                    hintText:
+                        'Explain the purpose, participants, venue, and needed resources.',
                     prefixIcon: const Padding(
                       padding: EdgeInsets.only(bottom: 62),
                       child: Icon(Icons.description_rounded),
@@ -143,13 +153,16 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
                 const SizedBox(height: 12),
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                   tileColor: const Color(0xFFF5FFF9),
                   leading: const CircleAvatar(
                     backgroundColor: Color(0xFFDDF4E8),
-                    child: Icon(Icons.calendar_today_rounded, color: green, size: 19),
+                    child: Icon(Icons.calendar_today_rounded,
+                        color: green, size: 19),
                   ),
-                  title: const Text('Target date', style: TextStyle(fontWeight: FontWeight.w800)),
+                  title: const Text('Target date',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
                   subtitle: Text(_date(selected)),
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -176,7 +189,8 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
               label: const Text('Submit Proposal'),
               style: FilledButton.styleFrom(
                 backgroundColor: green,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
             ),
           ],
@@ -212,7 +226,16 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
         'updated_at': now.toIso8601String(),
       });
       try {
-        await _db.from('notifications').insert({'id': DateTime.now().microsecondsSinceEpoch.toString(), 'title': 'New Activity Proposal', 'message': '$cleanTitle was submitted by the officer for adviser review.', 'date': now.toIso8601String(), 'read': false, 'org_id': widget.orgId, 'student_id': null});
+        await _db.from('notifications').insert({
+          'id': DateTime.now().microsecondsSinceEpoch.toString(),
+          'title': 'New Activity Proposal',
+          'message':
+              '$cleanTitle was submitted by the officer for adviser review.',
+          'date': now.toIso8601String(),
+          'read': false,
+          'org_id': widget.orgId,
+          'student_id': null
+        });
       } catch (_) {}
       _snack('Proposal sent to the adviser.');
       await _load();
@@ -221,39 +244,73 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     }
   }
 
-  String _time24(TimeOfDay value) => '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  String _time24(TimeOfDay value) =>
+      '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
   Future<void> _submitCreative(Map<String, dynamic> request) async {
-    if (!_canSubmitProposals) { _snack('Only the President or Vice President can send proposals to the adviser.', true); return; }
-    final activityName = TextEditingController(text: request['title']?.toString() ?? '');
-    final venue = TextEditingController(text: request['venue']?.toString() ?? '');
-    final purpose = TextEditingController(text: request['purpose']?.toString() ?? '');
-    var selected = DateTime.tryParse('${request['date'] ?? ''}') ?? DateTime.now().add(const Duration(days: 1));
-    final start = TextEditingController(text: request['start_time']?.toString() ?? '');
-    final end = TextEditingController(text: request['end_time']?.toString() ?? '');
+    if (!_canSubmitProposals) {
+      _snack(
+          'Only the President or Vice President can send proposals to the adviser.',
+          true);
+      return;
+    }
+    final activityName =
+        TextEditingController(text: request['title']?.toString() ?? '');
+    final venue =
+        TextEditingController(text: request['venue']?.toString() ?? '');
+    final purpose =
+        TextEditingController(text: request['purpose']?.toString() ?? '');
+    var selected = DateTime.tryParse('${request['date'] ?? ''}') ??
+        DateTime.now().add(const Duration(days: 1));
+    final start =
+        TextEditingController(text: request['start_time']?.toString() ?? '');
+    final end =
+        TextEditingController(text: request['end_time']?.toString() ?? '');
 
     final detailsOk = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: const Row(children: [Icon(Icons.auto_awesome_rounded, color: green), SizedBox(width: 9), Text('Prepare Final Posting', style: TextStyle(fontWeight: FontWeight.w900))]),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: const Row(children: [
+            Icon(Icons.auto_awesome_rounded, color: green),
+            SizedBox(width: 9),
+            Text('Prepare Final Posting',
+                style: TextStyle(fontWeight: FontWeight.w900))
+          ]),
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: activityName, decoration: const InputDecoration(labelText: 'Activity name', border: OutlineInputBorder())),
+              TextField(
+                  controller: activityName,
+                  decoration: const InputDecoration(
+                      labelText: 'Activity name',
+                      border: OutlineInputBorder())),
               const SizedBox(height: 11),
-              TextField(controller: purpose, maxLines: 3, decoration: const InputDecoration(labelText: 'What is the event about?', border: OutlineInputBorder())),
+              TextField(
+                  controller: purpose,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                      labelText: 'What is the event about?',
+                      border: OutlineInputBorder())),
               const SizedBox(height: 11),
-              TextField(controller: venue, decoration: const InputDecoration(labelText: 'Venue', border: OutlineInputBorder())),
+              TextField(
+                  controller: venue,
+                  decoration: const InputDecoration(
+                      labelText: 'Venue', border: OutlineInputBorder())),
               const SizedBox(height: 11),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Event date', style: TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${selected.month}/${selected.day}/${selected.year}'),
-                trailing: const Icon(Icons.calendar_month_rounded, color: green),
+                title: const Text('Event date',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle:
+                    Text('${selected.month}/${selected.day}/${selected.year}'),
+                trailing:
+                    const Icon(Icons.calendar_month_rounded, color: green),
                 onTap: () async {
                   final minDate = DateTime.now();
-                  final initial = selected.isBefore(minDate) ? minDate : selected;
+                  final initial =
+                      selected.isBefore(minDate) ? minDate : selected;
                   final picked = await showDatePicker(
                     context: dialogContext,
                     initialDate: initial,
@@ -265,17 +322,57 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
               ),
               const SizedBox(height: 4),
               Row(children: [
-                Expanded(child: TextField(controller: start, readOnly: true, onTap: () async { final picked = await showTimePicker(context: dialogContext, initialTime: TimeOfDay.now()); if (picked != null) setDialogState(() => start.text = _time24(picked)); }, decoration: const InputDecoration(labelText: 'Start time', suffixIcon: Icon(Icons.schedule_rounded)))),
+                Expanded(
+                    child: TextField(
+                        controller: start,
+                        readOnly: true,
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                              context: dialogContext,
+                              initialTime: TimeOfDay.now());
+                          if (picked != null) {
+                            setDialogState(() => start.text = _time24(picked));
+                          }
+                        },
+                        decoration: const InputDecoration(
+                            labelText: 'Start time',
+                            suffixIcon: Icon(Icons.schedule_rounded)))),
                 const SizedBox(width: 10),
-                Expanded(child: TextField(controller: end, readOnly: true, onTap: () async { final picked = await showTimePicker(context: dialogContext, initialTime: TimeOfDay.now()); if (picked != null) setDialogState(() => end.text = _time24(picked)); }, decoration: const InputDecoration(labelText: 'End time', suffixIcon: Icon(Icons.schedule_rounded)))),
+                Expanded(
+                    child: TextField(
+                        controller: end,
+                        readOnly: true,
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                              context: dialogContext,
+                              initialTime: TimeOfDay.now());
+                          if (picked != null) {
+                            setDialogState(() => end.text = _time24(picked));
+                          }
+                        },
+                        decoration: const InputDecoration(
+                            labelText: 'End time',
+                            suffixIcon: Icon(Icons.schedule_rounded)))),
               ]),
               const SizedBox(height: 12),
-              const Align(alignment: Alignment.centerLeft, child: Text('Add the event picture(s) next.', style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600))),
+              const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Add the event picture(s) next.',
+                      style: TextStyle(
+                          color: muted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600))),
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
-            FilledButton.icon(onPressed: () => Navigator.pop(dialogContext, true), icon: const Icon(Icons.photo_library_rounded, size: 17), label: const Text('Choose Pictures'), style: FilledButton.styleFrom(backgroundColor: green)),
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel')),
+            FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.photo_library_rounded, size: 17),
+                label: const Text('Choose Pictures'),
+                style: FilledButton.styleFrom(backgroundColor: green)),
           ],
         ),
       ),
@@ -291,8 +388,13 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     start.dispose();
     end.dispose();
     if (detailsOk != true) return;
-    if (activityNameValue.isEmpty || venueValue.isEmpty || purposeValue.isEmpty || startValue.isEmpty) {
-      _snack('Please provide the activity name, purpose, venue, and start time.', true);
+    if (activityNameValue.isEmpty ||
+        venueValue.isEmpty ||
+        purposeValue.isEmpty ||
+        startValue.isEmpty) {
+      _snack(
+          'Please provide the activity name, purpose, venue, and start time.',
+          true);
       return;
     }
 
@@ -303,76 +405,205 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     );
     if (files == null || files.files.isEmpty) return;
 
+    if (_busy) return;
+    _busy = true;
     final urls = <String>[];
     try {
       for (final file in files.files) {
         if (file.bytes == null) continue;
-        final ext = file.extension ?? 'jpg';
-        final path = 'event_creatives/${widget.orgId}/${request['id']}_${DateTime.now().microsecondsSinceEpoch}.$ext';
-        await _db.storage.from('org-assets').uploadBinary(path, file.bytes!, fileOptions: FileOptions(contentType: 'image/$ext', upsert: true));
+        final ext = (file.extension ?? 'jpg').toLowerCase();
+        final contentType = ext == 'png'
+            ? 'image/png'
+            : ext == 'webp'
+                ? 'image/webp'
+                : ext == 'gif'
+                    ? 'image/gif'
+                    : 'image/jpeg';
+        final path =
+            'event_creatives/${widget.orgId}/${request['id']}_${DateTime.now().microsecondsSinceEpoch}.$ext';
+        await _db.storage.from('org-assets').uploadBinary(path, file.bytes!,
+            fileOptions: FileOptions(contentType: contentType, upsert: true));
         urls.add(_db.storage.from('org-assets').getPublicUrl(path));
       }
       if (urls.isEmpty) return;
       final now = DateTime.now();
-      await _db.from('event_requests').update({
-        'title': activityNameValue,
-        'creative_urls': urls,
-        'venue': venueValue,
-        'purpose': purposeValue,
-        'date': selected.toIso8601String(),
-        'start_time': startValue,
-        'end_time': endValue,
-        'status': 'creative_submitted',
-        'submitted_at': now.toIso8601String(),
-        'updated_at': now.toIso8601String(),
-      }).eq('id', request['id']);
+      final saved = await _db
+          .from('event_requests')
+          .update({
+            'title': activityNameValue,
+            'creative_urls': urls,
+            'venue': venueValue,
+            'purpose': purposeValue,
+            'date': selected.toIso8601String(),
+            'start_time': startValue,
+            'end_time': endValue,
+            'status': 'creative_submitted',
+            'submitted_at': now.toIso8601String(),
+            'updated_at': now.toIso8601String(),
+          })
+          .eq('id', request['id'])
+          .select();
+      if ((saved as List).isEmpty) {
+        _snack(
+            'Could not update this proposal. Only the officer who created it, or an admin, may change it.',
+            true);
+        return;
+      }
       try {
-        await _db.from('notifications').insert({'id': DateTime.now().microsecondsSinceEpoch.toString(), 'title': 'Final Posting Sent to Adviser', 'message': '${request['title'] ?? 'Activity Proposal'} now has the final pictures, venue, purpose, and time details for adviser review.', 'date': now.toIso8601String(), 'read': false, 'org_id': widget.orgId, 'student_id': null});
+        await _db.from('notifications').insert({
+          'id': DateTime.now().microsecondsSinceEpoch.toString(),
+          'title': 'Final Posting Sent to Adviser',
+          'message':
+              '${request['title'] ?? 'Activity Proposal'} now has the final pictures, venue, purpose, and time details for adviser review.',
+          'date': now.toIso8601String(),
+          'read': false,
+          'org_id': widget.orgId,
+          'student_id': null
+        });
       } catch (_) {}
       _snack('Final posting sent to the adviser for review.');
       await _load();
     } catch (e) {
       _snack('Could not upload the final posting: $e', true);
+    } finally {
+      _busy = false;
     }
   }
 
   Future<void> _editProposal(Map<String, dynamic> request) async {
-    final title = TextEditingController(text: request['title']?.toString() ?? '');
-    final desc = TextEditingController(text: request['description']?.toString() ?? '');
-    final purpose = TextEditingController(text: request['purpose']?.toString() ?? '');
-    final venue = TextEditingController(text: request['venue']?.toString() ?? '');
-    var selected = DateTime.tryParse('${request['date'] ?? ''}') ?? DateTime.now().add(const Duration(days: 1));
+    final title =
+        TextEditingController(text: request['title']?.toString() ?? '');
+    final desc =
+        TextEditingController(text: request['description']?.toString() ?? '');
+    final purpose =
+        TextEditingController(text: request['purpose']?.toString() ?? '');
+    final venue =
+        TextEditingController(text: request['venue']?.toString() ?? '');
+    var selected = DateTime.tryParse('${request['date'] ?? ''}') ??
+        DateTime.now().add(const Duration(days: 1));
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: const Text('Revise Activity Proposal', style: TextStyle(fontWeight: FontWeight.w900)),
-          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: title, decoration: const InputDecoration(labelText: 'Activity title', border: OutlineInputBorder())),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: const Text('Revise Activity Proposal',
+              style: TextStyle(fontWeight: FontWeight.w900)),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: title,
+                decoration: const InputDecoration(
+                    labelText: 'Activity title', border: OutlineInputBorder())),
             const SizedBox(height: 11),
-            TextField(controller: purpose, maxLines: 3, decoration: const InputDecoration(labelText: 'What is the event about?', border: OutlineInputBorder())),
+            TextField(
+                controller: purpose,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'What is the event about?',
+                    border: OutlineInputBorder())),
             const SizedBox(height: 11),
-            TextField(controller: desc, maxLines: 5, decoration: const InputDecoration(labelText: 'Proposal details', border: OutlineInputBorder())),
+            TextField(
+                controller: desc,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                    labelText: 'Proposal details',
+                    border: OutlineInputBorder())),
             const SizedBox(height: 11),
-            TextField(controller: venue, decoration: const InputDecoration(labelText: 'Venue (optional)', border: OutlineInputBorder())),
+            TextField(
+                controller: venue,
+                decoration: const InputDecoration(
+                    labelText: 'Venue (optional)',
+                    border: OutlineInputBorder())),
             const SizedBox(height: 4),
-            ListTile(contentPadding: EdgeInsets.zero, title: const Text('Target date', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${selected.month}/${selected.day}/${selected.year}'), trailing: const Icon(Icons.calendar_month_rounded, color: green), onTap: () async { final minDate = DateTime.now(); final initial = selected.isBefore(minDate) ? minDate : selected; final picked = await showDatePicker(context: dialogContext, initialDate: initial, firstDate: minDate, lastDate: minDate.add(const Duration(days: 365))); if (picked != null) setDialogState(() => selected = picked); }),
+            ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Target date',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle:
+                    Text('${selected.month}/${selected.day}/${selected.year}'),
+                trailing:
+                    const Icon(Icons.calendar_month_rounded, color: green),
+                onTap: () async {
+                  final minDate = DateTime.now();
+                  final initial =
+                      selected.isBefore(minDate) ? minDate : selected;
+                  final picked = await showDatePicker(
+                      context: dialogContext,
+                      initialDate: initial,
+                      firstDate: minDate,
+                      lastDate: minDate.add(const Duration(days: 365)));
+                  if (picked != null) setDialogState(() => selected = picked);
+                }),
           ])),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Send Revised Proposal'))],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Send Revised Proposal'))
+          ],
         ),
       ),
     );
-    final values = [title.text.trim(), purpose.text.trim(), desc.text.trim(), venue.text.trim()];
-    title.dispose(); desc.dispose(); purpose.dispose(); venue.dispose();
-    if (ok != true || values[0].isEmpty || values[2].isEmpty || values[1].isEmpty) { _snack('Please complete the revised proposal.', true); return; }
+    final values = [
+      title.text.trim(),
+      purpose.text.trim(),
+      desc.text.trim(),
+      venue.text.trim()
+    ];
+    title.dispose();
+    desc.dispose();
+    purpose.dispose();
+    venue.dispose();
+    if (ok != true ||
+        values[0].isEmpty ||
+        values[2].isEmpty ||
+        values[1].isEmpty) {
+      _snack('Please complete the revised proposal.', true);
+      return;
+    }
     try {
       final now = DateTime.now();
-      await _db.from('event_requests').update({'title': values[0], 'purpose': values[1], 'description': values[2], 'venue': values[3], 'date': selected.toIso8601String(), 'status': 'pending', 'feedback': '', 'submitted_at': now.toIso8601String(), 'updated_at': now.toIso8601String()}).eq('id', request['id']);
-      try { await _db.from('notifications').insert({'id': DateTime.now().microsecondsSinceEpoch.toString(), 'title': 'Revised Proposal Submitted', 'message': '${values[0]} was revised by the officer and sent back to the adviser.', 'date': now.toIso8601String(), 'read': false, 'org_id': widget.orgId, 'student_id': null}); } catch (_) {}
+      final saved = await _db
+          .from('event_requests')
+          .update({
+            'title': values[0],
+            'purpose': values[1],
+            'description': values[2],
+            'venue': values[3],
+            'date': selected.toIso8601String(),
+            'status': 'pending',
+            'feedback': '',
+            'submitted_at': now.toIso8601String(),
+            'updated_at': now.toIso8601String()
+          })
+          .eq('id', request['id'])
+          .select();
+      if ((saved as List).isEmpty) {
+        _snack(
+            'Could not update this proposal. Only the officer who created it, or an admin, may change it.',
+            true);
+        return;
+      }
+      try {
+        await _db.from('notifications').insert({
+          'id': DateTime.now().microsecondsSinceEpoch.toString(),
+          'title': 'Revised Proposal Submitted',
+          'message':
+              '${values[0]} was revised by the officer and sent back to the adviser.',
+          'date': now.toIso8601String(),
+          'read': false,
+          'org_id': widget.orgId,
+          'student_id': null
+        });
+      } catch (_) {}
       _snack('Revised proposal sent to the adviser.');
       await _load();
-    } catch (e) { _snack('Could not update the proposal: $e', true); }
+    } catch (e) {
+      _snack('Could not update the proposal: $e', true);
+    }
   }
 
   String _date(dynamic value) {
@@ -387,8 +618,10 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   }
 
   void _snack(String text, [bool error = false]) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text), backgroundColor: error ? Colors.red : green),
+      SnackBar(
+          content: Text(text), backgroundColor: error ? Colors.red : green),
     );
   }
 
@@ -396,67 +629,72 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     return SafeArea(
       bottom: false,
       child: Column(
-          children: [
-            _ActivityHeader(
-              orgName: widget.orgName,
-              orgId: widget.orgId,
-              logoAsset: widget.logoAsset,
-            ),
-            Expanded(
-              child: RefreshIndicator(
-                color: green,
-                onRefresh: _load,
-                child: _loading
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: const [
-                          SizedBox(height: 190),
-                          Center(child: CircularProgressIndicator(color: green)),
-                        ],
-                      )
-                    : ListView(
-                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                        padding: const EdgeInsets.fromLTRB(16, 18, 16, 110),
-                        children: [
-                          _IntroCard(orgName: widget.orgName),
-                          const SizedBox(height: 18),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Your Proposals',
-                                style: TextStyle(
-                                  color: dark,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -.3,
+        children: [
+          _ActivityHeader(
+            orgName: widget.orgName,
+            orgId: widget.orgId,
+            logoAsset: widget.logoAsset,
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              color: green,
+              onRefresh: _load,
+              child: _loading
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 190),
+                        Center(child: CircularProgressIndicator(color: green)),
+                      ],
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics()),
+                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 110),
+                      children: [
+                        _IntroCard(orgName: widget.orgName),
+                        const SizedBox(height: 18),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Your Proposals',
+                              style: TextStyle(
+                                color: dark,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -.3,
+                              ),
+                            ),
+                            if (_requests.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDDF4E8),
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Text(
+                                  '${_requests.length} total',
+                                  style: const TextStyle(
+                                      color: green,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800),
                                 ),
                               ),
-                              if (_requests.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDDF4E8),
-                                    borderRadius: BorderRadius.circular(30),
-                                  ),
-                                  child: Text(
-                                    '${_requests.length} total',
-                                    style: const TextStyle(color: green, fontSize: 11, fontWeight: FontWeight.w800),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          if (_requests.isEmpty)
-                            const _EmptyProposals()
-                          else
-                            ..._requests.map(_card),
-                        ],
-                      ),
-              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (_requests.isEmpty)
+                          const _EmptyProposals()
+                        else
+                          ..._requests.map(_card),
+                      ],
+                    ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -470,7 +708,8 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
       elevation: 8,
       onPressed: _canSubmitProposals ? _createRequest : null,
       icon: const Icon(Icons.add_rounded),
-      label: const Text('New Proposal', style: TextStyle(fontWeight: FontWeight.w800)),
+      label: const Text('New Proposal',
+          style: TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 
@@ -499,15 +738,20 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
 
   Widget _card(Map<String, dynamic> request) {
     final status = request['status']?.toString() ?? 'pending';
-    final images = (request['creative_urls'] is List ? request['creative_urls'] : <dynamic>[])
+    final images = (request['creative_urls'] is List
+            ? request['creative_urls']
+            : <dynamic>[])
         .whereType<String>()
         .toList();
 
     final hasCreative = images.isNotEmpty;
-    final hasAdviserBrief = (request['feedback']?.toString() ?? '').contains(_finalBriefMarker);
+    final hasAdviserBrief =
+        (request['feedback']?.toString() ?? '').contains(_finalBriefMarker);
     final isWaitingForAdviser = status == 'admin_approved' && !hasAdviserBrief;
-    final isReady = (status == 'admin_approved' && hasAdviserBrief) || (status == 'revision_requested' && hasCreative);
-    final needsProposalRevision = status == 'revision_requested' && !hasCreative;
+    final isReady = (status == 'admin_approved' && hasAdviserBrief) ||
+        (status == 'revision_requested' && hasCreative);
+    final needsProposalRevision =
+        status == 'revision_requested' && !hasCreative;
     final isRejected = status == 'rejected' || status == 'admin_rejected';
 
     return Container(
@@ -536,20 +780,29 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE6F7EE),
                         borderRadius: BorderRadius.circular(30),
                       ),
                       child: const Text(
                         'ACTIVITY PROPOSAL',
-                        style: TextStyle(color: green, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: .7),
+                        style: TextStyle(
+                            color: green,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .7),
                       ),
                     ),
                     const SizedBox(height: 9),
                     Text(
                       request['title']?.toString() ?? 'Untitled proposal',
-                      style: const TextStyle(color: dark, fontSize: 18, fontWeight: FontWeight.w900, height: 1.15),
+                      style: const TextStyle(
+                          color: dark,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          height: 1.15),
                     ),
                   ],
                 ),
@@ -566,7 +819,10 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
               Expanded(
                 child: Text(
                   _date(request['date']),
-                  style: const TextStyle(color: muted, fontSize: 12.5, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      color: muted,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700),
                 ),
               ),
             ],
@@ -574,15 +830,30 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
           const SizedBox(height: 10),
           Text(
             request['description']?.toString() ?? '',
-            style: const TextStyle(color: muted, fontSize: 13, height: 1.5, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+                color: muted,
+                fontSize: 13,
+                height: 1.5,
+                fontWeight: FontWeight.w500),
           ),
-          if ((request['feedback'] ?? '').toString().replaceAll(_finalBriefMarker, '').trim().isNotEmpty) ...[
+          if ((request['feedback'] ?? '')
+              .toString()
+              .replaceAll(_finalBriefMarker, '')
+              .trim()
+              .isNotEmpty) ...[
             const SizedBox(height: 13),
-            _feedbackBox('Adviser feedback / instructions', request['feedback'].toString().replaceAll(_finalBriefMarker, '').trim(), Colors.orange),
+            _feedbackBox(
+                'Adviser feedback / instructions',
+                request['feedback']
+                    .toString()
+                    .replaceAll(_finalBriefMarker, '')
+                    .trim(),
+                Colors.orange),
           ],
           if ((request['admin_feedback'] ?? '').toString().isNotEmpty) ...[
             const SizedBox(height: 9),
-            _feedbackBox('Admin / CSO feedback', request['admin_feedback'].toString(), Colors.red),
+            _feedbackBox('Admin / CSO feedback',
+                request['admin_feedback'].toString(), Colors.red),
           ],
           if (images.isNotEmpty) ...[
             const SizedBox(height: 15),
@@ -613,7 +884,8 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
                         right: 10,
                         top: 10,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 5),
                           decoration: BoxDecoration(
                             color: const Color(0xB3128058),
                             borderRadius: BorderRadius.circular(20),
@@ -635,27 +907,55 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
           ],
           if (needsProposalRevision) ...[
             const SizedBox(height: 14),
-            Container(padding: const EdgeInsets.all(11), decoration: BoxDecoration(color: Colors.orange.withValues(alpha: .07), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.orange.withValues(alpha: .15))), child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.edit_note_rounded, color: Colors.orange, size: 17), SizedBox(width: 7), Expanded(child: Text('The adviser requested changes to the proposal. Revise it and send it back to the adviser.', style: TextStyle(color: dark, fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w600)))])),
+            Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: .07),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: Colors.orange.withValues(alpha: .15))),
+                child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.edit_note_rounded,
+                          color: Colors.orange, size: 17),
+                      SizedBox(width: 7),
+                      Expanded(
+                          child: Text(
+                              'The adviser requested changes to the proposal. Revise it and send it back to the adviser.',
+                              style: TextStyle(
+                                  color: dark,
+                                  fontSize: 11.5,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w600)))
+                    ])),
           ],
           if (isWaitingForAdviser) ...[
             const SizedBox(height: 14),
-            const _StatusNote(icon: Icons.schedule_rounded, text: 'Waiting for your adviser to tell the team in Community Chat when to prepare the final event post.'),
+            const _StatusNote(
+                icon: Icons.schedule_rounded,
+                text:
+                    'Waiting for your adviser to tell the team in Community Chat when to prepare the final event post.'),
           ],
           if (isReady) ...[
             const SizedBox(height: 15),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _canSubmitProposals ? () => _submitCreative(request) : null,
+                onPressed:
+                    _canSubmitProposals ? () => _submitCreative(request) : null,
                 icon: const Icon(Icons.auto_awesome_rounded, size: 18),
                 label: Text(
-                  hasCreative ? 'Improve & Resubmit Final Posting' : 'Create & Send Final Posting',
+                  hasCreative
+                      ? 'Improve & Resubmit Final Posting'
+                      : 'Create & Send Final Posting',
                 ),
                 style: FilledButton.styleFrom(
                   backgroundColor: green,
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
                 ),
               ),
             ),
@@ -665,10 +965,16 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _canSubmitProposals ? () => _editProposal(request) : null,
+                onPressed:
+                    _canSubmitProposals ? () => _editProposal(request) : null,
                 icon: const Icon(Icons.edit_note_rounded, size: 18),
                 label: const Text('Revise Proposal & Send to Adviser'),
-                style: FilledButton.styleFrom(backgroundColor: green, foregroundColor: Colors.white, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                style: FilledButton.styleFrom(
+                    backgroundColor: green,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15))),
               ),
             ),
           ],
@@ -681,7 +987,11 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
                 Expanded(
                   child: Text(
                     'This proposal was not approved. Review the feedback above before submitting a new proposal.',
-                    style: TextStyle(color: Colors.red, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.4),
+                    style: TextStyle(
+                        color: Colors.red,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4),
                   ),
                 ),
               ],
@@ -709,9 +1019,18 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w900)),
+                Text(title,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900)),
                 const SizedBox(height: 3),
-                Text(value, style: const TextStyle(color: dark, fontSize: 12, height: 1.4, fontWeight: FontWeight.w600)),
+                Text(value,
+                    style: const TextStyle(
+                        color: dark,
+                        fontSize: 12,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -735,7 +1054,9 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     final label = status == 'pending'
         ? 'WAITING FOR ADVISER'
         : status == 'admin_approved'
-            ? (hasAdviserBrief ? 'READY FOR FINAL POSTING' : 'WAITING FOR ADVISER')
+            ? (hasAdviserBrief
+                ? 'READY FOR FINAL POSTING'
+                : 'WAITING FOR ADVISER')
             : status == 'forwarded_to_admin'
                 ? 'WAITING FOR ADMIN / CSO'
                 : status == 'creative_submitted'
@@ -751,7 +1072,11 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: .3),
+        style: TextStyle(
+            color: color,
+            fontSize: 8.5,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .3),
       ),
     );
   }
@@ -787,7 +1112,8 @@ class _ActivityHeader extends StatelessWidget {
         width: 58,
         height: 58,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Icon(Icons.business_rounded, color: green, size: 31),
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.business_rounded, color: green, size: 31),
       );
     }
     return Image.asset(
@@ -795,16 +1121,18 @@ class _ActivityHeader extends StatelessWidget {
       width: 58,
       height: 58,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const Icon(Icons.business_rounded, color: green, size: 31),
+      errorBuilder: (_, __, ___) =>
+          const Icon(Icons.business_rounded, color: green, size: 31),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final org = AppState.instance.organizations.cast<Organization?>().firstWhere(
-          (item) => item?.id == orgId,
-          orElse: () => null,
-        );
+    final org =
+        AppState.instance.organizations.cast<Organization?>().firstWhere(
+              (item) => item?.id == orgId,
+              orElse: () => null,
+            );
     final logo = logoAsset.trim().isNotEmpty
         ? logoAsset.trim()
         : (org?.logoAsset.trim() ?? '');
@@ -838,7 +1166,8 @@ class _ActivityHeader extends StatelessWidget {
                   color: Colors.white.withValues(alpha: .20),
                 ),
                 child: Container(
-                  decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                  decoration: const BoxDecoration(
+                      shape: BoxShape.circle, color: Colors.white),
                   padding: const EdgeInsets.all(3),
                   child: CircleAvatar(
                     backgroundColor: const Color(0xFFE0F5E8),
@@ -878,7 +1207,8 @@ class _ActivityHeader extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         DecoratedBox(
-                          decoration: BoxDecoration(color: Color(0xFF86EFAC), shape: BoxShape.circle),
+                          decoration: BoxDecoration(
+                              color: Color(0xFF86EFAC), shape: BoxShape.circle),
                           child: SizedBox(width: 9, height: 9),
                         ),
                         SizedBox(width: 7),
@@ -887,7 +1217,11 @@ class _ActivityHeader extends StatelessWidget {
                             'OFFICER ORGANIZATION HUB',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .5),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .5),
                           ),
                         ),
                       ],
@@ -962,7 +1296,8 @@ class _IntroCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: line),
         boxShadow: const [
-          BoxShadow(color: Color(0x0A128058), blurRadius: 18, offset: Offset(0, 7)),
+          BoxShadow(
+              color: Color(0x0A128058), blurRadius: 18, offset: Offset(0, 7)),
         ],
       ),
       child: Row(
@@ -980,11 +1315,19 @@ class _IntroCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Plan it. Send it. Improve it.', style: TextStyle(color: dark, fontSize: 15.5, fontWeight: FontWeight.w900)),
+                const Text('Plan it. Send it. Improve it.',
+                    style: TextStyle(
+                        color: dark,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w900)),
                 const SizedBox(height: 4),
                 Text(
                   'Submit polished activity proposals for $orgName and keep every adviser review in one place.',
-                  style: const TextStyle(color: muted, fontSize: 11.5, height: 1.45, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      color: muted,
+                      fontSize: 11.5,
+                      height: 1.45,
+                      fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -1006,18 +1349,27 @@ class _EmptyProposals extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: line),
-        boxShadow: const [BoxShadow(color: Color(0x0A128058), blurRadius: 18, offset: Offset(0, 7))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x0A128058), blurRadius: 18, offset: Offset(0, 7))
+        ],
       ),
       child: Column(
         children: const [
           Icon(Icons.auto_awesome_rounded, color: green, size: 34),
           SizedBox(height: 10),
-          Text('No proposals yet', style: TextStyle(color: dark, fontSize: 15, fontWeight: FontWeight.w900)),
+          Text('No proposals yet',
+              style: TextStyle(
+                  color: dark, fontSize: 15, fontWeight: FontWeight.w900)),
           SizedBox(height: 5),
           Text(
             'Your submitted activity proposals will appear here with adviser feedback and creative status.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: muted, fontSize: 11.5, height: 1.45, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: muted,
+                fontSize: 11.5,
+                height: 1.45,
+                fontWeight: FontWeight.w600),
           ),
         ],
       ),

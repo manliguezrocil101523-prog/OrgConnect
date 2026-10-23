@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 import 'org_form_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -9,12 +14,190 @@ abstract class _C {
   static const green = Color(0xFF0F8A61);
   static const bright = Color(0xFF20B77D);
   static const dark = Color(0xFF075A42);
-  static const mint = Color(0xFFE4F7EF);
-  static const bg = Color(0xFFF1FAF6);
-  static const ink = Color(0xFF173B30);
-  static const muted = Color(0xFF6B8178);
-  static const line = Color(0xFFCBE8DC);
+  static const mint = Color(0xFFEAF6EF);
+  static const bg = Color(0xFFF7F8F7);
+  static const surface = Color(0xFFFFFFFF);
+  static const ink = Color(0xFF111827);
+  static const body = Color(0xFF374151);
+  static const muted = Color(0xFF6B7280);
+  static const line = Color(0xFFE5E7EB);
 }
+
+// ---------------------------------------------------------------------------
+// Layout constants
+// ---------------------------------------------------------------------------
+
+/// Content never gets wider than this, so tablets / web / landscape stay tidy.
+const double _kMaxContentWidth = 720;
+const double _kTabBarHeight = 58;
+
+/// The floating tab bar overlaps the bottom of the hero by half its height.
+const double _kTabOverlap = _kTabBarHeight / 2;
+
+/// Hero height below the status bar (includes the area hidden by the tab bar).
+const double _kHeroBodyHeight = 140;
+const double _kCompactBodyHeight = 56 + _kTabOverlap;
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+const List<String> _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+String _formatDate(DateTime d) => '${_months[d.month - 1]} ${d.day}, ${d.year}';
+
+String _mediaName(OrgMediaItem item) {
+  final title = item.title.trim();
+  if (title.isNotEmpty) return title;
+  final caption = item.caption.trim();
+  if (caption.isNotEmpty) return caption;
+  return 'Activity moment';
+}
+
+/// Opens a link in the external app/browser and tells the user if it fails.
+Future<void> _openExternal(BuildContext context, Uri? uri) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  var ok = false;
+  if (uri != null) {
+    try {
+      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
+  }
+  if (!ok) {
+    messenger?.showSnackBar(
+      const SnackBar(content: Text("Couldn't open this link.")),
+    );
+  }
+}
+
+/// Videos open externally, pictures open in the full-screen viewer.
+void _openMedia(
+    BuildContext context, List<OrgMediaItem> all, OrgMediaItem item) {
+  if (item.type == 'video') {
+    _openExternal(context, Uri.tryParse(item.content.trim()));
+    return;
+  }
+  final images = all
+      .where((m) => m.type == 'image' && m.content.trim().startsWith('http'))
+      .toList();
+  final index = images.indexOf(item);
+  if (index < 0) return;
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => _MediaViewer(items: images, initialIndex: index),
+    ),
+  );
+}
+
+/// Lets horizontal lists be dragged with a mouse / trackpad too (web, desktop).
+class _DragScrollBehavior extends MaterialScrollBehavior {
+  const _DragScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      };
+
+  @override
+  Widget buildScrollbar(
+          BuildContext context, Widget child, ScrollableDetails details) =>
+      child;
+}
+
+class _Pad extends StatelessWidget {
+  final Widget child;
+  const _Pad({required this.child});
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18), child: child);
+}
+
+/// Vertical scrolling tab body.
+/// - owns its own controller (no shared PrimaryScrollController clashes)
+/// - keeps its state alive, so scroll position and typed form data survive
+///   switching tabs
+/// - centers content to a readable max width on large screens
+class _TabScroll extends StatefulWidget {
+  final List<Widget> children;
+  final EdgeInsets padding;
+  final bool thumbVisibility;
+  const _TabScroll({
+    required this.children,
+    this.padding = const EdgeInsets.fromLTRB(18, 18, 18, 40),
+    this.thumbVisibility = false,
+  });
+
+  @override
+  State<_TabScroll> createState() => _TabScrollState();
+}
+
+class _TabScrollState extends State<_TabScroll>
+    with AutomaticKeepAliveClientMixin {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final p = widget.padding;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: Scrollbar(
+        controller: _controller,
+        thumbVisibility: widget.thumbVisibility,
+        interactive: true,
+        child: SingleChildScrollView(
+          controller: _controller,
+          physics: const BouncingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(
+              p.left, p.top, p.right, p.bottom + bottomInset),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: widget.children,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
 
 class OrgDetailScreen extends StatefulWidget {
   final String orgId;
@@ -27,13 +210,18 @@ class OrgDetailScreen extends StatefulWidget {
 
 class _OrgDetailScreenState extends State<OrgDetailScreen>
     with SingleTickerProviderStateMixin {
+  static const int _applyTab = 2;
+
   late final TabController _tabs;
   bool get _loggedIn => Supabase.instance.client.auth.currentUser != null;
   List<Map<String, dynamic>> _orgPeople = <Map<String, dynamic>>[];
   int _lastNonApplyTab = 0;
   OverlayEntry? _loginRequiredEntry;
-  bool _loginMessageVisible = false;
+  Timer? _loginMessageTimer;
+  bool _redirectingGuest = false;
   final GlobalKey _tabBarKey = GlobalKey();
+  StreamSubscription<AuthState>? _authSub;
+  int _shownTab = 0;
 
   @override
   void initState() {
@@ -41,10 +229,19 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
     final requested = widget.initialTab < 0
         ? 0
         : (widget.initialTab > 2 ? 2 : widget.initialTab);
-    final start = (requested == 2 && !_loggedIn) ? 0 : requested;
+    final start = (requested == _applyTab && !_loggedIn) ? 0 : requested;
     _tabs = TabController(length: 3, vsync: this, initialIndex: start);
-    _lastNonApplyTab = start == 2 ? 0 : start;
+    _shownTab = start;
+    _lastNonApplyTab = start == _applyTab ? 0 : start;
+    _tabs.addListener(_handleTabChange);
     _loadOrganizationPeople();
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      if (!mounted) return;
+      if (!_loggedIn && _tabs.index == _applyTab) {
+        _tabs.animateTo(_lastNonApplyTab);
+      }
+      setState(() {});
+    });
   }
 
   Future<void> _loadOrganizationPeople() async {
@@ -64,179 +261,326 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
     }
   }
 
+  /// Tracks the last tab the user was really on, and stops guests from
+  /// reaching the Apply page by swiping (taps are handled in TabBar.onTap).
+  void _handleTabChange() {
+    if (_tabs.index != _shownTab) {
+      _shownTab = _tabs.index;
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    if (_tabs.index != _applyTab) {
+      _lastNonApplyTab = _tabs.index;
+      return;
+    }
+    if (_loggedIn || _tabs.indexIsChanging || _redirectingGuest) return;
+    _redirectingGuest = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _redirectingGuest = false;
+      if (!mounted) return;
+      if (_tabs.index == _applyTab) _tabs.animateTo(_lastNonApplyTab);
+      _showLoginRequiredMessage();
+    });
+  }
+
   @override
   void dispose() {
-    _loginRequiredEntry?.remove();
-    _loginRequiredEntry = null;
+    _authSub?.cancel();
+    _hideLoginRequiredMessage();
+    _tabs.removeListener(_handleTabChange);
     _tabs.dispose();
     super.dispose();
   }
 
+  void _hideLoginRequiredMessage() {
+    _loginMessageTimer?.cancel();
+    _loginMessageTimer = null;
+    final entry = _loginRequiredEntry;
+    _loginRequiredEntry = null;
+    if (entry != null) {
+      entry.remove();
+      entry.dispose();
+    }
+  }
+
   void _showLoginRequiredMessage() {
-    if (_loginMessageVisible || !mounted) return;
-    final overlay = Overlay.of(context);
-    final anchorContext = _tabBarKey.currentContext;
-    final renderObject = anchorContext?.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    if (!mounted || _loginRequiredEntry != null) return;
+    final overlay = Overlay.maybeOf(context);
+    final anchor = _tabBarKey.currentContext?.findRenderObject();
+    if (overlay == null || anchor is! RenderBox || !anchor.hasSize) return;
+
     final overlayObject = overlay.context.findRenderObject();
     final overlayBox = overlayObject is RenderBox ? overlayObject : null;
-    final globalTopLeft = renderObject.localToGlobal(Offset.zero);
-    final localTopLeft = overlayBox == null
-        ? globalTopLeft
-        : overlayBox.globalToLocal(globalTopLeft);
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final left = (localTopLeft.dx + renderObject.size.width * 0.62)
-        .clamp(12.0, screenWidth - 300.0);
-    final top = localTopLeft.dy + renderObject.size.height + 8;
-    _loginMessageVisible = true;
-    _loginRequiredEntry?.remove();
+    final topLeft = anchor.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final overlaySize = overlayBox?.size ?? MediaQuery.sizeOf(context);
+
+    // Right-align the bubble under the Apply tab; it can never leave the screen.
+    final rightEdge = topLeft.dx + anchor.size.width;
+    final right = math.max(8.0, overlaySize.width - rightEdge + 6);
+    final top = topLeft.dy + anchor.size.height + 8;
+    final maxWidth = math.min(285.0, overlaySize.width - 16);
+
     _loginRequiredEntry = OverlayEntry(
       builder: (overlayContext) => Positioned(
-        left: left,
+        right: right,
         top: top,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 285),
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0F8A61), Color(0xFF20B77D)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFBDEBD7)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x33075A42),
-                  blurRadius: 18,
-                  offset: Offset(0, 7),
-                ),
-              ],
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.lock_outline_rounded, color: Colors.white, size: 20),
-                SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    'Login required\nTap Login on the “Discover campus life” card to apply.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12.5,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                    ),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          builder: (context, t, child) => Opacity(
+            opacity: t,
+            child: Transform.translate(
+                offset: Offset(0, (1 - t) * -6), child: child),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: Semantics(
+              liveRegion: true,
+              child: GestureDetector(
+                onTap: _hideLoginRequiredMessage,
+                child: Container(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1F2937),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF374151)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x22000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 7),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.lock_outline_rounded,
+                          color: Colors.white, size: 20),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: 'Login required',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            TextSpan(
+                              text:
+                                  '\nTap Login on the “Discover campus life” card to apply.',
+                            ),
+                          ]),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
     overlay.insert(_loginRequiredEntry!);
-    Future<void>.delayed(const Duration(seconds: 3), () {
-      _loginRequiredEntry?.remove();
-      _loginRequiredEntry = null;
-      _loginMessageVisible = false;
-    });
+    _loginMessageTimer?.cancel();
+    _loginMessageTimer =
+        Timer(const Duration(seconds: 3), _hideLoginRequiredMessage);
+  }
+
+  Widget _buildTabBar(bool loggedIn) {
+    return Container(
+      key: _tabBarKey,
+      width: double.infinity,
+      height: _kTabBarHeight,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x10000000), blurRadius: 18, offset: Offset(0, 6))
+        ],
+      ),
+      child: TabBar(
+        controller: _tabs,
+        labelColor: _C.green,
+        unselectedLabelColor: _C.muted,
+        indicatorColor: _C.green,
+        indicatorWeight: 3,
+        indicatorSize: TabBarIndicatorSize.label,
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: const WidgetStatePropertyAll<Color?>(Colors.transparent),
+        dividerColor: Colors.transparent,
+        labelPadding: EdgeInsets.zero,
+        onTap: (index) {
+          if (!loggedIn && index == _applyTab) {
+            // Guests cannot open the application tab. Keep the current page
+            // selected and show a brief message beside Apply instead.
+            _tabs.index = _lastNonApplyTab;
+            _showLoginRequiredMessage();
+          }
+        },
+        labelStyle:
+            const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
+        unselectedLabelStyle:
+            const TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5),
+        tabs: [
+          const Tab(
+              height: _kTabBarHeight,
+              icon: Icon(Icons.dashboard_rounded, size: 18),
+              text: 'Dashboard'),
+          const Tab(
+              height: _kTabBarHeight,
+              icon: Icon(Icons.info_outline_rounded, size: 18),
+              text: 'About'),
+          Tab(
+              height: _kTabBarHeight,
+              icon: Icon(
+                  loggedIn
+                      ? Icons.volunteer_activism_rounded
+                      : Icons.lock_outline_rounded,
+                  size: 18),
+              text: 'Apply'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(
+      BuildContext context, Organization org, Widget tabBar, bool compact) {
+    final pad = MediaQuery.paddingOf(context);
+    final heroHeight =
+        pad.top + (compact ? _kCompactBodyHeight : _kHeroBodyHeight);
+    return SizedBox(
+      height: heroHeight + _kTabOverlap,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: heroHeight,
+            child: _Hero(
+              org: org,
+              compact: compact,
+              onBack: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: _kTabBarHeight,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12 + pad.left),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxWidth: _kMaxContentWidth - 24),
+                  child: tabBar,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AppState.instance,
+      builder: (context, _) => _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     final matches =
         AppState.instance.organizations.where((o) => o.id == widget.orgId);
     if (matches.isEmpty) {
-      return const Scaffold(
-          body: Center(child: Text('Organization not found')));
+      if (AppState.instance.isLoadingOrganizations) {
+        return Scaffold(
+          backgroundColor: _C.bg,
+          appBar: AppBar(
+            backgroundColor: _C.bg,
+            foregroundColor: _C.ink,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+          ),
+          body: const Center(
+            child: CircularProgressIndicator(color: _C.green),
+          ),
+        );
+      }
+      return Scaffold(
+        backgroundColor: _C.bg,
+        appBar: AppBar(
+          backgroundColor: _C.bg,
+          foregroundColor: _C.ink,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: _SoftEmpty(
+              icon: Icons.search_off_rounded,
+              title: 'Organization not found',
+              subtitle: 'It may have been removed or is no longer available.',
+            ),
+          ),
+        ),
+      );
     }
     final org = matches.first;
     final loggedIn = _loggedIn;
 
+    // Collapse the header when the keyboard is open (Apply form) or the screen
+    // is very short (phone in landscape) so the content keeps its room.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final shortScreen = MediaQuery.sizeOf(context).height < 480;
+    final compact = keyboardOpen || shortScreen;
+
     return Scaffold(
       backgroundColor: _C.bg,
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Fixed organization header: it stays visible while the tab content scrolls.
-          SizedBox(
-            height: 156,
-            child: Stack(
-              children: [
-                Positioned.fill(child: _Hero(org: org)),
-                Positioned(
-                  top: MediaQuery.of(context).padding.top + 6,
-                  left: 12,
-                  child: IconButton(
-                    tooltip: 'Back',
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white),
-                    onPressed: () => Navigator.of(context).maybePop(),
-                  ),
-                ),
-              ],
+          MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.2,
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child:
+                  _buildHeader(context, org, _buildTabBar(loggedIn), compact),
             ),
           ),
-          Container(
-            key: _tabBarKey,
-            height: 58,
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                    color: _C.green.withValues(alpha: .08),
-                    blurRadius: 16,
-                    offset: const Offset(0, 5))
-              ],
-            ),
-            child: TabBar(
-              controller: _tabs,
-              labelColor: _C.green,
-              unselectedLabelColor: _C.muted,
-              indicatorColor: _C.green,
-              indicatorWeight: 3,
-              dividerColor: Colors.transparent,
-              onTap: (index) {
-                if (!loggedIn && index == 2) {
-                  // Guests cannot open an application tab. Show a brief message
-                  // instead of navigating to a separate login-required card.
-                  // Keep the current content (for example, About) selected.
-                  // Only show the popup beside Apply; never switch to the Apply page.
-                  _tabs.index = _lastNonApplyTab;
-                  _showLoginRequiredMessage();
-                } else if (index != 2) {
-                  _lastNonApplyTab = index;
-                }
-              },
-              labelStyle:
-                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5),
-              tabs: [
-                const Tab(
-                    icon: Icon(Icons.dashboard_rounded, size: 18),
-                    text: 'Dashboard'),
-                const Tab(
-                    icon: Icon(Icons.info_outline_rounded, size: 18),
-                    text: 'About'),
-                const Tab(
-                    icon: Icon(Icons.volunteer_activism_rounded, size: 18),
-                    text: 'Apply'),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: _C.line),
           Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              children: [
-                _OrgDashboard(org: org),
-                _AboutTab(org: org, people: _orgPeople),
-                if (loggedIn) _ApplyTab(org: org) else const SizedBox.shrink(),
-              ],
+            child: SafeArea(
+              top: false,
+              bottom: false,
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  _OrgDashboard(org: org),
+                  _AboutTab(org: org, people: _orgPeople),
+                  if (loggedIn)
+                    _ApplyTab(org: org)
+                  else
+                    const _GuestApplyPlaceholder(),
+                ],
+              ),
             ),
           ),
         ],
@@ -245,67 +589,139 @@ class _OrgDetailScreenState extends State<OrgDetailScreen>
   }
 }
 
+class _GuestApplyPlaceholder extends StatelessWidget {
+  const _GuestApplyPlaceholder();
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.all(18),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: _SoftEmpty(
+            icon: Icons.lock_outline_rounded,
+            title: 'Login required',
+            subtitle: 'Tap Login on the “Discover campus life” card to apply.',
+          ),
+        ),
+      );
+}
+
+// ---------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------
+
 class _Hero extends StatelessWidget {
   final Organization org;
-  const _Hero({required this.org});
+  final bool compact;
+  final VoidCallback onBack;
+  const _Hero({required this.org, required this.compact, required this.onBack});
 
   @override
   Widget build(BuildContext context) {
+    final pad = MediaQuery.paddingOf(context);
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_C.dark, _C.green, _C.bright]),
+        gradient: AppHeader.brandGradient,
       ),
       child: Stack(children: [
         Positioned(
-            top: -55,
-            right: -35,
-            child: _orb(180, Colors.white.withValues(alpha: .08))),
+            right: -45,
+            top: -70,
+            child: _orb(170, Colors.white.withValues(alpha: .07))),
         Positioned(
-            bottom: -45,
-            left: -45,
-            child: _orb(140, Colors.black.withValues(alpha: .07))),
-        SafeArea(
+            right: 45,
+            bottom: -70,
+            child: _orb(125, Colors.white.withValues(alpha: .07))),
+        Positioned.fill(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(64, 8, 24, 8),
-            child:
-                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _Logo(asset: org.logoAsset, size: 54),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(org.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 19,
-                                height: 1.08,
-                                fontWeight: FontWeight.w900)),
-                        if (org.category.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Align(
-                              alignment: Alignment.centerLeft,
-                              child: _Pill(org.category)),
-                        ],
-                      ],
+            padding: EdgeInsets.only(left: pad.left, right: pad.right),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+                child: SizedBox.expand(
+                  child: Stack(children: [
+                    Positioned.fill(
+                      child: Padding(
+                        padding:
+                            EdgeInsets.fromLTRB(64, pad.top, 20, _kTabOverlap),
+                        child: Center(
+                            child: compact ? _compactTitle() : _fullTitle()),
+                      ),
                     ),
-                  ),
-                ],
+                    Positioned(
+                      top: pad.top + (compact ? 4 : 6),
+                      left: 8,
+                      child: IconButton(
+                        tooltip: 'Back',
+                        style: IconButton.styleFrom(
+                          overlayColor: Colors.transparent,
+                        ),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 20),
+                        onPressed: onBack,
+                      ),
+                    ),
+                  ]),
+                ),
               ),
-            ]),
+            ),
           ),
         ),
       ]),
     );
   }
+
+  Widget _fullTitle() => Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _Logo(asset: org.logoAsset, size: 54),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(org.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          height: 1.08,
+                          fontWeight: FontWeight.w900)),
+                ),
+                if (org.category.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                      alignment: Alignment.centerLeft,
+                      child: _Pill(org.category)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+
+  Widget _compactTitle() => Row(
+        children: [
+          _Logo(asset: org.logoAsset, size: 26),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(org.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ],
+      );
 
   Widget _orb(double size, Color color) => Container(
       width: size,
@@ -326,6 +742,7 @@ class _Logo extends StatelessWidget {
       image = CachedNetworkImage(
           imageUrl: path,
           fit: BoxFit.contain,
+          placeholder: (_, __) => const _FallbackLogo(),
           errorWidget: (_, __, ___) => const _FallbackLogo());
     } else if (path.isEmpty) {
       image = const _FallbackLogo();
@@ -351,7 +768,11 @@ class _FallbackLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
       color: _C.mint,
-      child: const Icon(Icons.groups_rounded, color: _C.green, size: 38));
+      child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.groups_rounded, color: _C.green, size: 38))));
 }
 
 class _Pill extends StatelessWidget {
@@ -365,6 +786,8 @@ class _Pill extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.white.withValues(alpha: .22))),
         child: Text(text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
                 color: Colors.white,
                 fontSize: 10.5,
@@ -372,20 +795,13 @@ class _Pill extends StatelessWidget {
       );
 }
 
+// ---------------------------------------------------------------------------
+// Dashboard tab
+// ---------------------------------------------------------------------------
+
 class _OrgDashboard extends StatelessWidget {
   final Organization org;
   const _OrgDashboard({required this.org});
-
-  bool _isReligious() {
-    final text = '${org.name} ${org.category} ${org.about} ${org.missionVision}'
-        .toLowerCase();
-    return text.contains('christian') ||
-        text.contains('religious') ||
-        text.contains('faith') ||
-        text.contains('church') ||
-        text.contains('spiritual') ||
-        text.contains('ministry');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -403,65 +819,86 @@ class _OrgDashboard extends StatelessWidget {
         .where((m) => m.type == 'image' || m.type == 'video')
         .toList();
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 48),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _SectionIntro(
-            icon: Icons.dashboard_rounded,
-            title: 'Inside the organization',
-            subtitle:
-                'See what they do, what is coming up, and moments from campus life.'),
+    // Room for the text under the picture grows with the user's font size.
+    final textScale =
+        math.min(1.6, math.max(1.0, MediaQuery.textScalerOf(context).scale(1)));
+    final tileHeight = 128 + 108 * textScale;
+
+    return _TabScroll(
+      padding: const EdgeInsets.fromLTRB(0, 18, 0, 40),
+      children: [
+        const _Pad(
+          child: _SectionIntro(
+              icon: Icons.dashboard_rounded,
+              title: 'Inside the organization',
+              subtitle:
+                  'See what they do, what is coming up, and moments from campus life.'),
+        ),
         if (events.isNotEmpty) ...[
           const SizedBox(height: 16),
-          _TitleRow(
-              title: 'Upcoming events',
-              icon: Icons.event_available_rounded,
-              count: events.length),
-          const SizedBox(height: 10),
-          Column(
-            children: events
-                .map((event) => Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: _EventVisualCard(event: event, expanded: true),
-                    ))
-                .toList(),
+          _Pad(
+            child: _TitleRow(
+                title: 'Upcoming events',
+                icon: Icons.event_available_rounded,
+                count: events.length),
           ),
+          const SizedBox(height: 10),
+          for (final event in events)
+            _Pad(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: _EventVisualCard(event: event, expanded: true),
+              ),
+            ),
         ] else ...[
           const SizedBox(height: 14),
-          _SoftEmpty(
-              icon: Icons.event_note_rounded,
-              title: 'No upcoming events yet',
-              subtitle:
-                  'New activities from this organization will appear here.'),
-        ],
-        if (_isReligious()) ...[
-          const SizedBox(height: 18),
-          _WeeklyCard(org: org),
+          const _Pad(
+            child: _SoftEmpty(
+                icon: Icons.event_note_rounded,
+                title: 'No upcoming events yet',
+                subtitle:
+                    'New activities from this organization will appear here.'),
+          ),
         ],
         const SizedBox(height: 20),
-        _TitleRow(
-            title: 'Highlights & activities',
-            icon: Icons.photo_library_rounded,
-            count: media.length),
+        _Pad(
+          child: _TitleRow(
+              title: 'Highlights & activities',
+              icon: Icons.photo_library_rounded,
+              count: media.length),
+        ),
         const SizedBox(height: 10),
         if (media.isEmpty)
-          _SoftEmpty(
-            icon: Icons.photo_library_outlined,
-            title: 'No highlights posted yet',
-            subtitle:
-                "Photos from this organization's activities will appear here.",
+          const _Pad(
+            child: _SoftEmpty(
+              icon: Icons.photo_library_outlined,
+              title: 'No highlights posted yet',
+              subtitle:
+                  "Photos from this organization's activities will appear here.",
+            ),
           )
         else
-          SizedBox(
-              height: 205,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: media.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (_, i) => _MediaTile(item: media[i]),
-              )),
-      ]),
+          MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.6,
+            child: SizedBox(
+              height: tileHeight + 16,
+              child: ScrollConfiguration(
+                behavior: const _DragScrollBehavior(),
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 2, 18, 14),
+                  itemCount: media.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (ctx, i) => _MediaTile(
+                    item: media[i],
+                    onTap: () => _openMedia(ctx, media, media[i]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -470,10 +907,30 @@ class _EventVisualCard extends StatelessWidget {
   final Event event;
   final bool expanded;
   const _EventVisualCard({required this.event, this.expanded = false});
+
   @override
   Widget build(BuildContext context) {
-    final image = event.imageUrl ??
-        (event.imageUrls.isNotEmpty ? event.imageUrls.first : '');
+    final primary = (event.imageUrl ?? '').trim();
+    final image = primary.isNotEmpty
+        ? primary
+        : (event.imageUrls.isNotEmpty ? event.imageUrls.first.trim() : '');
+    final date = event.date;
+
+    final picture = Stack(children: [
+      Positioned.fill(
+        child: image.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: image,
+                fit: BoxFit.cover,
+                memCacheWidth: 900,
+                fadeInDuration: const Duration(milliseconds: 200),
+                placeholder: (_, __) => _eventArt(showIcon: false),
+                errorWidget: (_, __, ___) => _eventArt())
+            : _eventArt(),
+      ),
+      Positioned(top: 12, left: 12, child: _dateBadge(date)),
+    ]);
+
     return Container(
         width: expanded ? double.infinity : 255,
         clipBehavior: Clip.antiAlias,
@@ -483,21 +940,16 @@ class _EventVisualCard extends StatelessWidget {
             border: Border.all(color: _C.line),
             boxShadow: const [
               BoxShadow(
-                  color: Color(0x100F8A61),
+                  color: Color(0x10000000),
                   blurRadius: 15,
                   offset: Offset(0, 7))
             ]),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-              height: expanded ? 205 : 128,
-              width: double.infinity,
-              child: image.isNotEmpty
-                  ? Image.network(image,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _eventArt())
-                  : _eventArt()),
+          expanded
+              ? AspectRatio(aspectRatio: 2, child: picture)
+              : SizedBox(height: 128, width: double.infinity, child: picture),
           Padding(
-              padding: const EdgeInsets.fromLTRB(13, 11, 13, 13),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -515,8 +967,7 @@ class _EventVisualCard extends StatelessWidget {
                           size: 14, color: _C.green),
                       const SizedBox(width: 5),
                       Expanded(
-                          child: Text(
-                              '${event.date.month}/${event.date.day}/${event.date.year}',
+                          child: Text(_formatDate(date),
                               style: TextStyle(
                                   color: _C.muted,
                                   fontSize: expanded ? 12.5 : 11.5,
@@ -526,80 +977,60 @@ class _EventVisualCard extends StatelessWidget {
         ]));
   }
 
-  Widget _eventArt() => Container(
-      decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [_C.dark, _C.bright])),
-      child: const Center(
-          child:
-              Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 34)));
-}
-
-class _WeeklyCard extends StatelessWidget {
-  final Organization org;
-  const _WeeklyCard({required this.org});
-  @override
-  Widget build(BuildContext context) => Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_C.dark, _C.green]),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
+  Widget _dateBadge(DateTime d) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .95),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
             BoxShadow(
-                color: _C.green.withValues(alpha: .16),
-                blurRadius: 18,
-                offset: const Offset(0, 8))
-          ]),
-      child: Row(children: [
-        Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.groups_rounded,
-                color: Colors.white, size: 25)),
-        const SizedBox(width: 12),
-        const Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Weekly fellowship',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
+                color: Color(0x33000000), blurRadius: 8, offset: Offset(0, 3)),
+          ],
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(_months[d.month - 1].toUpperCase(),
+              style: const TextStyle(
+                  color: _C.green,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .8)),
+          const SizedBox(height: 1),
+          Text('${d.day}',
+              style: const TextStyle(
+                  color: _C.ink,
+                  fontSize: 17,
+                  height: 1.0,
                   fontWeight: FontWeight.w900)),
-          SizedBox(height: 4),
-          Text('A regular time to meet, connect, reflect, and grow together.',
-              style: TextStyle(
-                  color: Colors.white70, fontSize: 12.5, height: 1.35)),
-        ])),
-        const Icon(Icons.calendar_view_week_rounded, color: Colors.white70),
-      ]));
+        ]),
+      );
+
+  Widget _eventArt({bool showIcon = true}) => Container(
+      decoration: const BoxDecoration(
+          gradient:
+              LinearGradient(colors: [Color(0xFFF1F5F4), Color(0xFFE5E9E8)])),
+      child: Center(
+          child: showIcon
+              ? const Icon(Icons.auto_awesome_rounded,
+                  color: _C.muted, size: 34)
+              : null));
 }
 
 class _MediaTile extends StatelessWidget {
   final OrgMediaItem item;
-  const _MediaTile({required this.item});
-
-  String get _activityName {
-    final title = item.title.trim();
-    if (title.isNotEmpty) return title;
-    final caption = item.caption.trim();
-    if (caption.isNotEmpty) return caption;
-    return 'Activity moment';
-  }
+  final VoidCallback? onTap;
+  const _MediaTile({required this.item, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final isVideo = item.type == 'video';
-    return GestureDetector(
-      onTap: isVideo
-          ? () async {
-              final uri = Uri.tryParse(item.content);
-              if (uri != null) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            }
-          : null,
+    final url = item.content.trim();
+    final description = item.description.trim();
+    final name = _mediaName(item);
+    final canOpen = isVideo || url.startsWith('http');
+
+    return Semantics(
+      button: canOpen,
+      label: '${isVideo ? 'Video' : 'Photo'}: $name',
       child: Container(
         width: 190,
         clipBehavior: Clip.antiAlias,
@@ -609,78 +1040,91 @@ class _MediaTile extends StatelessWidget {
           border: Border.all(color: _C.line),
           boxShadow: const [
             BoxShadow(
-                color: Color(0x080F8A61), blurRadius: 12, offset: Offset(0, 5)),
+                color: Color(0x0F000000), blurRadius: 12, offset: Offset(0, 5)),
           ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-            height: 128,
-            width: double.infinity,
-            child: Stack(children: [
-              Positioned.fill(
-                child: isVideo
-                    ? _videoFallback()
-                    : item.content.startsWith('http')
-                        ? Image.network(
-                            item.content,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _mediaFallback(),
-                          )
-                        : _mediaFallback(),
-              ),
-              if (isVideo)
-                const Positioned(
-                  right: 9,
-                  top: 9,
-                  child: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Color(0xAA0F8A61),
-                    child: Icon(Icons.play_arrow_rounded, color: Colors.white),
-                  ),
+        child: Stack(children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(
+              height: 128,
+              width: double.infinity,
+              child: Stack(children: [
+                Positioned.fill(
+                  child: isVideo
+                      ? _videoFallback()
+                      : url.startsWith('http')
+                          ? CachedNetworkImage(
+                              imageUrl: url,
+                              fit: BoxFit.cover,
+                              memCacheWidth: 500,
+                              fadeInDuration: const Duration(milliseconds: 200),
+                              placeholder: (_, __) => _mediaFallback(),
+                              errorWidget: (_, __, ___) => _mediaFallback(),
+                            )
+                          : _mediaFallback(),
                 ),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isVideo ? 'VIDEO' : 'PICTURES',
-                  style: TextStyle(
-                    color: _C.green,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .7,
+                if (isVideo)
+                  const Positioned(
+                    right: 9,
+                    top: 9,
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: Color(0xAA0F8A61),
+                      child:
+                          Icon(Icons.play_arrow_rounded, color: Colors.white),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _activityName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _C.ink,
-                    fontSize: 13.5,
-                    height: 1.2,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                if (item.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 5),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    item.description.trim(),
+                    isVideo ? 'VIDEO' : 'PICTURES',
+                    style: const TextStyle(
+                      color: _C.green,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .7,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: _C.muted,
-                      fontSize: 10.5,
-                      height: 1.35,
-                      fontWeight: FontWeight.w500,
+                      color: _C.ink,
+                      fontSize: 13.5,
+                      height: 1.2,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _C.muted,
+                        fontSize: 10.5,
+                        height: 1.35,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
+            ),
+          ]),
+          // Ripple layer on top of the content so the tap feedback is visible.
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(onTap: canOpen ? onTap : null),
             ),
           ),
         ]),
@@ -691,7 +1135,7 @@ class _MediaTile extends StatelessWidget {
   Widget _videoFallback() => Container(
         decoration: const BoxDecoration(
             gradient:
-                LinearGradient(colors: [Color(0xFF064E3B), Color(0xFF0F8A61)])),
+                LinearGradient(colors: [Color(0xFF1F2937), Color(0xFF111827)])),
         child: const Center(
             child: Icon(Icons.play_circle_fill_rounded,
                 color: Colors.white, size: 48)),
@@ -699,90 +1143,325 @@ class _MediaTile extends StatelessWidget {
 
   Widget _mediaFallback() => Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [_C.mint, Color(0xFFC7EDDD)]),
+          gradient:
+              LinearGradient(colors: [Color(0xFFF1F5F4), Color(0xFFE5E9E8)]),
         ),
         child: const Center(
-          child: Icon(Icons.photo_rounded, color: _C.green, size: 32),
+          child: Icon(Icons.photo_rounded, color: _C.muted, size: 32),
         ),
       );
 }
+
+// ---------------------------------------------------------------------------
+// Full-screen picture viewer (swipe between pictures, pinch / double-tap zoom)
+// ---------------------------------------------------------------------------
+
+class _MediaViewer extends StatefulWidget {
+  final List<OrgMediaItem> items;
+  final int initialIndex;
+  const _MediaViewer({required this.items, required this.initialIndex});
+
+  @override
+  State<_MediaViewer> createState() => _MediaViewerState();
+}
+
+class _MediaViewerState extends State<_MediaViewer> {
+  late final PageController _page =
+      PageController(initialPage: widget.initialIndex);
+  late int _index = widget.initialIndex;
+  bool _zoomed = false;
+
+  @override
+  void dispose() {
+    _page.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final item = items[_index];
+    final description = item.description.trim();
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(children: [
+        Positioned.fill(
+          child: PageView.builder(
+            controller: _page,
+            physics: _zoomed
+                ? const NeverScrollableScrollPhysics()
+                : const PageScrollPhysics(),
+            itemCount: items.length,
+            onPageChanged: (i) => setState(() {
+              _index = i;
+              _zoomed = false;
+            }),
+            itemBuilder: (_, i) => _ZoomableImage(
+              key: ValueKey('${i}_${items[i].content}'),
+              url: items[i].content.trim(),
+              onZoomChanged: (z) {
+                if (z != _zoomed) setState(() => _zoomed = z);
+              },
+            ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 14, 0),
+              child: Row(children: [
+                IconButton(
+                  tooltip: 'Close',
+                  style: IconButton.styleFrom(
+                      backgroundColor: Colors.black.withValues(alpha: .45)),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+                const Spacer(),
+                if (items.length > 1)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: .45),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('${_index + 1} / ${items.length}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 40, 20, 0),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x00000000), Color(0xCC000000)],
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_mediaName(item),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800)),
+                      if (description.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(description,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12.5,
+                                height: 1.35)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _ZoomableImage extends StatefulWidget {
+  final String url;
+  final ValueChanged<bool> onZoomChanged;
+  const _ZoomableImage(
+      {super.key, required this.url, required this.onZoomChanged});
+
+  @override
+  State<_ZoomableImage> createState() => _ZoomableImageState();
+}
+
+class _ZoomableImageState extends State<_ZoomableImage> {
+  final TransformationController _tc = TransformationController();
+  Offset _doubleTapAt = Offset.zero;
+  bool _zoomed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tc.addListener(_onTransformChanged);
+  }
+
+  void _onTransformChanged() {
+    final zoomed = _tc.value.getMaxScaleOnAxis() > 1.02;
+    if (zoomed != _zoomed) {
+      _zoomed = zoomed;
+      widget.onZoomChanged(zoomed);
+    }
+  }
+
+  void _toggleZoom() {
+    if (_zoomed) {
+      _tc.value = Matrix4.identity();
+      return;
+    }
+    const scale = 2.5;
+    final m = Matrix4.translationValues(
+        -_doubleTapAt.dx * (scale - 1), -_doubleTapAt.dy * (scale - 1), 0);
+    m.multiply(Matrix4.diagonal3Values(scale, scale, 1));
+    _tc.value = m;
+  }
+
+  @override
+  void dispose() {
+    _tc.removeListener(_onTransformChanged);
+    _tc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onDoubleTapDown: (d) => _doubleTapAt = d.localPosition,
+      onDoubleTap: _toggleZoom,
+      child: InteractiveViewer(
+        transformationController: _tc,
+        minScale: 1,
+        maxScale: 4,
+        child: CachedNetworkImage(
+          imageUrl: widget.url,
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.contain,
+          placeholder: (_, __) => const Center(
+              child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.5, color: Colors.white70))),
+          errorWidget: (_, __, ___) => const Center(
+              child: Icon(Icons.broken_image_outlined,
+                  color: Colors.white54, size: 48)),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// About tab
+// ---------------------------------------------------------------------------
 
 class _AboutTab extends StatelessWidget {
   final Organization org;
   final List<Map<String, dynamic>> people;
   const _AboutTab({required this.org, required this.people});
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 20, 18, 48),
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _SectionIntro(
+    final hasMissionBlock = org.mission.isNotEmpty ||
+        org.vision.isNotEmpty ||
+        org.goals.isNotEmpty ||
+        org.missionVision.isNotEmpty;
+    final hasPeople = org.adviser.isNotEmpty || org.officers.isNotEmpty;
+    final mission = org.mission.isNotEmpty ? org.mission : org.missionVision;
+
+    return _TabScroll(
+      padding: const EdgeInsets.fromLTRB(0, 18, 0, 40),
+      children: [
+        const _Pad(
+          child: _SectionIntro(
               icon: Icons.info_outline_rounded,
               title: 'Get to know the organization',
               subtitle: 'The people, purpose, and ways to stay connected.'),
-          const SizedBox(height: 14),
-          if (org.about.isNotEmpty)
-            _StoryCard(
+        ),
+        const SizedBox(height: 14),
+        if (org.about.isNotEmpty)
+          _Pad(
+            child: _StoryCard(
                 icon: Icons.info_rounded,
                 title: 'Who they are',
                 body: org.about),
-          if (org.mission.isNotEmpty ||
-              org.vision.isNotEmpty ||
-              org.goals.isNotEmpty ||
-              org.missionVision.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _MissionVisionCard(
+          ),
+        if (hasMissionBlock) ...[
+          const SizedBox(height: 12),
+          _Pad(
+            child: _MissionVisionCard(
               label: 'MISSION',
-              text: org.mission.isNotEmpty
-                  ? org.mission
-                  : (org.missionVision.isNotEmpty
-                      ? org.missionVision
-                      : 'No mission has been added yet.'),
+              text: mission.isNotEmpty
+                  ? mission
+                  : 'No mission has been added yet.',
+              placeholder: mission.isEmpty,
               icon: Icons.flag_rounded,
             ),
-            const SizedBox(height: 12),
-            _MissionVisionCard(
+          ),
+          const SizedBox(height: 12),
+          _Pad(
+            child: _MissionVisionCard(
               label: 'VISION',
               text: org.vision.isNotEmpty
                   ? org.vision
                   : 'No vision has been added yet.',
+              placeholder: org.vision.isEmpty,
               icon: Icons.visibility_rounded,
             ),
-            const SizedBox(height: 12),
-            _MissionVisionCard(
+          ),
+          const SizedBox(height: 12),
+          _Pad(
+            child: _MissionVisionCard(
               label: 'GOALS',
               text: org.goals.isNotEmpty
                   ? org.goals
                   : 'No goals have been added yet.',
-              icon: Icons.flag_circle_rounded,
+              placeholder: org.goals.isEmpty,
+              icon: Icons.track_changes_rounded,
             ),
-          ],
-          if (org.adviser.isNotEmpty || org.officers.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const _PeopleSectionLabel(title: 'Adviser & officers'),
-            const SizedBox(height: 10),
-            _AboutPeopleGallery(org: org, people: people),
-          ],
-          if (org.socialLink.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _ConnectCard(org: org),
-          ],
-          if (org.about.isEmpty &&
-              org.mission.isEmpty &&
-              org.vision.isEmpty &&
-              org.goals.isEmpty &&
-              org.missionVision.isEmpty &&
-              org.adviser.isEmpty &&
-              org.officers.isEmpty &&
-              org.socialLink.isEmpty)
-            _SoftEmpty(
+          ),
+        ],
+        if (hasPeople) ...[
+          const SizedBox(height: 18),
+          const _Pad(child: _PeopleSectionLabel(title: 'Adviser & officers')),
+          const SizedBox(height: 10),
+          _AboutPeopleGallery(org: org, people: people),
+        ],
+        if (org.socialLink.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Pad(child: _ConnectCard(org: org)),
+        ],
+        if (org.about.isEmpty &&
+            !hasMissionBlock &&
+            !hasPeople &&
+            org.socialLink.isEmpty)
+          const _Pad(
+            child: _SoftEmpty(
                 icon: Icons.info_outline_rounded,
                 title: 'More details coming soon',
                 subtitle:
                     'This organization has not added its full profile yet.'),
-        ]));
+          ),
+      ],
+    );
   }
 }
 
@@ -795,20 +1474,20 @@ class _SectionIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_C.green, _C.bright]),
-                borderRadius: BorderRadius.circular(13)),
-            child: Icon(icon, color: Colors.white, size: 20)),
-        const SizedBox(width: 11),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, color: _C.green, size: 22),
+        ),
+        const SizedBox(width: 10),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: const TextStyle(
-                  color: _C.ink, fontSize: 18, fontWeight: FontWeight.w900)),
+          Semantics(
+            header: true,
+            child: Text(title,
+                style: const TextStyle(
+                    color: _C.ink, fontSize: 18, fontWeight: FontWeight.w900)),
+          ),
           const SizedBox(height: 3),
           Text(subtitle,
               style: const TextStyle(
@@ -855,15 +1534,12 @@ class _StoryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFE5F8F0), Color(0xFFD2F0E4)],
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _C.line),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x180F8A61),
+            color: Color(0x0F000000),
             blurRadius: 20,
             offset: Offset(0, 8),
           ),
@@ -875,16 +1551,8 @@ class _StoryCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .96),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: _C.green, size: 22),
-              ),
-              const SizedBox(width: 12),
+              Icon(icon, color: _C.green, size: 22),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
@@ -904,7 +1572,7 @@ class _StoryCard extends StatelessWidget {
             child: Text(
               body,
               style: const TextStyle(
-                color: Color(0xFF111827),
+                color: _C.body,
                 fontSize: 13.5,
                 height: 1.58,
                 fontWeight: FontWeight.w600,
@@ -921,33 +1589,31 @@ class _MissionVisionCard extends StatelessWidget {
   final String label;
   final String text;
   final IconData icon;
+
+  /// True when [text] is only the "nothing added yet" message.
+  final bool placeholder;
   const _MissionVisionCard(
-      {required this.label, required this.text, required this.icon});
+      {required this.label,
+      required this.text,
+      required this.icon,
+      this.placeholder = false});
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(17),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFFE5F8F0), Color(0xFFD2F0E4)]),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _C.line),
           boxShadow: const [
             BoxShadow(
-                color: Color(0x070F8A61), blurRadius: 12, offset: Offset(0, 5))
+                color: Color(0x0F000000), blurRadius: 12, offset: Offset(0, 5))
           ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .72),
-                  borderRadius: BorderRadius.circular(12)),
-              child: Icon(icon, color: _C.green, size: 19),
-            ),
-            const SizedBox(width: 11),
+            Icon(icon, color: _C.green, size: 20),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -960,11 +1626,14 @@ class _MissionVisionCard extends StatelessWidget {
                           letterSpacing: .9)),
                   const SizedBox(height: 7),
                   Text(text,
-                      style: const TextStyle(
-                          color: _C.ink,
+                      style: TextStyle(
+                          color: placeholder ? _C.muted : _C.ink,
                           fontSize: 13.5,
                           height: 1.55,
-                          fontWeight: FontWeight.w600)),
+                          fontStyle:
+                              placeholder ? FontStyle.italic : FontStyle.normal,
+                          fontWeight:
+                              placeholder ? FontWeight.w500 : FontWeight.w600)),
                 ],
               ),
             ),
@@ -986,18 +1655,10 @@ class _PeopleSectionLabel extends StatelessWidget {
       ]);
 }
 
-class _AboutPeopleGallery extends StatefulWidget {
+class _AboutPeopleGallery extends StatelessWidget {
   final Organization org;
   final List<Map<String, dynamic>> people;
   const _AboutPeopleGallery({required this.org, required this.people});
-
-  @override
-  State<_AboutPeopleGallery> createState() => _AboutPeopleGalleryState();
-}
-
-class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
-  Organization get org => widget.org;
-  List<Map<String, dynamic>> get people => widget.people;
 
   Map<String, dynamic>? _findByName(String name) {
     final target = name.trim().toLowerCase();
@@ -1023,10 +1684,14 @@ class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
 
   @override
   Widget build(BuildContext context) {
-    final adviserProfile = people.cast<Map<String, dynamic>?>().firstWhere(
-          (p) => p?['role']?.toString().toLowerCase() == 'adviser',
-          orElse: () => null,
-        );
+    Map<String, dynamic>? adviserProfile;
+    for (final p in people) {
+      if (p['role']?.toString().toLowerCase() == 'adviser') {
+        adviserProfile = p;
+        break;
+      }
+    }
+
     final officers = org.officers.map((raw) {
       final name = _officerName(raw);
       OrgOfficerProfile? savedProfile;
@@ -1053,56 +1718,69 @@ class _AboutPeopleGalleryState extends State<_AboutPeopleGallery> {
       return const SizedBox.shrink();
     }
 
+    final profileName = adviserProfile?['name']?.toString().trim() ?? '';
+    final adviserName = profileName.isNotEmpty ? profileName : org.adviser;
+    final adviserAvatar = adviserProfile?['avatar_url']?.toString() ?? '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (adviserProfile != null || org.adviser.isNotEmpty) ...[
-          const Text('Adviser',
-              style: TextStyle(
-                  color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const _Pad(
+            child: Text('Adviser',
+                style: TextStyle(
+                    color: _C.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800)),
+          ),
           const SizedBox(height: 8),
           Center(
-            child: SizedBox(
+            child: _SquarePersonCard(
+              name: adviserName,
+              role: 'Adviser',
+              avatarUrl: adviserAvatar,
               width: 144,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  _SquarePersonCard(
-                    name:
-                        adviserProfile?['name']?.toString().trim().isNotEmpty ==
-                                true
-                            ? adviserProfile!['name'].toString()
-                            : org.adviser,
-                    role: 'Adviser',
-                    avatarUrl: adviserProfile?['avatar_url']?.toString() ?? '',
-                    width: 144,
-                  ),
-                ],
-              ),
             ),
           ),
           const SizedBox(height: 14),
         ],
         if (officers.isNotEmpty) ...[
-          const Text('Officers',
-              style: TextStyle(
-                  color: _C.muted, fontSize: 11, fontWeight: FontWeight.w800)),
+          const _Pad(
+            child: Text('Officers',
+                style: TextStyle(
+                    color: _C.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800)),
+          ),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < officers.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 10),
-                  _SquarePersonCard(
-                    name: officers[i]['name'].toString(),
-                    role: officers[i]['role'].toString(),
-                    avatarUrl: officers[i]['avatar_url'].toString(),
-                    width: 144,
+          LayoutBuilder(
+            builder: (context, constraints) => ScrollConfiguration(
+              behavior: const _DragScrollBehavior(),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
+                // Few officers are centered; many officers scroll sideways.
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                      minWidth: math.max(0.0, constraints.maxWidth - 36)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < officers.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 10),
+                        _SquarePersonCard(
+                          name: officers[i]['name'].toString(),
+                          role: officers[i]['role'].toString(),
+                          avatarUrl: officers[i]['avatar_url'].toString(),
+                          width: 144,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ],
+                ),
+              ),
             ),
           ),
         ],
@@ -1128,16 +1806,12 @@ class _SquarePersonCard extends StatelessWidget {
       width: width,
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.white, Color(0xFFF3FCF6)],
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _C.line, width: 1.1),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x080F8A61), blurRadius: 12, offset: Offset(0, 5)),
+              color: Color(0x0F000000), blurRadius: 12, offset: Offset(0, 5)),
         ],
       ),
       child: Column(
@@ -1154,39 +1828,52 @@ class _SquarePersonCard extends StatelessWidget {
                       height: 122,
                       fit: BoxFit.cover,
                       alignment: Alignment.center,
+                      memCacheWidth: 400,
+                      fadeInDuration: const Duration(milliseconds: 200),
+                      placeholder: (_, __) => _squareFallback(),
                       errorWidget: (_, __, ___) => _squareFallback(),
                     )
                   : _squareFallback(),
             ),
           ),
           const SizedBox(height: 9),
-          Text(
-            name,
-            softWrap: true,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _C.ink,
-              fontSize: 13.5,
-              height: 1.14,
-              fontWeight: FontWeight.w900,
+          // Fixed-height name container ensures all cards match in height
+          SizedBox(
+            height: 38,
+            child: Center(
+              child: Text(
+                name,
+                softWrap: true,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _C.ink,
+                  fontSize: 13.5,
+                  height: 1.14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 7),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE3F7EA),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              role,
-              softWrap: true,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF15803D),
-                fontSize: 9.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .45,
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: _C.mint,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                role,
+                softWrap: true,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _C.green,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .45,
+                ),
               ),
             ),
           ),
@@ -1211,7 +1898,10 @@ class _ConnectCard extends StatelessWidget {
     if (value.isEmpty) return '';
     final uri = Uri.tryParse(value.contains('://') ? value : 'https://$value');
     final host = uri?.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
-    if (host == 'facebook.com' && uri != null) {
+    if ((host == 'facebook.com' ||
+            host == 'm.facebook.com' ||
+            host == 'web.facebook.com') &&
+        uri != null) {
       final query = uri.queryParameters['q'];
       if (query != null && query.trim().isNotEmpty) return query.trim();
       final path = uri.pathSegments.where((part) => part.isNotEmpty).join(' ');
@@ -1222,35 +1912,65 @@ class _ConnectCard extends StatelessWidget {
     return value;
   }
 
+  /// A real link opens as is; a plain page name opens a Facebook search.
+  Uri? _resolveUri(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    if (value.contains('://')) return Uri.tryParse(value);
+    if (!value.contains(' ') && value.contains('.')) {
+      return Uri.tryParse('https://$value');
+    }
+    return Uri.https('www.facebook.com', '/search/top', {'q': value});
+  }
+
   @override
   Widget build(BuildContext context) {
     final facebookName = _facebookDisplayName(org.socialLink);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        side: const BorderSide(color: _C.line),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('FACEBOOK PAGE',
-            style: TextStyle(
-                color: _C.muted,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .9)),
-        const SizedBox(height: 7),
-        Text(
-          facebookName,
-          softWrap: true,
-          style: const TextStyle(
-              color: _C.dark, fontSize: 15, fontWeight: FontWeight.w700),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openExternal(context, _resolveUri(org.socialLink)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(children: [
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('FACEBOOK PAGE',
+                        style: TextStyle(
+                            color: _C.muted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .9)),
+                    const SizedBox(height: 7),
+                    Text(
+                      facebookName,
+                      softWrap: true,
+                      style: const TextStyle(
+                          color: _C.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ]),
+            ),
+            const SizedBox(width: 10),
+            const Icon(Icons.open_in_new_rounded, color: _C.green, size: 20),
+          ]),
         ),
-      ]),
+      ),
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Apply tab
+// ---------------------------------------------------------------------------
 
 class _ApplyTab extends StatelessWidget {
   final Organization org;
@@ -1258,31 +1978,24 @@ class _ApplyTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scrollbar(
+    return _TabScroll(
       thumbVisibility: true,
-      interactive: true,
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 48),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // The scrollable area starts here, at "Ready to join?".
-            _SectionIntro(
-              icon: Icons.volunteer_activism_rounded,
-              title: 'Ready to join?',
-              subtitle:
-                  'Send your application when you are ready to become part of this community.',
-            ),
-            const SizedBox(height: 16),
-            _LazyOrgForm(
-                title: org.name,
-                logoAsset: org.logoAsset,
-                orgId: org.id,
-                category: org.category),
-          ],
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 48),
+      children: [
+        // The scrollable area starts here, at "Ready to join?".
+        const _SectionIntro(
+          icon: Icons.volunteer_activism_rounded,
+          title: 'Ready to join?',
+          subtitle:
+              'Send your application when you are ready to become part of this community.',
         ),
-      ),
+        const SizedBox(height: 16),
+        _LazyOrgForm(
+            title: org.name,
+            logoAsset: org.logoAsset,
+            orgId: org.id,
+            category: org.category),
+      ],
     );
   }
 }
@@ -1302,19 +2015,15 @@ class _LazyOrgForm extends StatefulWidget {
 }
 
 class _LazyOrgFormState extends State<_LazyOrgForm> {
-  bool built = false;
-  Widget? form;
   @override
   Widget build(BuildContext context) {
-    if (!built) {
-      built = true;
-      form = OrgFormContent(
-          title: widget.title,
-          logoAsset: widget.logoAsset,
-          orgId: widget.orgId,
-          category: widget.category);
-    }
-    return form!;
+    return OrgFormContent(
+      title: widget.title,
+      logoAsset: widget.logoAsset,
+      orgId: widget.orgId,
+      category: widget.category,
+      embedded: true,
+    );
   }
 }
 
@@ -1326,20 +2035,19 @@ class _SoftEmpty extends StatelessWidget {
       {required this.icon, required this.title, required this.subtitle});
   @override
   Widget build(BuildContext context) => Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_C.mint, Color(0xFFD8F2E7)]),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: _C.line)),
+          border: Border.all(color: _C.line),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x0F000000), blurRadius: 12, offset: Offset(0, 5))
+          ]),
       child: Column(children: [
-        Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .7),
-                shape: BoxShape.circle),
-            child: Icon(icon, color: _C.green, size: 27)),
-        const SizedBox(height: 10),
+        Icon(icon, color: _C.green, size: 36),
+        const SizedBox(height: 12),
         Text(title,
             textAlign: TextAlign.center,
             style: const TextStyle(

@@ -119,21 +119,6 @@ class _HomeEventsSectionState extends State<HomeEventsSection> {
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       child: Row(
         children: <Widget>[
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: HC.mint,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(
-              Icons.calendar_month_rounded,
-              color: HC.primary,
-              size: 23,
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,7 +150,7 @@ class _HomeEventsSectionState extends State<HomeEventsSection> {
           TextButton(
             onPressed: widget.onViewAll,
             style: TextButton.styleFrom(
-              foregroundColor: HC.primary,
+              foregroundColor: Colors.black,
               padding: const EdgeInsets.symmetric(horizontal: 4),
               minimumSize: const Size(44, 44),
               tapTargetSize: MaterialTapTargetSize.padded,

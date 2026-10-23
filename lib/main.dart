@@ -20,7 +20,8 @@ ThemeData _withFont(ThemeData base) => base.copyWith(
       // Apply Plus Jakarta Sans through the Material text themes. ThemeData.copyWith
       // does not accept a fontFamily parameter on this Flutter SDK.
       textTheme: GoogleFonts.plusJakartaSansTextTheme(base.textTheme),
-      primaryTextTheme: GoogleFonts.plusJakartaSansTextTheme(base.primaryTextTheme),
+      primaryTextTheme:
+          GoogleFonts.plusJakartaSansTextTheme(base.primaryTextTheme),
       appBarTheme: base.appBarTheme.copyWith(
         titleTextStyle: GoogleFonts.plusJakartaSans(
           textStyle: base.appBarTheme.titleTextStyle,
@@ -91,7 +92,11 @@ class _MyAppState extends State<MyApp> {
       theme: _withFont(ThemeData(
         fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
         brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF128058)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF128058),
+          surface: Colors.white,
+          surfaceTint: Colors.transparent,
+        ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF128058),
@@ -105,7 +110,7 @@ class _MyAppState extends State<MyApp> {
           ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF1F8F4),
+        scaffoldBackgroundColor: Colors.white,
         scrollbarTheme: ScrollbarThemeData(
           thumbColor: WidgetStatePropertyAll(Color(0xFF6BBF98)),
           trackColor: WidgetStatePropertyAll(Color(0xFFE3F1EA)),
