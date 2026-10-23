@@ -970,7 +970,7 @@ class AppState extends ChangeNotifier {
           .eq('id', applicationId)
           .select('id');
 
-      if (res is List && res.isEmpty) {
+      if (res.isEmpty) {
         lastApplicationError =
             'Failed to decline application (permission denied or record not found).';
         return false;
@@ -1110,7 +1110,7 @@ class AppState extends ChangeNotifier {
           .eq('id', applicationId)
           .select('id');
 
-      if (res is List && res.isEmpty) {
+      if (res.isEmpty) {
         lastApplicationError = 'Failed to approve application.';
         return false;
       }
@@ -1189,7 +1189,7 @@ class AppState extends ChangeNotifier {
           .eq('id', app.id)
           .select('id');
 
-      if (res is List && res.isEmpty) {
+      if (res.isEmpty) {
         lastApplicationError = 'Failed to schedule interview.';
         return false;
       }
@@ -1404,7 +1404,7 @@ class AppState extends ChangeNotifier {
           .eq('id', id)
           .select('id');
 
-      if (res is List && res.isEmpty) {
+      if (res.isEmpty) {
         return false;
       }
     } catch (e) {
@@ -1622,7 +1622,7 @@ class AppState extends ChangeNotifier {
           .eq('id', event.id)
           .select('id');
 
-      if (res is List && res.isEmpty) {
+      if (res.isEmpty) {
         return false;
       }
     } catch (e) {
@@ -1643,7 +1643,7 @@ class AppState extends ChangeNotifier {
           .eq('id', id)
           .select('id');
 
-      if (res is List && res.isEmpty) {
+      if (res.isEmpty) {
         return false;
       }
     } catch (e) {
@@ -2233,7 +2233,9 @@ class AppState extends ChangeNotifier {
     final matching = applications.where((a) {
       if (a.orgId != null && a.orgId == orgId) return true;
       if (orgNameLower.isNotEmpty &&
-          a.orgName.trim().toLowerCase() == orgNameLower) return true;
+          a.orgName.trim().toLowerCase() == orgNameLower) {
+        return true;
+      }
       return false;
     }).toList();
 

@@ -1150,7 +1150,11 @@ class _IconBox extends StatelessWidget {
   final Color color;
   final double size;
 
-  const _IconBox({required this.icon, required this.color, this.size = 40});
+  const _IconBox({
+    required this.icon,
+    required this.color,
+    this.size = 40.0,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
