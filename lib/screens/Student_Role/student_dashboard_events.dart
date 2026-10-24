@@ -32,6 +32,14 @@ class _DT {
 
 enum EventFilter { selectedDay, upcoming, past }
 
+enum _ResponsiveBreakpoint { compact, medium, expanded }
+
+_ResponsiveBreakpoint _responsiveBreakpoint(double width) {
+  if (width < 600) return _ResponsiveBreakpoint.compact;
+  if (width < 960) return _ResponsiveBreakpoint.medium;
+  return _ResponsiveBreakpoint.expanded;
+}
+
 // ── Display items for lazy list ───────────────────────────────────────────
 abstract class _DisplayItem {}
 
@@ -296,158 +304,301 @@ class _StudentDashboardState extends State<StudentDashboard>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _DT.bg,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final baseHPad = (width * 0.055).clamp(16.0, 28.0);
-          final contentMaxW = 720.0;
-          final extraPad =
-              (width - contentMaxW) > 0 ? (width - contentMaxW) / 2 : 0.0;
-          final hPad = baseHPad + extraPad;
-          final hp = EdgeInsets.symmetric(horizontal: hPad);
+    return MediaQuery.withClampedTextScaling(
+      minScaleFactor: 1.0,
+      maxScaleFactor: 1.3,
+      child: Scaffold(
+        backgroundColor: _DT.bg,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final breakpoint = _responsiveBreakpoint(width);
+            final sidePadding = breakpoint == _ResponsiveBreakpoint.compact
+                ? 16.0
+                : breakpoint == _ResponsiveBreakpoint.medium
+                    ? 24.0
+                    : 32.0;
+            const contentMaxW = 1100.0;
+            final centeredInset =
+                width > contentMaxW ? (width - contentMaxW) / 2 : 0.0;
+            final hPad = centeredInset + sidePadding;
+            final hp = EdgeInsets.symmetric(horizontal: hPad);
 
-          return AnimatedBuilder(
-            animation: AppState.instance,
-            builder: (context, _) {
-              final allEvents = _allEvents;
-              final displayedItems = _buildDisplayItems(allEvents);
+            return AnimatedBuilder(
+              animation: AppState.instance,
+              builder: (context, _) {
+                final allEvents = _allEvents;
+                final displayedItems = _buildDisplayItems(allEvents);
 
-              return FadeTransition(
-                opacity: _entranceFade,
-                child: SlideTransition(
-                  position: _entranceSlide,
-                  child: Stack(
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildSectionHeader(),
-                          Expanded(
-                            child: RefreshIndicator(
-                              color: _DT.brandAccent,
-                              onRefresh: () async {
-                                await Future.sync(
-                                    () => AppState.instance.fetchEvents());
-                                if (mounted) {
-                                  setState(() {
-                                    _visibleCount = 10;
-                                  });
-                                }
-                              },
-                              child: Scrollbar(
-                                controller: _scrollController,
-                                thumbVisibility: false,
-                                child: CustomScrollView(
-                                  controller: _scrollController,
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  physics: const AlwaysScrollableScrollPhysics(
-                                      parent: BouncingScrollPhysics()),
-                                  slivers: [
-                                    SliverToBoxAdapter(
-                                      child: _buildScheduleInfo(
-                                          hp, allEvents.length),
-                                    ),
-                                    SliverToBoxAdapter(
-                                      child: AnimatedSize(
-                                        duration:
-                                            const Duration(milliseconds: 250),
-                                        curve: Curves.easeInOut,
-                                        alignment: Alignment.topCenter,
-                                        child: ClipRect(
-                                          child: _currentFilter ==
-                                                  EventFilter.selectedDay
-                                              ? Padding(
-                                                  padding: hp.copyWith(
-                                                      top: 6, bottom: 4),
-                                                  child: _buildCalendarCard(
-                                                      allEvents),
-                                                )
-                                              : const SizedBox.shrink(),
+                return FadeTransition(
+                  opacity: _entranceFade,
+                  child: SlideTransition(
+                    position: _entranceSlide,
+                    child: Stack(
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildSectionHeader(
+                              hPad,
+                              showRefresh:
+                                  breakpoint != _ResponsiveBreakpoint.compact,
+                            ),
+                            Expanded(
+                              child: breakpoint ==
+                                      _ResponsiveBreakpoint.expanded
+                                  ? Padding(
+                                      padding: hp,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          SizedBox(
+                                            width: 360,
+                                            child: CustomScrollView(
+                                              physics:
+                                                  const BouncingScrollPhysics(),
+                                              slivers: [
+                                                SliverToBoxAdapter(
+                                                  child: _buildScheduleInfo(
+                                                    EdgeInsets.zero,
+                                                    allEvents.length,
+                                                  ),
+                                                ),
+                                                SliverToBoxAdapter(
+                                                  child: AnimatedSize(
+                                                    duration: const Duration(
+                                                        milliseconds: 250),
+                                                    curve: Curves.easeInOut,
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: ClipRect(
+                                                      child: _currentFilter ==
+                                                              EventFilter
+                                                                  .selectedDay
+                                                          ? Padding(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .only(
+                                                                top: 6,
+                                                                bottom: 4,
+                                                              ),
+                                                              child:
+                                                                  _buildCalendarCard(
+                                                                      allEvents),
+                                                            )
+                                                          : const SizedBox
+                                                              .shrink(),
+                                                    ),
+                                                  ),
+                                                ),
+                                                SliverToBoxAdapter(
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                      top: 10,
+                                                      bottom: 6,
+                                                    ),
+                                                    child:
+                                                        _buildFilterChipsContent(),
+                                                  ),
+                                                ),
+                                                if (_currentFilter !=
+                                                    EventFilter.selectedDay)
+                                                  _buildSearchField(
+                                                      EdgeInsets.zero),
+                                                const SliverToBoxAdapter(
+                                                  child: SizedBox(height: 24),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 24),
+                                          Expanded(
+                                            child: RefreshIndicator(
+                                              color: _DT.brandAccent,
+                                              onRefresh: _refreshEvents,
+                                              child: Scrollbar(
+                                                controller: _scrollController,
+                                                thumbVisibility: false,
+                                                child: CustomScrollView(
+                                                  controller: _scrollController,
+                                                  keyboardDismissBehavior:
+                                                      ScrollViewKeyboardDismissBehavior
+                                                          .onDrag,
+                                                  physics:
+                                                      const AlwaysScrollableScrollPhysics(
+                                                    parent:
+                                                        BouncingScrollPhysics(),
+                                                  ),
+                                                  slivers: [
+                                                    SliverPadding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                        top: 10,
+                                                        bottom: 8,
+                                                      ),
+                                                      sliver:
+                                                          _buildSliverEventList(
+                                                        displayedItems,
+                                                        allEvents,
+                                                        expanded: true,
+                                                        showDialogDetails: true,
+                                                      ),
+                                                    ),
+                                                    const SliverToBoxAdapter(
+                                                      child:
+                                                          SizedBox(height: 24),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : RefreshIndicator(
+                                      color: _DT.brandAccent,
+                                      onRefresh: _refreshEvents,
+                                      child: Scrollbar(
+                                        controller: _scrollController,
+                                        thumbVisibility: false,
+                                        child: CustomScrollView(
+                                          controller: _scrollController,
+                                          keyboardDismissBehavior:
+                                              ScrollViewKeyboardDismissBehavior
+                                                  .onDrag,
+                                          physics:
+                                              const AlwaysScrollableScrollPhysics(
+                                            parent: BouncingScrollPhysics(),
+                                          ),
+                                          slivers: [
+                                            SliverToBoxAdapter(
+                                              child: _buildScheduleInfo(
+                                                hp,
+                                                allEvents.length,
+                                              ),
+                                            ),
+                                            SliverToBoxAdapter(
+                                              child: AnimatedSize(
+                                                duration: const Duration(
+                                                    milliseconds: 250),
+                                                curve: Curves.easeInOut,
+                                                alignment: Alignment.topCenter,
+                                                child: ClipRect(
+                                                  child: _currentFilter ==
+                                                          EventFilter
+                                                              .selectedDay
+                                                      ? Padding(
+                                                          padding: hp.copyWith(
+                                                              top: 6,
+                                                              bottom: 4),
+                                                          child:
+                                                              _buildCalendarCard(
+                                                                  allEvents),
+                                                        )
+                                                      : const SizedBox.shrink(),
+                                                ),
+                                              ),
+                                            ),
+                                            _buildPinnedFilterChips(hp),
+                                            if (_currentFilter !=
+                                                EventFilter.selectedDay)
+                                              _buildSearchField(hp),
+                                            SliverPadding(
+                                              padding: hp.copyWith(
+                                                  top: 10, bottom: 8),
+                                              sliver: _buildSliverEventList(
+                                                displayedItems,
+                                                allEvents,
+                                                showDialogDetails: false,
+                                              ),
+                                            ),
+                                            const SliverToBoxAdapter(
+                                              child: SizedBox(height: 96),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
-                                    _buildPinnedFilterChips(hp),
-                                    if (_currentFilter !=
-                                        EventFilter.selectedDay)
-                                      _buildSearchField(hp),
-                                    SliverPadding(
-                                      padding: hp.copyWith(top: 10, bottom: 8),
-                                      sliver: _buildSliverEventList(
-                                          displayedItems, allEvents),
-                                    ),
-                                    const SliverToBoxAdapter(
-                                        child: SizedBox(height: 96)),
-                                  ],
-                                ),
-                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      // Back to top floating button
-                      ValueListenableBuilder<bool>(
-                        valueListenable: _backToTopNotifier,
-                        builder: (context, show, child) {
-                          final bottomOffset =
-                              96 + MediaQuery.of(context).padding.bottom;
-                          return AnimatedPositioned(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            right: hPad,
-                            bottom: show ? bottomOffset : -60,
-                            child: AnimatedOpacity(
-                              opacity: show ? 1.0 : 0.0,
+                          ],
+                        ),
+                        // Back to top floating button
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _backToTopNotifier,
+                          builder: (context, show, child) {
+                            final bottomOffset =
+                                breakpoint == _ResponsiveBreakpoint.compact
+                                    ? 96.0
+                                    : 24.0;
+                            return AnimatedPositioned(
                               duration: const Duration(milliseconds: 200),
-                              child: IgnorePointer(
-                                ignoring: !show,
-                                child: Tooltip(
-                                  message: 'Back to top',
-                                  child: Material(
-                                    color: _DT.brandAccent,
-                                    elevation: 4,
-                                    shape: const CircleBorder(),
-                                    child: InkWell(
-                                      onTap: () {
-                                        if (_scrollController.hasClients) {
-                                          _scrollController.animateTo(
-                                            0,
-                                            duration: const Duration(
-                                                milliseconds: 400),
-                                            curve: Curves.easeInOut,
-                                          );
-                                        }
-                                      },
-                                      customBorder: const CircleBorder(),
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                            minWidth: 40, minHeight: 40),
-                                        child: const Center(
-                                          child: Icon(
+                              curve: Curves.easeInOut,
+                              right: hPad,
+                              bottom: show ? bottomOffset : -60,
+                              child: AnimatedOpacity(
+                                opacity: show ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 200),
+                                child: IgnorePointer(
+                                  ignoring: !show,
+                                  child: Tooltip(
+                                    message: 'Back to top',
+                                    child: Material(
+                                      color: _DT.brandAccent,
+                                      elevation: 4,
+                                      shape: const CircleBorder(),
+                                      child: InkWell(
+                                        onTap: () {
+                                          if (_scrollController.hasClients) {
+                                            _scrollController.animateTo(
+                                              0,
+                                              duration: const Duration(
+                                                  milliseconds: 400),
+                                              curve: Curves.easeInOut,
+                                            );
+                                          }
+                                        },
+                                        customBorder: const CircleBorder(),
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                              minWidth: 40, minHeight: 40),
+                                          child: const Center(
+                                            child: Icon(
                                               Icons.arrow_upward_rounded,
                                               color: Colors.white,
-                                              size: 18),
+                                              size: 18,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            );
+          },
+        ),
       ),
     );
+  }
+
+  Future<void> _refreshEvents() async {
+    await Future.sync(() => AppState.instance.fetchEvents());
+    if (mounted) {
+      setState(() {
+        _visibleCount = 10;
+      });
+    }
   }
 
   // ── Pinned Filter Chips Sliver (Optimized Compact Size) ───────────────────
@@ -458,20 +609,24 @@ class _StudentDashboardState extends State<StudentDashboard>
         height: 44, // Professional compact height for mobile screens
         child: Padding(
           padding: hp,
-          child: MediaQuery.withClampedTextScaling(
-            minScaleFactor: 1.0,
-            maxScaleFactor: 1.1,
-            child: Row(
-              children: [
-                _buildChipItem('Selected day', EventFilter.selectedDay),
-                const SizedBox(width: 6),
-                _buildChipItem('Upcoming', EventFilter.upcoming),
-                const SizedBox(width: 6),
-                _buildChipItem('Past', EventFilter.past),
-              ],
-            ),
-          ),
+          child: _buildFilterChipsContent(),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChipsContent() {
+    return MediaQuery.withClampedTextScaling(
+      minScaleFactor: 1.0,
+      maxScaleFactor: 1.1,
+      child: Row(
+        children: [
+          _buildChipItem('Selected day', EventFilter.selectedDay),
+          const SizedBox(width: 6),
+          _buildChipItem('Upcoming', EventFilter.upcoming),
+          const SizedBox(width: 6),
+          _buildChipItem('Past', EventFilter.past),
+        ],
       ),
     );
   }
@@ -522,7 +677,7 @@ class _StudentDashboardState extends State<StudentDashboard>
       child: Padding(
         padding: hp.copyWith(top: 6, bottom: 4),
         child: Container(
-          height: 42,
+          constraints: const BoxConstraints(minHeight: 42),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -557,7 +712,11 @@ class _StudentDashboardState extends State<StudentDashboard>
 
   // ── Event List Sliver Builder ──────────────────────────────────────────
   Widget _buildSliverEventList(
-      List<_DisplayItem> items, List<Event> allEvents) {
+    List<_DisplayItem> items,
+    List<Event> allEvents, {
+    bool expanded = false,
+    required bool showDialogDetails,
+  }) {
     final day = _selectedDay ?? DateTime.now();
     String title;
     String subtitle;
@@ -601,6 +760,10 @@ class _StudentDashboardState extends State<StudentDashboard>
       }
     }
 
+    final displayRows = expanded
+        ? _groupDisplayItems(items)
+        : items.map((item) => <_DisplayItem>[item]).toList();
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
@@ -636,6 +799,8 @@ class _StudentDashboardState extends State<StudentDashboard>
                         children: [
                           Text(
                             title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
@@ -646,6 +811,8 @@ class _StudentDashboardState extends State<StudentDashboard>
                           const SizedBox(height: 1),
                           Text(
                             subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 11,
                               color: _DT.inkSecond,
@@ -681,10 +848,41 @@ class _StudentDashboardState extends State<StudentDashboard>
             return const SizedBox.shrink();
           }
 
-          final itemIndex = index - 1;
-          if (itemIndex >= items.length) return const SizedBox.shrink();
+          final rowIndex = index - 1;
+          if (rowIndex >= displayRows.length) return const SizedBox.shrink();
+          final row = displayRows[rowIndex];
 
-          final item = items[itemIndex];
+          if (expanded && row.first is _EventDisplayItem) {
+            // Variable-height rows avoid forcing event content into a fixed
+            // grid extent when descriptions and accessibility text vary.
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildEventListItem(
+                      context,
+                      row[0] as _EventDisplayItem,
+                      showDialogDetails: showDialogDetails,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: row.length > 1
+                        ? _buildEventListItem(
+                            context,
+                            row[1] as _EventDisplayItem,
+                            showDialogDetails: showDialogDetails,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final item = row.first;
           if (item is _MonthHeaderDisplayItem) {
             return Padding(
               padding: const EdgeInsets.only(top: 10, bottom: 6),
@@ -692,16 +890,20 @@ class _StudentDashboardState extends State<StudentDashboard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        item.title,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: _DT.ink,
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: _DT.ink,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         '${item.count} event${item.count == 1 ? '' : 's'}',
                         style: const TextStyle(
@@ -718,24 +920,18 @@ class _StudentDashboardState extends State<StudentDashboard>
               ),
             );
           } else if (item is _EventDisplayItem) {
-            final event = item.event;
-            if (_currentFilter == EventFilter.past) {
-              return KeyedSubtree(
-                key: ValueKey(event.id),
-                child: _CompactEventRow(
-                  event: event,
-                  onTap: () => _openEventDetailSheet(context, event),
-                ),
-              );
-            } else {
-              return KeyedSubtree(
-                key: ValueKey(event.id),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: _EventFeedCard(event: event),
-                ),
-              );
+            final child = _buildEventListItem(
+              context,
+              item,
+              showDialogDetails: showDialogDetails,
+            );
+            if (_currentFilter == EventFilter.past && !expanded) {
+              return child;
             }
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: child,
+            );
           } else if (item is _PaginationFooterDisplayItem) {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -779,12 +975,106 @@ class _StudentDashboardState extends State<StudentDashboard>
 
           return const SizedBox.shrink();
         },
-        childCount: 1 + (items.isEmpty ? 1 : items.length),
+        childCount: 1 + (items.isEmpty ? 1 : displayRows.length),
       ),
     );
   }
 
-  void _openEventDetailSheet(BuildContext context, Event event) {
+  List<List<_DisplayItem>> _groupDisplayItems(List<_DisplayItem> items) {
+    final rows = <List<_DisplayItem>>[];
+    var index = 0;
+    while (index < items.length) {
+      final item = items[index];
+      if (item is _EventDisplayItem) {
+        final row = <_DisplayItem>[item];
+        if (index + 1 < items.length && items[index + 1] is _EventDisplayItem) {
+          row.add(items[index + 1]);
+          index++;
+        }
+        rows.add(row);
+      } else {
+        rows.add([item]);
+      }
+      index++;
+    }
+    return rows;
+  }
+
+  Widget _buildEventListItem(
+    BuildContext context,
+    _EventDisplayItem item, {
+    required bool showDialogDetails,
+  }) {
+    final event = item.event;
+    if (_currentFilter == EventFilter.past) {
+      return KeyedSubtree(
+        key: ValueKey(event.id),
+        child: _CompactEventRow(
+          event: event,
+          inGrid: showDialogDetails,
+          onTap: () => _openEventDetailSheet(
+            context,
+            event,
+            useDialog: showDialogDetails,
+          ),
+        ),
+      );
+    }
+    return KeyedSubtree(
+      key: ValueKey(event.id),
+      child: _EventFeedCard(event: event),
+    );
+  }
+
+  void _openEventDetailSheet(
+    BuildContext context,
+    Event event, {
+    required bool useDialog,
+  }) {
+    if (useDialog) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 720,
+              maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
+            ),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    tooltip: 'Close event details',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: _EventFeedCard(
+                      event: event,
+                      showFullDescription: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -818,7 +1108,10 @@ class _StudentDashboardState extends State<StudentDashboard>
                   controller: scrollController,
                   padding: const EdgeInsets.all(16),
                   children: [
-                    _EventFeedCard(event: event),
+                    _EventFeedCard(
+                      event: event,
+                      showFullDescription: true,
+                    ),
                     const SizedBox(height: 96),
                   ],
                 ),
@@ -906,7 +1199,7 @@ class _StudentDashboardState extends State<StudentDashboard>
     );
   }
 
-  Widget _buildSectionHeader() {
+  Widget _buildSectionHeader(double hPad, {required bool showRefresh}) {
     final topInset = MediaQuery.of(context).padding.top;
     return Container(
       width: double.infinity,
@@ -921,22 +1214,30 @@ class _StudentDashboardState extends State<StudentDashboard>
           Positioned(right: 45, bottom: -70, child: _headerOrb(125)),
           Positioned.fill(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(20, topInset, 20, 0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'Events',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
+              padding: EdgeInsets.fromLTRB(hPad, topInset, hPad, 0),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Events',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                      ),
                     ),
                   ),
+                  if (showRefresh)
+                    IconButton(
+                      tooltip: 'Refresh events',
+                      onPressed: () => _refreshEvents(),
+                      icon: const Icon(Icons.refresh_rounded,
+                          color: Colors.white, size: 21),
+                      visualDensity: VisualDensity.compact,
+                    ),
                 ],
               ),
             ),
@@ -962,28 +1263,54 @@ class _StudentDashboardState extends State<StudentDashboard>
       final d = DateTime(e.date.year, e.date.month, e.date.day);
       return !d.isBefore(today);
     }).length;
+    final dateText = DateFormat('EEEE, MMMM d, yyyy').format(now);
+    final countBadge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFDCFCE7),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.upcoming_rounded,
+              size: 12, color: Color(0xFF1A9E6B)),
+          const SizedBox(width: 4),
+          Text(
+            'Upcoming: $upcomingCount ($totalCount total)',
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .2,
+              color: Color(0xFF0F766E),
+            ),
+          ),
+        ],
+      ),
+    );
 
     return Padding(
       padding: hp.copyWith(top: 12, bottom: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Discover what's happening on campus",
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: _DT.inkSecond,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 470;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  DateFormat('EEEE, MMMM d, yyyy').format(now),
+              const Text(
+                "Discover what's happening on campus",
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: _DT.inkSecond,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (narrow) ...[
+                Text(
+                  dateText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -992,35 +1319,30 @@ class _StudentDashboardState extends State<StudentDashboard>
                     color: _DT.inkSecond,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                const SizedBox(height: 6),
+                Align(alignment: Alignment.centerLeft, child: countBadge),
+              ] else
+                Row(
                   children: [
-                    const Icon(Icons.upcoming_rounded,
-                        size: 12, color: Color(0xFF1A9E6B)),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Upcoming: $upcomingCount ($totalCount total)',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .2,
-                        color: Color(0xFF0F766E),
+                    Expanded(
+                      child: Text(
+                        dateText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: _DT.inkSecond,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    countBadge,
                   ],
                 ),
-              ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1056,6 +1378,8 @@ class _StudentDashboardState extends State<StudentDashboard>
                     Expanded(
                       child: Text(
                         DateFormat('MMMM yyyy').format(_focusedDay),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                             fontSize: 14,
@@ -1278,8 +1602,13 @@ class _StudentDashboardState extends State<StudentDashboard>
 class _CompactEventRow extends StatefulWidget {
   final Event event;
   final VoidCallback onTap;
+  final bool inGrid;
 
-  const _CompactEventRow({required this.event, required this.onTap});
+  const _CompactEventRow({
+    required this.event,
+    required this.onTap,
+    this.inGrid = false,
+  });
 
   @override
   State<_CompactEventRow> createState() => _CompactEventRowState();
@@ -1337,7 +1666,8 @@ class _CompactEventRowState extends State<_CompactEventRow> {
           'Past event: ${widget.event.title}, by ${widget.event.orgName}, on $dateStr. Double tap to open.',
       button: true,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+        margin:
+            widget.inGrid ? EdgeInsets.zero : const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
@@ -1401,11 +1731,16 @@ class _CompactEventRowState extends State<_CompactEventRow> {
                             ),
                           ),
                           const SizedBox(height: 5),
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2.5),
+                                  horizontal: 6,
+                                  vertical: 2.5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF1F5F9),
                                   borderRadius: BorderRadius.circular(6),
@@ -1413,8 +1748,11 @@ class _CompactEventRowState extends State<_CompactEventRow> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.calendar_today_rounded,
-                                        size: 9.5, color: Color(0xFF94A3B8)),
+                                    const Icon(
+                                      Icons.calendar_today_rounded,
+                                      size: 9.5,
+                                      color: Color(0xFF94A3B8),
+                                    ),
                                     const SizedBox(width: 3.5),
                                     Text(
                                       dateStr,
@@ -1427,23 +1765,24 @@ class _CompactEventRowState extends State<_CompactEventRow> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.forum_outlined,
-                                        size: 12, color: Color(0xFF1A9E6B)),
-                                    const SizedBox(width: 3.5),
-                                    EventCommentCountLabel(
-                                      eventId: widget.event.id,
-                                      style: const TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF6B6B8E),
-                                      ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.forum_outlined,
+                                    size: 12,
+                                    color: Color(0xFF1A9E6B),
+                                  ),
+                                  const SizedBox(width: 3.5),
+                                  EventCommentCountLabel(
+                                    eventId: widget.event.id,
+                                    style: const TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF6B6B8E),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -1530,7 +1869,12 @@ class _CompactEventRowState extends State<_CompactEventRow> {
 // =============================================================================
 class _EventFeedCard extends StatefulWidget {
   final Event event;
-  const _EventFeedCard({required this.event});
+  final bool showFullDescription;
+
+  const _EventFeedCard({
+    required this.event,
+    this.showFullDescription = false,
+  });
 
   @override
   State<_EventFeedCard> createState() => _EventFeedCardState();
@@ -1586,315 +1930,385 @@ class _EventFeedCardState extends State<_EventFeedCard> {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final isUpcoming = !DateTime(widget.event.date.year,
-            widget.event.date.month, widget.event.date.day)
-        .isBefore(today);
+    final isUpcoming = !DateTime(
+      widget.event.date.year,
+      widget.event.date.month,
+      widget.event.date.day,
+    ).isBefore(today);
     final urls = _imageUrls;
     final hasImages = urls.isNotEmpty;
-    final hasMultiple = urls.length > 1;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isUpcoming
-              ? const Color(0xFF1A9E6B).withValues(alpha: 0.18)
-              : const Color(0xFFE8E9F3),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1A9E6B).withValues(alpha: 0.06),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontal = constraints.maxWidth >= 520;
+        return Container(
+          width: double.infinity,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isUpcoming
+                  ? const Color(0xFF1A9E6B).withValues(alpha: 0.18)
+                  : const Color(0xFFE8E9F3),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF1A9E6B).withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (hasImages)
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-              child: AspectRatio(
-                aspectRatio: 16 / 10,
-                child: Stack(
-                  fit: StackFit.expand,
+          child: horizontal
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (hasMultiple)
-                      PageView.builder(
-                        itemCount: urls.length,
-                        onPageChanged: (index) =>
-                            setState(() => _currentImageIndex = index),
-                        itemBuilder: (_, index) => GestureDetector(
-                          onTap: () => _openZoom(context, urls[index]),
-                          child: _buildImage(urls[index]),
-                        ),
-                      )
-                    else
-                      GestureDetector(
-                        onTap: () => _openZoom(context, urls.first),
-                        child: _buildImage(urls.first),
-                      ),
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: 44,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.5)
-                            ],
-                          ),
-                        ),
+                    if (hasImages) _buildImageGallery(urls, horizontal: true),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildCardContent(isUpcoming),
+                          const Divider(height: 1, color: Color(0xFFE8E9F3)),
+                          _buildCommentsFooter(horizontal: true),
+                        ],
                       ),
                     ),
-                    Positioned(
-                      bottom: 8,
-                      left: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2.5),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.zoom_in_rounded,
-                                color: Colors.white, size: 12),
-                            SizedBox(width: 3.5),
-                            Text('Tap to expand',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (hasMultiple)
-                      Positioned(
-                        bottom: 8,
-                        left: 0,
-                        right: 0,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: urls.asMap().entries.map((entry) {
-                            final isActive = entry.key == _currentImageIndex;
-                            return AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: isActive ? 14 : 5,
-                              height: 5,
-                              margin: const EdgeInsets.symmetric(horizontal: 2),
-                              decoration: BoxDecoration(
-                                color: isActive
-                                    ? Colors.white
-                                    : Colors.white.withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(2.5),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    if (hasMultiple)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2.5),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_currentImageIndex + 1} / ${urls.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (hasImages) _buildImageGallery(urls, horizontal: false),
+                    _buildCardContent(isUpcoming),
+                    const Divider(height: 1, color: Color(0xFFE8E9F3)),
+                    _buildCommentsFooter(horizontal: false),
                   ],
                 ),
+        );
+      },
+    );
+  }
+
+  Widget _buildImageGallery(
+    List<String> urls, {
+    required bool horizontal,
+  }) {
+    final hasMultiple = urls.length > 1;
+    final gallery = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (hasMultiple)
+          PageView.builder(
+            itemCount: urls.length,
+            onPageChanged: (index) =>
+                setState(() => _currentImageIndex = index),
+            itemBuilder: (_, index) => GestureDetector(
+              onTap: () => _openZoom(context, urls[index]),
+              child: _buildImage(urls[index]),
+            ),
+          )
+        else
+          GestureDetector(
+            onTap: () => _openZoom(context, urls.first),
+            child: _buildImage(urls.first),
+          ),
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 44,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.5),
+                ],
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Container(
-                    width: 22,
-                    height: 22,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFDCFCE7),
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      widget.event.orgName.isNotEmpty
-                          ? widget.event.orgName[0].toUpperCase()
-                          : 'O',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1A9E6B),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      widget.event.orgName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF0F766E),
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 7),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: isUpcoming
-                          ? const Color(0xFFDCFCE7)
-                          : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      isUpcoming ? 'Upcoming' : 'Past',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: isUpcoming
-                            ? const Color(0xFF1A9E6B)
-                            : const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 7),
+          ),
+        ),
+        Positioned(
+          bottom: 8,
+          left: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.zoom_in_rounded, color: Colors.white, size: 12),
+                SizedBox(width: 3.5),
                 Text(
-                  widget.event.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F0D2E),
-                    letterSpacing: -0.3,
-                    height: 1.2,
-                  ),
-                ),
-                if (widget.event.description.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    widget.event.description,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: Color(0xFF6B6B8E),
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isUpcoming
-                        ? const Color(0xFFDCFCE7)
-                        : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.calendar_today_rounded,
-                        size: 10.5,
-                        color: isUpcoming
-                            ? const Color(0xFF1A9E6B)
-                            : const Color(0xFF94A3B8),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _formatDate(widget.event.date),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: isUpcoming
-                              ? const Color(0xFF1A9E6B)
-                              : const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
+                  'Tap to expand',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE8E9F3)),
-          InkWell(
-            onTap: () {
-              showEventComments(context,
-                  eventId: widget.event.id, eventTitle: widget.event.title);
-            },
-            borderRadius:
-                const BorderRadius.vertical(bottom: Radius.circular(16)),
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 40),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: const [
-                      Icon(Icons.forum_outlined,
-                          size: 15, color: Color(0xFF1A9E6B)),
-                      SizedBox(width: 7),
-                      Text('Discussion & Comments',
-                          style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF1A9E6B))),
-                    ],
+        ),
+        if (hasMultiple)
+          Positioned(
+            bottom: 8,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: urls.asMap().entries.map((entry) {
+                final isActive = entry.key == _currentImageIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: isActive ? 14 : 5,
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(2.5),
                   ),
-                  EventCommentCountLabel(
-                    eventId: widget.event.id,
-                    style: const TextStyle(
+                );
+              }).toList(),
+            ),
+          ),
+        if (hasMultiple)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${_currentImageIndex + 1} / ${urls.length}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+
+    return ClipRRect(
+      borderRadius: horizontal
+          ? const BorderRadius.only(topLeft: Radius.circular(16))
+          : const BorderRadius.vertical(top: Radius.circular(16)),
+      child: horizontal
+          ? SizedBox(width: 240, height: 220, child: gallery)
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final imageHeight = (constraints.maxWidth * 9 / 16)
+                    .clamp(150.0, 220.0)
+                    .toDouble();
+                return SizedBox(
+                  width: double.infinity,
+                  height: imageHeight,
+                  child: gallery,
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildCardContent(bool isUpcoming) {
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFDCFCE7),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  widget.event.orgName.isNotEmpty
+                      ? widget.event.orgName[0].toUpperCase()
+                      : 'O',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1A9E6B),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  widget.event.orgName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F766E),
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isUpcoming
+                      ? const Color(0xFFDCFCE7)
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isUpcoming ? 'Upcoming' : 'Past',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: isUpcoming
+                        ? const Color(0xFF1A9E6B)
+                        : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            widget.event.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F0D2E),
+              letterSpacing: -0.3,
+              height: 1.2,
+            ),
+          ),
+          if (widget.event.description.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              widget.event.description,
+              maxLines: widget.showFullDescription ? null : 2,
+              overflow: widget.showFullDescription
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: Color(0xFF6B6B8E),
+                height: 1.5,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isUpcoming
+                  ? const Color(0xFFDCFCE7)
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.calendar_today_rounded,
+                  size: 10.5,
+                  color: isUpcoming
+                      ? const Color(0xFF1A9E6B)
+                      : const Color(0xFF94A3B8),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatDate(widget.event.date),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isUpcoming
+                        ? const Color(0xFF1A9E6B)
+                        : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentsFooter({required bool horizontal}) {
+    return InkWell(
+      onTap: () {
+        showEventComments(
+          context,
+          eventId: widget.event.id,
+          eventTitle: widget.event.title,
+        );
+      },
+      borderRadius: horizontal
+          ? const BorderRadius.only(bottomRight: Radius.circular(16))
+          : const BorderRadius.vertical(bottom: Radius.circular(16)),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: const [
+                  Icon(Icons.forum_outlined,
+                      size: 15, color: Color(0xFF1A9E6B)),
+                  SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      'Discussion & Comments',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF6B6B8E)),
+                        color: Color(0xFF1A9E6B),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 6),
+            EventCommentCountLabel(
+              eventId: widget.event.id,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6B6B8E),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -156,6 +156,14 @@ InputDecoration _bwFieldDecoration({
 
 String _s(dynamic v) => v == null ? '' : v.toString().trim();
 
+enum _ProfileBreakpoint { compact, medium, expanded }
+
+_ProfileBreakpoint _profileBreakpointFor(double width) => width < 600
+    ? _ProfileBreakpoint.compact
+    : width < 960
+        ? _ProfileBreakpoint.medium
+        : _ProfileBreakpoint.expanded;
+
 const _sheetShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
 );
@@ -653,7 +661,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       shape: _sheetShape,
       constraints: BoxConstraints(
         maxWidth: 540,
-        maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        maxHeight: math
+            .max(
+              0.0,
+              math.min(
+                MediaQuery.sizeOf(context).height * 0.75,
+                MediaQuery.sizeOf(context).height -
+                    MediaQuery.paddingOf(context).vertical -
+                    16,
+              ),
+            )
+            .toDouble(),
       ),
       builder: (ctx) => SafeArea(
         child: Column(
@@ -722,111 +740,123 @@ class _ProfileScreenState extends State<ProfileScreen> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           elevation: 0,
           backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 40,
-                    offset: const Offset(0, 16)),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: _kRed.withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child:
-                      const Icon(Icons.logout_rounded, color: _kRed, size: 30),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 40,
+                        offset: const Offset(0, 16)),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Log out of OrgConnect?',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: _kSlate0F,
-                      letterSpacing: 0.1),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Are you sure you want to log out of your account? You will need to enter your credentials to log back in.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 13.5,
-                      color: _kSlate94,
-                      height: 1.5,
-                      fontWeight: FontWeight.w400),
-                ),
-                const SizedBox(height: 28),
-                Row(children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => Navigator.pop(ctx),
-                      child: Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: _kBg,
-                          borderRadius: BorderRadius.circular(13),
-                          border: Border.all(color: _kSlateE2, width: 1.2),
-                        ),
-                        child: const Center(
-                          child: Text('Cancel',
-                              style: TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: _kSlate0F)),
-                        ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: _kRed.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.logout_rounded,
+                        color: _kRed,
+                        size: 30,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await Supabase.instance.client.auth.signOut();
-                        if (!mounted) return;
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const UnifiedLoginPage()),
-                          (route) => false,
-                        );
-                      },
-                      child: Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: _kRed,
-                          borderRadius: BorderRadius.circular(13),
-                          boxShadow: [
-                            BoxShadow(
-                                color: _kRed.withValues(alpha: 0.30),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4)),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Text('Log Out',
-                              style: TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white)),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Log out of OrgConnect?',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: _kSlate0F,
+                          letterSpacing: 0.1),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Are you sure you want to log out of your account? You will need to enter your credentials to log back in.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          color: _kSlate94,
+                          height: 1.5,
+                          fontWeight: FontWeight.w400),
+                    ),
+                    const SizedBox(height: 28),
+                    Row(children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: _kBg,
+                              borderRadius: BorderRadius.circular(13),
+                              border: Border.all(color: _kSlateE2, width: 1.2),
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: _kSlate0F),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ]),
-              ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            await Supabase.instance.client.auth.signOut();
+                            if (!mounted) return;
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const UnifiedLoginPage()),
+                              (route) => false,
+                            );
+                          },
+                          child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: _kRed,
+                              borderRadius: BorderRadius.circular(13),
+                              boxShadow: [
+                                BoxShadow(
+                                    color: _kRed.withValues(alpha: 0.30),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4)),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'Log Out',
+                                style: TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1028,220 +1058,366 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  List<Widget> _settingsTiles(BuildContext ctx) => [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF334155).withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.notifications_none_rounded,
+              color: Color(0xFF334155),
+              size: 20,
+            ),
+          ),
+          title: const Text(
+            'Notifications',
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14.5, color: _kSlate0F),
+          ),
+          subtitle: const Text(
+            'Manage alerts and updates',
+            style: TextStyle(fontSize: 12, color: _kSlate94),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
+          onTap: () {
+            Navigator.pop(ctx);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => NotificationScreen()),
+            );
+          },
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF334155).withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.lock_outline_rounded,
+              color: Color(0xFF334155),
+              size: 20,
+            ),
+          ),
+          title: const Text(
+            'Change Password',
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14.5, color: _kSlate0F),
+          ),
+          subtitle: const Text(
+            'Update your account password',
+            style: TextStyle(fontSize: 12, color: _kSlate94),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
+          onTap: () {
+            Navigator.pop(ctx);
+            _changePassword();
+          },
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF334155).withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: Color(0xFF334155),
+              size: 20,
+            ),
+          ),
+          title: const Text(
+            'Privacy',
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14.5, color: _kSlate0F),
+          ),
+          subtitle: const Text(
+            'Review privacy controls',
+            style: TextStyle(fontSize: 12, color: _kSlate94),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
+          onTap: () {
+            Navigator.pop(ctx);
+            _snack('Coming soon');
+          },
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF334155).withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.help_outline_rounded,
+              color: Color(0xFF334155),
+              size: 20,
+            ),
+          ),
+          title: const Text(
+            'Help & Support',
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14.5, color: _kSlate0F),
+          ),
+          subtitle: const Text(
+            'Get assistance or contact support',
+            style: TextStyle(fontSize: 12, color: _kSlate94),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
+          onTap: () {
+            Navigator.pop(ctx);
+            _snack('Coming soon');
+          },
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF334155).withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.info_outline_rounded,
+              color: Color(0xFF334155),
+              size: 20,
+            ),
+          ),
+          title: const Text(
+            'About',
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14.5, color: _kSlate0F),
+          ),
+          subtitle: const Text(
+            'OrgConnect v1.0.0',
+            style: TextStyle(fontSize: 12, color: _kSlate94),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
+          onTap: () {
+            Navigator.pop(ctx);
+            _snack('Coming soon');
+          },
+        ),
+      ];
+  // Modern Professional Settings Bottom Sheet
   // Modern Professional Settings Bottom Sheet
   void _openSettingsModal() {
-    showModalBottomSheet(
+    if (MediaQuery.sizeOf(context).width < 600) {
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: _sheetShape,
+        constraints: const BoxConstraints(maxWidth: 540),
+        builder: (ctx) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Center(child: _Handle()),
+                const SizedBox(height: 18),
+                const Text(
+                  'Settings & Account',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: _kSlate0F,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Manage app preferences, notifications, and security',
+                  style: TextStyle(fontSize: 13, color: _kSlate94),
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: _kDivider),
+                const SizedBox(height: 8),
+                ..._settingsTiles(ctx),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: _sheetShape,
-      constraints: const BoxConstraints(maxWidth: 540),
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(child: _Handle()),
-              const SizedBox(height: 18),
-              const Text(
-                'Settings & Account',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _kSlate0F,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Manage app preferences, notifications, and security',
-                style: TextStyle(fontSize: 13, color: _kSlate94),
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1, color: _kDivider),
-              const SizedBox(height: 8),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155).withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 460,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+          ),
+          child: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Settings & Account',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: _kSlate0F,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Manage app preferences, notifications, and security',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _kSlate94,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: _kSlate94,
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Icon(Icons.notifications_none_rounded,
-                      color: Color(0xFF334155), size: 20),
-                ),
-                title: const Text('Notifications',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.5,
-                        color: _kSlate0F)),
-                subtitle: const Text('Manage alerts and updates',
-                    style: TextStyle(fontSize: 12, color: _kSlate94)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: _kSlate94),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => NotificationScreen()));
-                },
+                  const SizedBox(height: 16),
+                  const Divider(height: 1, color: _kDivider),
+                  const SizedBox(height: 8),
+                  ..._settingsTiles(ctx),
+                  const SizedBox(height: 8),
+                ],
               ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155).withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.lock_outline_rounded,
-                      color: Color(0xFF334155), size: 20),
-                ),
-                title: const Text('Change Password',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.5,
-                        color: _kSlate0F)),
-                subtitle: const Text('Update your account password',
-                    style: TextStyle(fontSize: 12, color: _kSlate94)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: _kSlate94),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _changePassword();
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155).withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.shield_outlined,
-                      color: Color(0xFF334155), size: 20),
-                ),
-                title: const Text('Privacy',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.5,
-                        color: _kSlate0F)),
-                subtitle: const Text('Review privacy controls',
-                    style: TextStyle(fontSize: 12, color: _kSlate94)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: _kSlate94),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _snack('Coming soon');
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155).withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.help_outline_rounded,
-                      color: Color(0xFF334155), size: 20),
-                ),
-                title: const Text('Help & Support',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.5,
-                        color: _kSlate0F)),
-                subtitle: const Text('Get assistance or contact support',
-                    style: TextStyle(fontSize: 12, color: _kSlate94)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: _kSlate94),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _snack('Coming soon');
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155).withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.info_outline_rounded,
-                      color: Color(0xFF334155), size: 20),
-                ),
-                title: const Text('About',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.5,
-                        color: _kSlate0F)),
-                subtitle: const Text('OrgConnect v1.0.0',
-                    style: TextStyle(fontSize: 12, color: _kSlate94)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: _kSlate94),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _snack('Coming soon');
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _personalCard() {
-    return _Card(
-      child: Column(
-        children: [
-          for (int i = 0; i < _fields.length; i++) ...[
-            _InfoRow(
-              def: _fields[i],
-              value: _s(_profile?[_fields[i].key]),
-              onEmptyTap: _openEdit,
-            ),
-            if (i < _fields.length - 1)
-              const Divider(
-                  height: 1, indent: 70, endIndent: 16, color: _kDivider),
+  Widget _personalCard({bool expanded = false}) {
+    if (!expanded) {
+      return _Card(
+        child: Column(
+          children: [
+            for (int i = 0; i < _fields.length; i++) ...[
+              _InfoRow(
+                def: _fields[i],
+                value: _s(_profile?[_fields[i].key]),
+                onEmptyTap: _openEdit,
+              ),
+              if (i < _fields.length - 1)
+                const Divider(
+                    height: 1, indent: 70, endIndent: 16, color: _kDivider),
+            ],
           ],
-        ],
+        ),
+      );
+    }
+
+    Widget info(int index) => _InfoRow(
+          def: _fields[index],
+          value: _s(_profile?[_fields[index].key]),
+          onEmptyTap: _openEdit,
+        );
+
+    Widget pair(int first, int second) => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: info(first)),
+            const SizedBox(width: 8),
+            Expanded(child: info(second)),
+          ],
+        );
+
+    return _Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          children: [
+            pair(0, 1),
+            const Divider(
+                height: 1, indent: 16, endIndent: 16, color: _kDivider),
+            pair(2, 3),
+            const Divider(
+                height: 1, indent: 16, endIndent: 16, color: _kDivider),
+            info(4),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _orgsBody(List<_OrgBrief> orgs, double cardW) {
+  Widget _orgsBody(List<_OrgBrief> orgs, double cardW,
+      {bool expanded = false}) {
     if (_orgsLoading) {
+      final skeletons = [
+        for (int i = 0; i < 2; i++)
+          Container(
+            width: cardW,
+            height: 128,
+            decoration: BoxDecoration(
+              color: _kSlateE2.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+      ];
+      if (expanded) {
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: skeletons,
+        );
+      }
       return SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         physics: const NeverScrollableScrollPhysics(),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (int i = 0; i < 2; i++) ...[
+            for (int i = 0; i < skeletons.length; i++) ...[
               if (i > 0) const SizedBox(width: 12),
-              Container(
-                width: cardW,
-                height: 128,
-                decoration: BoxDecoration(
-                  color: _kSlateE2.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
+              skeletons[i],
             ],
           ],
         ),
       );
     }
+
     if (orgs.isEmpty) {
       return _EmptyCard(
         icon: _orgsError ? Icons.cloud_off_rounded : Icons.groups_rounded,
@@ -1250,6 +1426,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
             : "You haven't joined any organization yet.",
       );
     }
+
+    Widget orgCard(_OrgBrief org) => SizedBox(
+          width: cardW,
+          child: _Card(
+            radius: 18,
+            child: InkWell(
+              onTap: () => _openOrgSheet(org),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _OrgLogo(org: org, size: 52, radius: 14),
+                    const SizedBox(height: 8),
+                    Text(
+                      org.name.isEmpty ? 'Organization' : org.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: _kSlate0F),
+                    ),
+                    const SizedBox(height: 6),
+                    _Tag(_positionOf(org.id)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+    if (expanded) {
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [for (final org in orgs) orgCard(org)],
+      );
+    }
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       clipBehavior: Clip.none,
@@ -1261,39 +1479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             for (int i = 0; i < orgs.length; i++) ...[
               if (i > 0) const SizedBox(width: 12),
-              SizedBox(
-                width: cardW,
-                child: _Card(
-                  radius: 18,
-                  child: InkWell(
-                    onTap: () => _openOrgSheet(orgs[i]),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _OrgLogo(org: orgs[i], size: 52, radius: 14),
-                          const SizedBox(height: 8),
-                          Text(
-                            orgs[i].name.isEmpty
-                                ? 'Organization'
-                                : orgs[i].name,
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: _kSlate0F),
-                          ),
-                          const SizedBox(height: 6),
-                          _Tag(_positionOf(orgs[i].id)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              orgCard(orgs[i]),
             ],
           ],
         ),
@@ -1381,27 +1567,103 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _profileSections(
+    List<_OrgBrief> orgs,
+    double cardW, {
+    required bool expanded,
+    bool includeSaved = true,
+  }) {
+    const sectionSpacing = SizedBox(height: 28);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionTitle('Personal Information'),
+        const SizedBox(height: 14),
+        _personalCard(expanded: expanded),
+        sectionSpacing,
+        _SectionTitle(
+          'My Organizations',
+          trailing: orgs.isEmpty
+              ? null
+              : InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _openAllOrgs(orgs),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Text(
+                      'See all',
+                      style: TextStyle(
+                        color: _kPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 14),
+        _orgsBody(orgs, cardW, expanded: expanded),
+        sectionSpacing,
+        _ImpactCard(
+          values: _impact,
+          grid: expanded,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const StudentImpactScreen(),
+            ),
+          ),
+        ),
+        if (includeSaved) ...[
+          sectionSpacing,
+          const _SectionTitle('Saved Organizations'),
+          const SizedBox(height: 14),
+          _savedCard(),
+        ],
+      ],
+    );
+  }
+
+  Widget _logoutButton() => OutlinedButton.icon(
+        onPressed: _showLogoutDialog,
+        icon: const Icon(Icons.logout_rounded, size: 20),
+        label: const Text('Log out',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _kRed,
+          backgroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(52),
+          side: const BorderSide(color: _kRed, width: 1.4),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
+
+  Widget _versionText() => const Center(
+        child: Text('OrgConnect v1.0.0',
+            style: TextStyle(fontSize: 11.5, color: _kSlate94)),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: _kBg,
         body: Center(
-          child: CircularProgressIndicator(color: _kPrimary, strokeWidth: 2.5),
+          child: CircularProgressIndicator(
+            color: _kPrimary,
+            strokeWidth: 2.5,
+          ),
         ),
       );
     }
 
     final mq = MediaQuery.of(context);
-    final w = mq.size.width;
-    final pad = w < 360 ? 16.0 : 20.0;
-    final cardW = ((w - 2 * pad) * 0.36).clamp(112.0, 150.0).toDouble();
     final avatar = _currentAvatarImage();
     final name = _s(_profile?['name']);
     final studentId = _s(_profile?['student_id']);
     final orgs = _joinedOrgs;
-    const sectionSpacing = SizedBox(height: 28);
-
     final headerHeight = 72.0 + mq.padding.top;
 
     return MediaQuery(
@@ -1409,138 +1671,225 @@ class _ProfileScreenState extends State<ProfileScreen> {
         textScaler:
             mq.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.3),
       ),
-      child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light
-            .copyWith(statusBarColor: Colors.transparent),
-        child: Scaffold(
-          backgroundColor: _kBg,
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 1. Scrollable Content
-              RefreshIndicator(
-                color: _kPrimary,
-                edgeOffset: headerHeight + 12,
-                onRefresh: _onRefresh,
-                child: ScrollConfiguration(
-                  behavior: const MaterialScrollBehavior()
-                      .copyWith(scrollbars: false),
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics()),
-                    padding: EdgeInsets.fromLTRB(
-                      pad,
-                      headerHeight + 20,
-                      pad,
-                      36 + mq.padding.bottom,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 540),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _ProfileIdentity(
-                              name: name,
-                              studentId: studentId,
-                              avatar: avatar,
-                              avatarSize: 104,
-                              onAvatarTap: () =>
-                                  setState(() => _showZoom = true),
-                              onEdit: _openEdit,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final breakpoint = _profileBreakpointFor(width);
+          final expanded = breakpoint == _ProfileBreakpoint.expanded;
+          final pad = width < 360 ? 16.0 : 20.0;
+          final cardW = expanded
+              ? 160.0
+              : ((width - 2 * pad) * 0.36)
+                  .clamp(
+                    112.0,
+                    breakpoint == _ProfileBreakpoint.medium ? 170.0 : 150.0,
+                  )
+                  .toDouble();
+          final bodyMaxWidth = switch (breakpoint) {
+            _ProfileBreakpoint.compact => 540.0,
+            _ProfileBreakpoint.medium => 640.0,
+            _ProfileBreakpoint.expanded => 1100.0,
+          };
+          final headerMaxWidth =
+              expanded ? bodyMaxWidth : bodyMaxWidth + 2 * pad;
+          final details = _profileSections(
+            orgs,
+            cardW,
+            expanded: expanded,
+            includeSaved: !expanded,
+          );
+
+          Widget responsiveScroll(Widget child) {
+            final configured = ScrollConfiguration(
+              behavior:
+                  const MaterialScrollBehavior().copyWith(scrollbars: false),
+              child: child,
+            );
+            if (breakpoint == _ProfileBreakpoint.compact) return configured;
+            return Scrollbar(child: configured);
+          }
+
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle.light
+                .copyWith(statusBarColor: Colors.transparent),
+            child: Scaffold(
+              backgroundColor: _kBg,
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (!expanded)
+                    RefreshIndicator(
+                      color: _kPrimary,
+                      edgeOffset: headerHeight + 12,
+                      onRefresh: _onRefresh,
+                      child: responsiveScroll(
+                        SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          padding: EdgeInsets.fromLTRB(
+                            pad,
+                            headerHeight + 20,
+                            pad,
+                            36 + mq.padding.bottom,
+                          ),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxWidth: bodyMaxWidth),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _ProfileIdentity(
+                                    name: name,
+                                    studentId: studentId,
+                                    avatar: avatar,
+                                    avatarSize: 104,
+                                    onAvatarTap: () =>
+                                        setState(() => _showZoom = true),
+                                    onEdit: _openEdit,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  details,
+                                  const SizedBox(height: 28),
+                                  _logoutButton(),
+                                  const SizedBox(height: 18),
+                                  _versionText(),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 24),
-                            const _SectionTitle('Personal Information'),
-                            const SizedBox(height: 14),
-                            _personalCard(),
-                            sectionSpacing,
-                            _SectionTitle(
-                              'My Organizations',
-                              trailing: orgs.isEmpty
-                                  ? null
-                                  : InkWell(
-                                      borderRadius: BorderRadius.circular(8),
-                                      onTap: () => _openAllOrgs(orgs),
-                                      child: const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 8),
-                                        child: Text('See all',
-                                            style: TextStyle(
-                                                color: _kPrimary,
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Positioned.fill(
+                      top: headerHeight,
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1100),
+                          child: SizedBox(
+                            height: math
+                                .max(0.0, constraints.maxHeight - headerHeight)
+                                .toDouble(),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: pad),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SizedBox(
+                                    width: 340,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 20,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Expanded(
+                                            child: Scrollbar(
+                                              child: SingleChildScrollView(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
+                                                    _Card(
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .all(18),
+                                                        child: _ProfileIdentity(
+                                                          name: name,
+                                                          studentId: studentId,
+                                                          avatar: avatar,
+                                                          avatarSize: 96,
+                                                          onAvatarTap: () =>
+                                                              setState(() =>
+                                                                  _showZoom =
+                                                                      true),
+                                                          onEdit: _openEdit,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 24),
+                                                    const _SectionTitle(
+                                                      'Saved Organizations',
+                                                    ),
+                                                    const SizedBox(height: 14),
+                                                    _savedCard(),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          _logoutButton(),
+                                          const SizedBox(height: 18),
+                                          _versionText(),
+                                        ],
                                       ),
                                     ),
-                            ),
-                            const SizedBox(height: 14),
-                            _orgsBody(orgs, cardW),
-                            sectionSpacing,
-                            _ImpactCard(
-                              values: _impact,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) =>
-                                        const StudentImpactScreen()),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  Expanded(
+                                    child: RefreshIndicator(
+                                      color: _kPrimary,
+                                      onRefresh: _onRefresh,
+                                      child: responsiveScroll(
+                                        SingleChildScrollView(
+                                          physics:
+                                              const AlwaysScrollableScrollPhysics(
+                                            parent: BouncingScrollPhysics(),
+                                          ),
+                                          padding: EdgeInsets.fromLTRB(
+                                            0,
+                                            20,
+                                            0,
+                                            36 + mq.padding.bottom,
+                                          ),
+                                          child: details,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            sectionSpacing,
-                            const _SectionTitle('Saved Organizations'),
-                            const SizedBox(height: 14),
-                            _savedCard(),
-                            sectionSpacing,
-                            OutlinedButton.icon(
-                              onPressed: _showLogoutDialog,
-                              icon: const Icon(Icons.logout_rounded, size: 20),
-                              label: const Text('Log out',
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700)),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _kRed,
-                                backgroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(52),
-                                side:
-                                    const BorderSide(color: _kRed, width: 1.4),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14)),
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            const Center(
-                              child: Text('OrgConnect v1.0.0',
-                                  style: TextStyle(
-                                      fontSize: 11.5, color: _kSlate94)),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
+
+                  // Fixed sticky header.
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _ProfileHeader(
+                      hPad: pad,
+                      onSettings: _openSettingsModal,
+                      onRefresh: breakpoint == _ProfileBreakpoint.compact
+                          ? null
+                          : _onRefresh,
+                      centered: breakpoint != _ProfileBreakpoint.compact,
+                      contentMaxWidth: headerMaxWidth,
+                    ),
                   ),
-                ),
-              ),
 
-              // 2. Fixed Sticky Header at the top
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: _ProfileHeader(
-                  hPad: pad,
-                  onSettings: _openSettingsModal,
-                ),
+                  // Zoom overlay remains above the page content.
+                  _AvatarZoomOverlay(
+                    isVisible: _showZoom,
+                    avatarImage: avatar,
+                    displayName: name,
+                    onClose: () => setState(() => _showZoom = false),
+                  ),
+                ],
               ),
-
-              // 3. Zoom Overlay stays above everything
-              _AvatarZoomOverlay(
-                isVisible: _showZoom,
-                avatarImage: avatar,
-                displayName: name,
-                onClose: () => setState(() => _showZoom = false),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1557,12 +1906,62 @@ String _initials(String n) {
 class _ProfileHeader extends StatelessWidget {
   final double hPad;
   final VoidCallback? onSettings;
+  final VoidCallback? onRefresh;
+  final bool centered;
+  final double? contentMaxWidth;
 
-  const _ProfileHeader({required this.hPad, this.onSettings});
+  const _ProfileHeader({
+    required this.hPad,
+    this.onSettings,
+    this.onRefresh,
+    this.centered = false,
+    this.contentMaxWidth,
+  });
 
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
+    final headerRow = Padding(
+      padding: EdgeInsets.fromLTRB(hPad, top, hPad, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Flexible(
+            child: Text(
+              'My Profile',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (onRefresh != null)
+                IconButton(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh_rounded,
+                      color: Colors.white, size: 21),
+                  tooltip: 'Refresh profile',
+                ),
+              if (onSettings != null)
+                IconButton(
+                  onPressed: onSettings,
+                  icon: const Icon(Icons.settings_outlined,
+                      color: Colors.white, size: 22),
+                  tooltip: 'Settings',
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+
     return Container(
       width: double.infinity,
       height: 72.0 + top,
@@ -1576,32 +1975,16 @@ class _ProfileHeader extends StatelessWidget {
           Positioned(right: -45, top: -70, child: _headerOrb(170)),
           Positioned(right: 45, bottom: -70, child: _headerOrb(125)),
           Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(hPad, top, hPad, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'My Profile',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
+            child: centered
+                ? Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: contentMaxWidth ?? 1100,
+                      ),
+                      child: headerRow,
                     ),
-                  ),
-                  if (onSettings != null)
-                    IconButton(
-                      onPressed: onSettings,
-                      icon: const Icon(Icons.settings_outlined,
-                          color: Colors.white, size: 22),
-                      tooltip: 'Settings',
-                    ),
-                ],
-              ),
-            ),
+                  )
+                : headerRow,
           ),
         ],
       ),
@@ -1653,24 +2036,27 @@ class _ProfileIdentity extends StatelessWidget {
     return SizedBox(
       width: avatarSize,
       height: avatarSize,
-      child: GestureDetector(
-        onTap: onAvatarTap,
-        child: Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _kViolet,
-            border:
-                Border.all(color: _kPrimary.withValues(alpha: 0.25), width: 3),
-          ),
-          child: ClipOval(
-            child: avatar != null
-                ? Image(
-                    image: avatar!,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) => _initialsView(),
-                  )
-                : _initialsView(),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onAvatarTap,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _kViolet,
+              border: Border.all(
+                  color: _kPrimary.withValues(alpha: 0.25), width: 3),
+            ),
+            child: ClipOval(
+              child: avatar != null
+                  ? Image(
+                      image: avatar!,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) => _initialsView(),
+                    )
+                  : _initialsView(),
+            ),
           ),
         ),
       ),
@@ -2003,9 +2389,20 @@ class _InfoRow extends StatelessWidget {
 class _ImpactCard extends StatelessWidget {
   final List<double> values;
   final VoidCallback onTap;
-  const _ImpactCard({required this.values, required this.onTap});
+  final bool grid;
 
-  static const _labels = ['Academic', 'Social', 'Leadership', 'Confidence'];
+  const _ImpactCard({
+    required this.values,
+    required this.onTap,
+    this.grid = false,
+  });
+
+  static const _labels = [
+    'Academic',
+    'Social',
+    'Leadership',
+    'Confidence',
+  ];
 
   static const _tintStart = Color(0xFFD1FAE5); // soft emerald tint
   static const _tintEnd = Color(0xFFA7F3D0); // richer mint
@@ -2014,11 +2411,53 @@ class _ImpactCard extends StatelessWidget {
   static const _bar = Color(0xFF059669); // confident green fill
   static const _accent = Color(0xFF047857); // icon + chevron
   static const _titleText = Color(0xFF064E3B); // deep forest green
-  static const _bodyText =
-      Color(0xFF0F5132); // green-tinted labels// slate for labels
+  static const _bodyText = Color(0xFF0F5132); // green-tinted labels
 
   @override
   Widget build(BuildContext context) {
+    Widget gridMetric(int index) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _labels[index],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _bodyText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${values[index].round()}%',
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                style: const TextStyle(
+                  color: _titleText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: (values[index] / 100).clamp(0.0, 1.0),
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(6),
+            backgroundColor: _track,
+            valueColor: const AlwaysStoppedAnimation<Color>(_bar),
+          ),
+        ],
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -2030,9 +2469,10 @@ class _ImpactCard extends StatelessWidget {
         border: Border.all(color: _border, width: 1),
         boxShadow: [
           BoxShadow(
-              color: _kPrimary.withValues(alpha: 0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 6)),
+            color: _kPrimary.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
         ],
       ),
       child: Material(
@@ -2046,76 +2486,138 @@ class _ImpactCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: _border),
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _border),
+                      ),
+                      child: const Icon(
+                        Icons.trending_up_rounded,
+                        color: _accent,
+                        size: 23,
+                      ),
                     ),
-                    child: const Icon(Icons.trending_up_rounded,
-                        color: _accent, size: 23),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Growth & Impact',
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Growth & Impact',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                color: _titleText,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800)),
-                        SizedBox(height: 2),
-                        Text('See how campus life helps you grow',
+                              color: _titleText,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'See how campus life helps you grow',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                color: Color(0xFF047857), fontSize: 11.5)),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: _accent, size: 24),
-                ]),
-                const SizedBox(height: 14),
-                for (int i = 0; i < 4; i++) ...[
-                  if (i > 0) const SizedBox(height: 10),
-                  Row(children: [
-                    SizedBox(
-                      width: 84,
-                      child: Text(_labels[i],
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: _bodyText,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500)),
-                    ),
-                    Expanded(
-                      child: LinearProgressIndicator(
-                        value: (values[i] / 100).clamp(0.0, 1.0),
-                        minHeight: 6,
-                        borderRadius: BorderRadius.circular(6),
-                        backgroundColor: _track,
-                        valueColor: const AlwaysStoppedAnimation<Color>(_bar),
+                              color: Color(0xFF047857),
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    SizedBox(
-                      width: 42,
-                      child: Text('${values[i].round()}%',
-                          textAlign: TextAlign.right,
-                          maxLines: 1,
-                          style: const TextStyle(
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: _accent,
+                      size: 24,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (grid) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: gridMetric(0),
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: gridMetric(1),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: gridMetric(2),
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: gridMetric(3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  for (int i = 0; i < 4; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 84,
+                          child: Text(
+                            _labels[i],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _bodyText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: (values[i] / 100).clamp(0.0, 1.0),
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(6),
+                            backgroundColor: _track,
+                            valueColor:
+                                const AlwaysStoppedAnimation<Color>(_bar),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 42,
+                          child: Text(
+                            '${values[i].round()}%',
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            style: const TextStyle(
                               color: _titleText,
                               fontSize: 12,
-                              fontWeight: FontWeight.w700)),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ]),
+                  ],
                 ],
               ],
             ),
@@ -2141,8 +2643,16 @@ class _AvatarZoomOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imgSize =
-        (MediaQuery.of(context).size.width * 0.70).clamp(0.0, 300.0);
+    final mq = MediaQuery.of(context);
+    final availableHeight = mq.size.height - mq.padding.vertical;
+    final heightLimitedSize = math.max(0.0, availableHeight - 110) * 0.70;
+    final imgSize = math
+        .min(
+          mq.size.shortestSide * 0.70,
+          math.min(300.0, heightLimitedSize),
+        )
+        .clamp(0.0, 300.0)
+        .toDouble();
 
     return IgnorePointer(
       ignoring: !isVisible,
@@ -2193,6 +2703,9 @@ class _AvatarZoomOverlay extends StatelessWidget {
                       const SizedBox(height: 20),
                       if (displayName.isNotEmpty)
                         Text(displayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
@@ -2515,42 +3028,62 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     final ImageProvider? currentAvatar = _localAvatarBytes != null
         ? MemoryImage(_localAvatarBytes!)
         : widget.avatarImage;
+    final mq = MediaQuery.of(context);
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
-      child: Scaffold(
-        backgroundColor: _kBwBg,
-        body: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 540),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _topBar(),
-                    const SizedBox(height: 16),
-                    _headerCard(currentAvatar),
-                    const SizedBox(height: 22),
-                    _EditForm(
-                      studentIdCtrl: widget.studentIdCtrl,
-                      nameCtrl: widget.nameCtrl,
-                      emailCtrl: widget.emailCtrl,
-                      contactCtrl: widget.contactCtrl,
-                      facebookCtrl: widget.facebookCtrl,
-                      isSaving: _saving,
-                      onSave: _handleSave,
+    return MediaQuery(
+      data: mq.copyWith(
+        textScaler:
+            mq.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.3),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final breakpoint = _profileBreakpointFor(constraints.maxWidth);
+          final maxContentWidth = switch (breakpoint) {
+            _ProfileBreakpoint.compact => 540.0,
+            _ProfileBreakpoint.medium => 640.0,
+            _ProfileBreakpoint.expanded => 860.0,
+          };
+
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle.dark
+                .copyWith(statusBarColor: Colors.transparent),
+            child: Scaffold(
+              backgroundColor: _kBwBg,
+              body: SafeArea(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxContentWidth),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _topBar(),
+                          const SizedBox(height: 16),
+                          _headerCard(currentAvatar),
+                          const SizedBox(height: 22),
+                          _EditForm(
+                            studentIdCtrl: widget.studentIdCtrl,
+                            nameCtrl: widget.nameCtrl,
+                            emailCtrl: widget.emailCtrl,
+                            contactCtrl: widget.contactCtrl,
+                            facebookCtrl: widget.facebookCtrl,
+                            isSaving: _saving,
+                            onSave: _handleSave,
+                            expanded: breakpoint == _ProfileBreakpoint.expanded,
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -2564,6 +3097,7 @@ class _EditForm extends StatelessWidget {
   final TextEditingController facebookCtrl;
   final bool isSaving;
   final VoidCallback onSave;
+  final bool expanded;
 
   const _EditForm({
     required this.studentIdCtrl,
@@ -2573,10 +3107,87 @@ class _EditForm extends StatelessWidget {
     required this.facebookCtrl,
     required this.isSaving,
     required this.onSave,
+    this.expanded = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final studentIdField = _BwFormField(
+      label: 'Student ID',
+      controller: studentIdCtrl,
+      hint: 'e.g., 202324-1234',
+      icon: Icons.badge_outlined,
+      enabled: !isSaving,
+      textInputAction: TextInputAction.next,
+    );
+    final nameField = _BwFormField(
+      label: 'Full Name',
+      controller: nameCtrl,
+      hint: 'First Last',
+      icon: Icons.person_outline_rounded,
+      enabled: !isSaving,
+      textInputAction: TextInputAction.next,
+    );
+    final emailField = _BwFormField(
+      label: 'Email',
+      controller: emailCtrl,
+      hint: 'name@school.edu.ph',
+      icon: Icons.mail_outline_rounded,
+      enabled: !isSaving,
+      keyboardType: TextInputType.emailAddress,
+      textInputAction: TextInputAction.next,
+    );
+    final contactField = _BwFormField(
+      label: 'Contact',
+      controller: contactCtrl,
+      hint: '09123456789',
+      icon: Icons.phone_outlined,
+      enabled: !isSaving,
+      keyboardType: TextInputType.phone,
+      textInputAction: TextInputAction.next,
+    );
+    final facebookField = _BwFormField(
+      label: 'Facebook',
+      controller: facebookCtrl,
+      hint: 'Your Facebook name',
+      icon: Icons.facebook_rounded,
+      enabled: !isSaving,
+      textInputAction: TextInputAction.done,
+      isLast: true,
+    );
+
+    final fields = expanded
+        ? Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: studentIdField),
+                  const SizedBox(width: 20),
+                  Expanded(child: nameField),
+                ],
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: emailField),
+                  const SizedBox(width: 20),
+                  Expanded(child: contactField),
+                ],
+              ),
+              facebookField,
+            ],
+          )
+        : Column(
+            children: [
+              studentIdField,
+              nameField,
+              emailField,
+              contactField,
+              facebookField,
+            ],
+          );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2595,53 +3206,7 @@ class _EditForm extends StatelessWidget {
             ],
           ),
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-          child: Column(
-            children: [
-              _BwFormField(
-                label: 'Student ID',
-                controller: studentIdCtrl,
-                hint: 'e.g., 202324-1234',
-                icon: Icons.badge_outlined,
-                enabled: !isSaving,
-                textInputAction: TextInputAction.next,
-              ),
-              _BwFormField(
-                label: 'Full Name',
-                controller: nameCtrl,
-                hint: 'First Last',
-                icon: Icons.person_outline_rounded,
-                enabled: !isSaving,
-                textInputAction: TextInputAction.next,
-              ),
-              _BwFormField(
-                label: 'Email',
-                controller: emailCtrl,
-                hint: 'name@school.edu.ph',
-                icon: Icons.mail_outline_rounded,
-                enabled: !isSaving,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.next,
-              ),
-              _BwFormField(
-                label: 'Contact',
-                controller: contactCtrl,
-                hint: '09123456789',
-                icon: Icons.phone_outlined,
-                enabled: !isSaving,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.next,
-              ),
-              _BwFormField(
-                label: 'Facebook',
-                controller: facebookCtrl,
-                hint: 'Your Facebook name',
-                icon: Icons.facebook_rounded,
-                enabled: !isSaving,
-                textInputAction: TextInputAction.done,
-                isLast: true,
-              ),
-            ],
-          ),
+          child: fields,
         ),
         const SizedBox(height: 22),
         _BlackButton(

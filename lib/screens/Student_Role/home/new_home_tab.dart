@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart' hide Notification;
 
@@ -33,10 +34,19 @@ class NewHomeTab extends StatefulWidget {
 }
 
 class _NewHomeTabState extends State<NewHomeTab> {
+  /// Preserves quick-action subtree identity when the hero changes layout.
+  final GlobalKey _quickActionsKey = GlobalKey();
+
+  /// Preserves the events section subtree when the hero changes layout.
+  final GlobalKey _eventsSectionKey = GlobalKey();
+
+  /// Preserves the recommendations subtree when the hero changes layout.
+  final GlobalKey _recommendedSectionKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
-    AppState.instance.fetchEvents();
+    AppState.instance.fetchOrganizations();
     AnalyticsService.instance
         .logUsage('open_student_dashboard', route: 'student/home');
   }
@@ -85,102 +95,194 @@ class _NewHomeTabState extends State<NewHomeTab> {
     return '$part, ${name.split(RegExp(r'\s+')).first}! 👋';
   }
 
+  /// Builds the Home tab using its actual available width instead of assuming
+  /// the full window width, which matters when a desktop NavigationRail exists.
   @override
   Widget build(BuildContext context) {
     return HomeLayout.capText(
       context,
-      AnimatedBuilder(
-        animation: AppState.instance,
-        builder: (context, _) {
-          final l = HomeLayout.of(context);
-          return Column(
-            children: [
-              // ── FIXED: header, greeting, search bar (never scrolls) ──
-              // ── FIXED: header, greeting, search bar (never scrolls) ──
-              _Hero(
-                layout: l,
-                greeting: _greeting(),
-                avatar: _avatar(),
-                hasUnread: HomeData.unreadNotificationCount() > 0,
-                onBell: widget.onOpenNotifications,
-                onAvatar: () => widget.onSwitchTab(3),
-                onSearch: () => _openSearch(),
-                onFilter: () => _openSearch(openFilters: true),
-              ),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final windowWidth = MediaQuery.sizeOf(context).width;
+          final measuredWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : windowWidth;
 
-              // Small gap so scrolling content disappears below the
-              // search bar instead of right at its edge.
-              const SizedBox(height: 12),
+          // Construct the layout once here. All Home-specific decisions below
+          // use these normalized measurements.
+          final layout = HomeLayout.fromWidth(measuredWidth);
+          final textScale = HomeLayout.textScaleOf(context);
 
-              // ── SCROLLS: quick cards, events, recommended ──
-              Expanded(
-                child: RefreshIndicator(
-                  color: HC.primary,
-                  onRefresh: _refresh,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics()),
-                    padding: EdgeInsets.zero,
+          // An unbounded-height parent cannot safely host an Expanded pinned
+          // layout, so the hero scrolls in that case as a safe fallback.
+          final heroPinned = measuredWidth < HomeBreakpoints.desktopMin &&
+              constraints.maxHeight.isFinite &&
+              constraints.maxHeight >= 640 &&
+              textScale <= 1.15;
+
+          return HomeLayoutScope(
+            width: layout.width,
+            child: AnimatedBuilder(
+              animation: AppState.instance,
+              builder: (context, _) {
+                final hero = _Hero(
+                  layout: layout,
+                  greeting: _greeting(),
+                  avatar: _avatar(),
+                  hasUnread: HomeData.unreadNotificationCount() > 0,
+                  onBell: widget.onOpenNotifications,
+                  onAvatar: () => widget.onSwitchTab(3),
+                  onSearch: () => _openSearch(),
+                  onFilter: () => _openSearch(openFilters: true),
+                );
+
+                final quickActions = _Centered(
+                  key: _quickActionsKey,
+                  layout: layout,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      layout.homeHPad,
+                      layout.cardGap / 2,
+                      layout.homeHPad,
+                      0,
+                    ),
+                    child: _QuickActions(
+                      layout: layout,
+                      applicationBadge: HomeData.inProgressApplicationCount(),
+                      onDiscover: () => widget.onSwitchTab(1),
+                      onEvents: () => widget.onSwitchTab(2),
+                      onApplications: widget.onOpenApplications,
+                      onJoined: widget.onOpenJoinedOrgs,
+                    ),
+                  ),
+                );
+
+                final events = _Centered(
+                  key: _eventsSectionKey,
+                  layout: layout,
+                  child: HomeEventsSection(
+                    onViewAll: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AllUpcomingEventsPage(),
+                      ),
+                    ),
+                  ),
+                );
+
+                final recommendations = _Centered(
+                  key: _recommendedSectionKey,
+                  layout: layout,
+                  child: HomeRecommendedSection(
+                    onViewAll: () => widget.onSwitchTab(1),
+                  ),
+                );
+                final scrollingSections = <Widget>[
+                  quickActions,
+                  SizedBox(height: layout.sectionGap),
+                  events,
+                  SizedBox(height: layout.sectionGap),
+                  recommendations, // recommendations (temporarily off)
+                ];
+
+                if (heroPinned) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _Centered(
-                        layout: l,
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                              l.hPad, 6, l.hPad, 0), // Changed from 18 to 6
-                          child: _QuickActions(
-                            applicationBadge:
-                                HomeData.inProgressApplicationCount(),
-                            onDiscover: () => widget.onSwitchTab(1),
-                            onEvents: () => widget.onSwitchTab(2),
-                            onApplications: widget.onOpenApplications,
-                            onJoined: widget.onOpenJoinedOrgs,
-                          ),
-                        ),
-                      ),
-                      _Centered(
-                        layout: l,
-                        child: HomeEventsSection(
-                          onViewAll: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AllUpcomingEventsPage(),
-                            ),
-                          ),
-                        ),
-                      ),
-                      _Centered(
-                        layout: l,
-                        child: HomeRecommendedSection(
-                          onViewAll: () => widget.onSwitchTab(1),
+                      hero,
+                      SizedBox(height: layout.cardGap),
+                      Expanded(
+                        child: _buildScrollableArea(
+                          context,
+                          layout: layout,
+                          children: scrollingSections,
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
-            ],
+                  );
+                }
+
+                // Desktop, short windows, landscape phones, and enlarged text
+                // use one scrollable area so the hero cannot squeeze content.
+                return _buildScrollableArea(
+                  context,
+                  layout: layout,
+                  children: [
+                    hero,
+                    SizedBox(height: layout.cardGap),
+                    ...scrollingSections,
+                  ],
+                );
+              },
+            ),
           );
         },
+      ),
+      maxScale: 1.5,
+    );
+  }
+
+  /// Builds the pull-to-refresh list and enables mouse and touch dragging.
+  Widget _buildScrollableArea(
+    BuildContext context, {
+    required HomeLayout layout,
+    required List<Widget> children,
+  }) {
+    final behavior = ScrollConfiguration.of(context).copyWith(
+      dragDevices: {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      },
+    );
+
+    return ScrollConfiguration(
+      behavior: behavior,
+      child: RefreshIndicator(
+        color: HC.primary,
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: EdgeInsets.only(bottom: layout.sectionGap),
+          children: children,
+        ),
       ),
     );
   }
 }
 
+/// Centers content and constrains its outer width without adding extra padding.
 class _Centered extends StatelessWidget {
   final HomeLayout layout;
   final Widget child;
-  const _Centered({required this.layout, required this.child});
+
+  const _Centered({
+    super.key,
+    required this.layout,
+    required this.child,
+  });
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: layout.contentWidth),
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: layout.homeContentWidth,
+        ),
+        child: SizedBox(
+          width: double.infinity,
           child: child,
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ─── Hero ────────────────────────────────────────────────────────────────────
+
 class _Hero extends StatelessWidget {
   final HomeLayout layout;
   final String greeting;
@@ -202,85 +304,150 @@ class _Hero extends StatelessWidget {
     required this.onSearch,
   });
 
-  static const double _searchHeight = 56;
-  static const double _overlap = _searchHeight / 2;
-
   @override
   Widget build(BuildContext context) {
-    final top = MediaQuery.paddingOf(context).top;
-    final narrow = layout.isNarrow;
+    final safeTop = MediaQuery.paddingOf(context).top;
+    final textScale = HomeLayout.textScaleOf(context);
+
+    final safeTextScale = textScale.isFinite ? textScale : 1.0;
+    final searchScale =
+        safeTextScale < 1.0 ? 1.0 : (safeTextScale > 1.3 ? 1.3 : safeTextScale);
+
+    final searchHeight = 56.0 * searchScale;
+    final searchOverlap = searchHeight / 2;
+    final isDesktop = layout.size == HomeSize.desktop;
+
+    final double logoSize;
+    final double titleSize;
+    final double greetingSize;
+    final double taglineSize;
+
+    switch (layout.size) {
+      case HomeSize.smallMobile:
+        logoSize = 38;
+        titleSize = 20;
+        greetingSize = 22;
+        taglineSize = 12;
+      case HomeSize.mobile:
+        logoSize = 44;
+        titleSize = 23;
+        greetingSize = 26;
+        taglineSize = 13;
+      case HomeSize.tablet:
+        logoSize = 48;
+        titleSize = 24;
+        greetingSize = 28;
+        taglineSize = 14;
+      case HomeSize.desktop:
+        logoSize = 52;
+        titleSize = 26;
+        greetingSize = 32;
+        taglineSize = 15;
+    }
+
+    final searchMaxWidth = isDesktop && layout.homeInnerWidth > 840
+        ? 840.0
+        : layout.homeInnerWidth;
 
     return Stack(
+      // The search shadow must remain visible beyond the hero's background.
+      clipBehavior: Clip.none,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: _overlap),
+          padding: EdgeInsets.only(bottom: searchOverlap),
           child: Container(
             width: double.infinity,
             clipBehavior: Clip.antiAlias,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: HC.heroGradient,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(isDesktop ? 36 : 30),
+              ),
             ),
             child: Stack(
               children: [
-                Positioned(right: -50, top: -70, child: _orb(180)),
-                Positioned(right: 40, bottom: -80, child: _orb(130)),
+                Positioned(
+                  right: -50,
+                  top: -70,
+                  child: _orb(180),
+                ),
+                Positioned(
+                  right: 40,
+                  bottom: -80,
+                  child: _orb(130),
+                ),
                 Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: layout.contentWidth),
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                          layout.hPad, top + 10, layout.hPad, _overlap + 18),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              _Logo(size: narrow ? 38 : 44),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'OrgConnect',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: narrow ? 20 : 23,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.3,
+                    constraints: BoxConstraints(
+                      maxWidth: layout.homeContentWidth,
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          layout.homeHPad,
+                          safeTop + (isDesktop ? 16 : 10),
+                          layout.homeHPad,
+                          searchOverlap + (isDesktop ? 28 : 18),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                _Logo(size: logoSize),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'OrgConnect',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: titleSize,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.3,
+                                    ),
                                   ),
                                 ),
+                                _BellButton(
+                                  hasUnread: hasUnread,
+                                  onTap: onBell,
+                                ),
+                                const SizedBox(width: 6),
+                                _AvatarButton(
+                                  image: avatar,
+                                  onTap: onAvatar,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              greeting,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: greetingSize,
+                                fontWeight: FontWeight.w800,
+                                height: 1.15,
+                                letterSpacing: -0.4,
                               ),
-                              _BellButton(hasUnread: hasUnread, onTap: onBell),
-                              const SizedBox(width: 6),
-                              _AvatarButton(image: avatar, onTap: onAvatar),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          Text(
-                            greeting,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: narrow ? 22 : 26,
-                              fontWeight: FontWeight.w800,
-                              height: 1.15,
-                              letterSpacing: -0.4,
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Your campus. Your organizations. Your journey.',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: .88),
-                              fontSize: narrow ? 12 : 13,
-                              fontWeight: FontWeight.w500,
-                              height: 1.35,
+                            const SizedBox(height: 6),
+                            Text(
+                              'Your campus. Your organizations. Your journey.',
+                              softWrap: true,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: .88),
+                                fontSize: taglineSize,
+                                fontWeight: FontWeight.w500,
+                                height: 1.35,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -295,11 +462,27 @@ class _Hero extends StatelessWidget {
           bottom: 0,
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: layout.contentWidth),
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: layout.hPad),
-                child: _SearchBar(
-                    height: _searchHeight, onTap: onSearch, onFilter: onFilter),
+              constraints: BoxConstraints(
+                maxWidth: layout.homeContentWidth,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: layout.homeHPad,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: searchMaxWidth,
+                      child: _SearchBar(
+                        height: searchHeight,
+                        onTap: onSearch,
+                        onFilter: onFilter,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -308,109 +491,144 @@ class _Hero extends StatelessWidget {
     );
   }
 
-  Widget _orb(double size) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: .07),
-        ),
-      );
+  Widget _orb(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: .07),
+      ),
+    );
+  }
 }
 
 class _Logo extends StatelessWidget {
   final double size;
+
   const _Logo({required this.size});
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        padding: EdgeInsets.all(size * 0.12),
-        decoration:
-            const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-        child: ClipOval(
-          child: Image.asset(
-            'assets/icon/app_logo_green.png',
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) =>
-                const Icon(Icons.groups_rounded, color: HC.primary),
-          ),
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size * 0.12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+      ),
+      child: ClipOval(
+        child: Image.asset(
+          'assets/icon/app_logo_green.png',
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.groups_rounded, color: HC.primary),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _BellButton extends StatelessWidget {
   final bool hasUnread;
   final VoidCallback onTap;
-  const _BellButton({required this.hasUnread, required this.onTap});
+
+  const _BellButton({
+    required this.hasUnread,
+    required this.onTap,
+  });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: hasUnread ? 'Notifications, unread' : 'Notifications',
-        child: GestureDetector(
-          onTap: onTap,
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                const Icon(Icons.notifications_none_rounded,
-                    color: Colors.white, size: 27),
-                if (hasUnread)
-                  Positioned(
-                    top: 9,
-                    right: 11,
-                    child: Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                        color: HC.danger,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: HC.dark, width: 1.5),
-                      ),
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: hasUnread ? 'Notifications, unread' : 'Notifications',
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Icon(
+                Icons.notifications_none_rounded,
+                color: Colors.white,
+                size: 27,
+              ),
+              if (hasUnread)
+                Positioned(
+                  top: 9,
+                  right: 11,
+                  child: Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: HC.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: HC.dark, width: 1.5),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _AvatarButton extends StatelessWidget {
   final ImageProvider? image;
   final VoidCallback onTap;
-  const _AvatarButton({required this.image, required this.onTap});
+
+  const _AvatarButton({
+    required this.image,
+    required this.onTap,
+  });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: 'Open profile',
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(2),
-            decoration: const BoxDecoration(
-                color: Colors.white, shape: BoxShape.circle),
-            child: CircleAvatar(
-              radius: 19,
-              backgroundColor: HC.mint,
-              backgroundImage: image,
-              child: image == null
-                  ? const Icon(Icons.person_rounded,
-                      color: HC.primary, size: 22)
-                  : null,
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Open profile',
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: CircleAvatar(
+                radius: 19,
+                backgroundColor: HC.mint,
+                backgroundImage: image,
+                child: image == null
+                    ? const Icon(
+                        Icons.person_rounded,
+                        color: HC.primary,
+                        size: 22,
+                      )
+                    : null,
+              ),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ─── Search bar (visual for now) ─────────────────────────────────────────────
+
 class _SearchBar extends StatelessWidget {
   final double height;
   final VoidCallback onTap;
@@ -423,69 +641,93 @@ class _SearchBar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-        height: height,
-        decoration: BoxDecoration(
-          color: Colors.white,
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x260F8A61),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           borderRadius: BorderRadius.circular(28),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x260F8A61), blurRadius: 18, offset: Offset(0, 6)),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(28),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  const Icon(Icons.search_rounded,
-                      color: Colors.black, size: 23),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Search organizations, events, or keywords…',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: HC.muted,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w500),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.search_rounded,
+                  color: Colors.black,
+                  size: 23,
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Search organizations, events, or keywords…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: HC.muted,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Container(width: 1, height: 24, color: HC.line),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onFilter,
-                    child: const SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: Icon(Icons.tune_rounded,
-                          color: Colors.black, size: 22),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: HC.line,
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onFilter,
+                  child: const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Icon(
+                      Icons.tune_rounded,
+                      color: Colors.black,
+                      size: 22,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ─── Quick actions ───────────────────────────────────────────────────────────
+
 class _QA {
   final IconData icon;
   final List<String> lines;
   final VoidCallback onTap;
   final int badge;
-  const _QA(this.icon, this.lines, this.onTap, {this.badge = 0});
+
+  const _QA(
+    this.icon,
+    this.lines,
+    this.onTap, {
+    this.badge = 0,
+  });
 }
 
 class _QuickActions extends StatelessWidget {
+  final HomeLayout layout;
   final int applicationBadge;
   final VoidCallback onDiscover;
   final VoidCallback onEvents;
@@ -493,6 +735,7 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onJoined;
 
   const _QuickActions({
+    required this.layout,
     required this.applicationBadge,
     required this.onDiscover,
     required this.onEvents,
@@ -502,60 +745,116 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, c) {
-      const gap = 8.0;
-      // 4 across only when each card would be at least 80px wide.
-      final fourAcross = (c.maxWidth - gap * 3) / 4 >= 80;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Keep the horizontal gap at 12 so a 552 px inner width (600 px
+        // viewport) still meets the specified 128 px four-column threshold.
+        const horizontalGap = 12.0;
 
-      final items = <_QA>[
-        _QA(Icons.explore_rounded, const ['Discover', 'Organizations'],
-            onDiscover),
-        _QA(Icons.event_note_rounded, const ['Upcoming', 'Events'], onEvents),
-        _QA(Icons.assignment_rounded, const ['My', 'Applications'],
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : layout.homeInnerWidth;
+
+        final cardWidth4 = (maxWidth - horizontalGap * 3) / 4;
+        final rawTextScale = HomeLayout.textScaleOf(context);
+        final textScale =
+            rawTextScale.isFinite && rawTextScale > 1.0 ? rawTextScale : 1.0;
+
+        final fourAcross = cardWidth4 >= 128.0 * textScale;
+
+        final items = <_QA>[
+          _QA(
+            Icons.explore_rounded,
+            const ['Discover', 'Organizations'],
+            onDiscover,
+          ),
+          _QA(
+            Icons.event_note_rounded,
+            const ['Upcoming', 'Events'],
+            onEvents,
+          ),
+          _QA(
+            Icons.assignment_rounded,
+            const ['My', 'Applications'],
             onApplications,
-            badge: applicationBadge),
-        _QA(Icons.groups_rounded, const ['Joined', 'Orgs'], onJoined),
-      ];
+            badge: applicationBadge,
+          ),
+          _QA(
+            Icons.groups_rounded,
+            const ['Joined', 'Orgs'],
+            onJoined,
+          ),
+        ];
 
-      Widget card(_QA a) => _QuickCard(a: a, roomy: !fourAcross);
+        // Tablet and desktop cards stay roomy even in a single row.
+        final roomy = !fourAcross ||
+            layout.size == HomeSize.tablet ||
+            layout.size == HomeSize.desktop;
 
-      if (fourAcross) {
-        return Row(
+        Widget buildCard(_QA item) {
+          return _QuickCard(
+            layout: layout,
+            a: item,
+            roomy: roomy,
+          );
+        }
+
+        Widget buildRow(List<_QA> rowItems) {
+          final children = <Widget>[];
+
+          for (var i = 0; i < rowItems.length; i++) {
+            if (i > 0) {
+              children.add(const SizedBox(width: horizontalGap));
+            }
+            children.add(
+              Expanded(child: buildCard(rowItems[i])),
+            );
+          }
+
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          );
+        }
+
+        if (fourAcross) {
+          return buildRow(items);
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(width: gap),
-              Expanded(child: card(items[i])),
-            ],
+            buildRow(items.sublist(0, 2)),
+            SizedBox(height: layout.cardGap),
+            buildRow(items.sublist(2, 4)),
           ],
         );
-      }
-      return Column(
-        children: [
-          Row(children: [
-            Expanded(child: card(items[0])),
-            const SizedBox(width: gap),
-            Expanded(child: card(items[1])),
-          ]),
-          const SizedBox(height: gap),
-          Row(children: [
-            Expanded(child: card(items[2])),
-            const SizedBox(width: gap),
-            Expanded(child: card(items[3])),
-          ]),
-        ],
-      );
-    });
+      },
+    );
   }
 }
 
 class _QuickCard extends StatelessWidget {
+  final HomeLayout layout;
   final _QA a;
   final bool roomy;
-  const _QuickCard({required this.a, required this.roomy});
+
+  const _QuickCard({
+    required this.layout,
+    required this.a,
+    required this.roomy,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final iconBox = roomy ? 42.0 : 36.0;
+    final isDesktop = layout.size == HomeSize.desktop;
+    final iconBox = isDesktop ? 44.0 : (roomy ? 42.0 : 36.0);
+    final iconSize = isDesktop ? 28.0 : (roomy ? 25.0 : 22.0);
+    final arrowSize = isDesktop ? 18.0 : (roomy ? 16.0 : 14.0);
+    final cardPadding = isDesktop ? 18.0 : (roomy ? 14.0 : 10.0);
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -563,7 +862,10 @@ class _QuickCard extends StatelessWidget {
         border: Border.all(color: HC.line),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x120F8A61), blurRadius: 12, offset: Offset(0, 4)),
+            color: Color(0x120F8A61),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
         ],
       ),
       child: Material(
@@ -572,7 +874,7 @@ class _QuickCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           onTap: a.onTap,
           child: Padding(
-            padding: EdgeInsets.all(roomy ? 14 : 10),
+            padding: EdgeInsets.all(cardPadding),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -583,45 +885,39 @@ class _QuickCard extends StatelessWidget {
                       width: iconBox,
                       height: iconBox,
                       child: Center(
-                        child: Icon(a.icon,
-                            color: HC.primary, size: roomy ? 25 : 22),
+                        child: Icon(
+                          a.icon,
+                          color: HC.primary,
+                          size: iconSize,
+                        ),
                       ),
                     ),
                     const Spacer(),
-                    if (a.badge > 0) _Badge(count: a.badge),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final line in a.lines)
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                line,
-                                maxLines: 1,
-                                style: const TextStyle(
-                                  color: HC.ink,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                    if (a.badge > 0) ...[
+                      _Badge(count: a.badge),
+                      const SizedBox(width: 4),
+                    ],
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      size: arrowSize,
+                      color: Colors.black,
                     ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.arrow_forward_rounded,
-                        size: roomy ? 16 : 14, color: Colors.black),
                   ],
                 ),
+                SizedBox(height: layout.cardGap),
+                for (final line in a.lines)
+                  Text(
+                    line,
+                    maxLines: 2,
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: HC.ink,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -633,27 +929,33 @@ class _QuickCard extends StatelessWidget {
 
 class _Badge extends StatelessWidget {
   final int count;
+
   const _Badge({required this.count});
 
   @override
-  Widget build(BuildContext context) => Container(
-        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 5),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: HC.primary,
-          borderRadius: BorderRadius.circular(10),
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(
+        minWidth: 20,
+        minHeight: 20,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: HC.primary,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        count > 9 ? '9+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          height: 1.1,
         ),
-        child: Text(
-          count > 9 ? '9+' : '$count',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            height: 1.1,
-          ),
-        ),
-      );
+      ),
+    );
+  }
 }
 
 // ─── Temporary placeholder (removed in step 3) ───────────────────────────────

@@ -1,10 +1,17 @@
+import 'home_time_format.dart';
+import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart' hide Notification;
 
 import '../../../core/app_state.dart';
 import 'home_event_utils.dart';
 import 'home_tokens.dart';
 
-/// Shows horizontally scrollable cards for upcoming campus events.
+/// Displays upcoming event cards responsively on mobile, tablet, and desktop.
+///
+/// Uses the available width of this widget to choose between a horizontal
+/// mobile scroller and a responsive grid on wider layouts.
 class UpcomingEventsRow extends StatelessWidget {
   const UpcomingEventsRow({
     super.key,
@@ -25,47 +32,196 @@ class UpcomingEventsRow extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final layout = HomeLayout.of(context);
-    final cardWidth = layout.cardWidth(min: 200, max: 250);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fallbackWidth = MediaQuery.sizeOf(context).width;
+        final rowWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : fallbackWidth;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.symmetric(horizontal: layout.hPad),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (var index = 0; index < displayedEvents.length; index++) ...[
-              if (index > 0) const SizedBox(width: 12),
-              _UpcomingEventCard(
-                event: displayedEvents[index],
-                width: cardWidth,
-                interestedCount: interestCounts[displayedEvents[index].id] ?? 0,
-                onTap: () => onOpen(displayedEvents[index]),
-              ),
+        final layout = HomeLayout.of(context);
+        final homeHPad = layout.homeHPad;
+        final gap = layout.cardGap;
+        final innerWidth = math
+            .max(
+              0.0,
+              rowWidth - (2 * homeHPad),
+            )
+            .toDouble();
+
+        if (rowWidth < HomeBreakpoints.tabletMin) {
+          final desiredCardWidth =
+              (innerWidth * 0.82).clamp(200.0, 260.0).toDouble();
+
+          final cardWidth = math
+              .min(
+                innerWidth,
+                desiredCardWidth,
+              )
+              .toDouble();
+
+          return SizedBox(
+            width: rowWidth,
+            child: _buildMobileScroller(
+              context: context,
+              events: displayedEvents,
+              homeHPad: homeHPad,
+              cardWidth: cardWidth,
+              gap: gap,
+            ),
+          );
+        }
+
+        final columns = HomeLayout.gridColumns(
+          innerWidth,
+          minItemWidth: 220,
+          gap: gap,
+          maxColumns: 4,
+        );
+
+        final visibleCount = math
+            .min(
+              displayedEvents.length,
+              columns * 2,
+            )
+            .toInt();
+
+        final cardWidth = HomeLayout.gridItemWidth(
+          innerWidth,
+          columns,
+          gap: gap,
+        );
+
+        return SizedBox(
+          width: rowWidth,
+          child: _buildWideGrid(
+            context: context,
+            events: displayedEvents,
+            visibleCount: visibleCount,
+            columns: columns,
+            cardWidth: cardWidth,
+            homeHPad: homeHPad,
+            gap: gap,
+          ),
+        );
+      },
+    );
+  }
+
+  /// Builds the horizontally scrollable layout used below the tablet breakpoint.
+  Widget _buildMobileScroller({
+    required BuildContext context,
+    required List<Event> events,
+    required double homeHPad,
+    required double cardWidth,
+    required double gap,
+  }) {
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(
+        dragDevices: const <PointerDeviceKind>{
+          PointerDeviceKind.touch,
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.trackpad,
+          PointerDeviceKind.stylus,
+        },
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.symmetric(horizontal: homeHPad),
+        child: IntrinsicHeight(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (var index = 0; index < events.length; index++) ...<Widget>[
+                if (index > 0) SizedBox(width: gap),
+                _UpcomingEventCard(
+                  event: events[index],
+                  cardWidth: cardWidth,
+                  interestedCount: interestCounts[events[index].id] ?? 0,
+                  onTap: () => onOpen(events[index]),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  /// Builds a responsive grid with equal-width cards and a maximum of two rows.
+  Widget _buildWideGrid({
+    required BuildContext context,
+    required List<Event> events,
+    required int visibleCount,
+    required int columns,
+    required double cardWidth,
+    required double homeHPad,
+    required double gap,
+  }) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: homeHPad),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (var rowStart = 0;
+              rowStart < visibleCount;
+              rowStart += columns) ...<Widget>[
+            if (rowStart > 0) SizedBox(height: gap),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (var column = 0; column < columns; column++) ...<Widget>[
+                    if (column > 0) SizedBox(width: gap),
+                    if (rowStart + column < visibleCount)
+                      Expanded(
+                        child: _UpcomingEventCard(
+                          event: events[rowStart + column],
+                          cardWidth: cardWidth,
+                          interestedCount:
+                              interestCounts[events[rowStart + column].id] ?? 0,
+                          onTap: () => onOpen(events[rowStart + column]),
+                        ),
+                      )
+                    else
+                      const Expanded(
+                        child: SizedBox.shrink(),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 }
 
-/// Renders a single upcoming event card with its date and interest count.
+/// Renders one event card with its cover image, event metadata, and interest count.
+///
+/// The card's own width determines its text sizes. Its height is content-driven,
+/// allowing rows to accommodate different text lengths and system text scales.
 class _UpcomingEventCard extends StatelessWidget {
   const _UpcomingEventCard({
     required this.event,
-    required this.width,
+    required this.cardWidth,
     required this.interestedCount,
     required this.onTap,
   });
 
   final Event event;
-  final double width;
+  final double cardWidth;
   final int interestedCount;
   final VoidCallback onTap;
 
+  /// Whether the card is wide enough to use the larger title and date sizes.
+  bool get _isLargeCard => cardWidth >= 280;
+
+  /// Builds the cover image and its overlaid date badge.
   Widget _buildImage() {
     return AspectRatio(
       aspectRatio: 16 / 10,
@@ -112,9 +268,9 @@ class _UpcomingEventCard extends StatelessWidget {
                   const SizedBox(height: 1),
                   Text(
                     '${event.date.day}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: HC.ink,
-                      fontSize: 21,
+                      fontSize: _isLargeCard ? 22 : 21,
                       height: 1,
                       fontWeight: FontWeight.w800,
                     ),
@@ -128,6 +284,7 @@ class _UpcomingEventCard extends StatelessWidget {
     );
   }
 
+  /// Builds the venue row, omitting it when the venue is empty.
   Widget _buildVenue() {
     final venue = event.venue.trim();
 
@@ -150,7 +307,7 @@ class _UpcomingEventCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: HC.muted,
-              fontSize: 11,
+              fontSize: 12,
             ),
           ),
         ),
@@ -158,8 +315,9 @@ class _UpcomingEventCard extends StatelessWidget {
     );
   }
 
+  /// Builds the time row, falling back to the formatted event date.
   Widget _buildTime() {
-    final time = event.timeLabel.trim();
+    final time = formatTimeLabel12h(event.timeLabel);
     final label = time.isNotEmpty ? time : formatDateShort(event.date);
 
     return Row(
@@ -177,7 +335,7 @@ class _UpcomingEventCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: HC.muted,
-              fontSize: 11,
+              fontSize: 12,
             ),
           ),
         ),
@@ -185,6 +343,7 @@ class _UpcomingEventCard extends StatelessWidget {
     );
   }
 
+  /// Builds the interest pill, truncating its label when space is limited.
   Widget _buildInterestPill() {
     if (interestedCount <= 0) {
       return const SizedBox.shrink();
@@ -217,7 +376,7 @@ class _UpcomingEventCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: HC.dark,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -233,7 +392,7 @@ class _UpcomingEventCard extends StatelessWidget {
     final orgName = event.orgName.trim();
 
     return SizedBox(
-      width: width,
+      width: cardWidth,
       child: Semantics(
         button: true,
         label: 'Event: ${event.title}, ${formatDateShort(event.date)}',
@@ -247,11 +406,11 @@ class _UpcomingEventCard extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(17),
                 border: Border.all(color: HC.line),
-                boxShadow: <BoxShadow>[
+                boxShadow: const <BoxShadow>[
                   BoxShadow(
-                    color: const Color(0x120F8A61),
+                    color: Color(0x120F8A61),
                     blurRadius: 14,
-                    offset: const Offset(0, 5),
+                    offset: Offset(0, 5),
                   ),
                 ],
               ),
@@ -265,47 +424,49 @@ class _UpcomingEventCard extends StatelessWidget {
                     ),
                     child: _buildImage(),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 13),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          orgName.isEmpty
-                              ? 'CAMPUS ORGANIZATION'
-                              : orgName.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: HC.primary,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.55,
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 13),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            orgName.isEmpty
+                                ? 'CAMPUS ORGANIZATION'
+                                : orgName.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: HC.primary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.55,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          event.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: HC.ink,
-                            fontSize: 14,
-                            height: 1.25,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 9),
-                        _buildVenue(),
-                        if (event.venue.trim().isNotEmpty)
                           const SizedBox(height: 6),
-                        _buildTime(),
-                        if (interestedCount > 0) ...<Widget>[
-                          const SizedBox(height: 10),
-                          _buildInterestPill(),
+                          Text(
+                            event.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: HC.ink,
+                              fontSize: _isLargeCard ? 16 : 15,
+                              height: 1.25,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 9),
+                          _buildVenue(),
+                          if (event.venue.trim().isNotEmpty)
+                            const SizedBox(height: 6),
+                          _buildTime(),
+                          if (interestedCount > 0) ...<Widget>[
+                            const Spacer(),
+                            _buildInterestPill(),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ],

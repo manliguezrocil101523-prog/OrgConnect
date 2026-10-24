@@ -19,21 +19,17 @@ class EmailVerificationPage extends StatefulWidget {
   });
 
   @override
-  State<EmailVerificationPage> createState() =>
-      _EmailVerificationPageState();
+  State<EmailVerificationPage> createState() => _EmailVerificationPageState();
 }
 
-class _EmailVerificationPageState
-    extends State<EmailVerificationPage>
+class _EmailVerificationPageState extends State<EmailVerificationPage>
     with SingleTickerProviderStateMixin {
-  final List<TextEditingController> _otpControllers =
-      List.generate(
+  final List<TextEditingController> _otpControllers = List.generate(
     6,
     (_) => TextEditingController(),
   );
 
-  final List<FocusNode> _otpFocusNodes =
-      List.generate(
+  final List<FocusNode> _otpFocusNodes = List.generate(
     6,
     (_) => FocusNode(),
   );
@@ -41,20 +37,17 @@ class _EmailVerificationPageState
   bool _loading = false;
   bool _resending = false;
 
-  late final AnimationController _animationController =
-      AnimationController(
+  late final AnimationController _animationController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 500),
   )..forward();
 
-  late final Animation<double> _fadeAnimation =
-      CurvedAnimation(
+  late final Animation<double> _fadeAnimation = CurvedAnimation(
     parent: _animationController,
     curve: Curves.easeOut,
   );
 
-  late final Animation<Offset> _slideAnimation =
-      Tween<Offset>(
+  late final Animation<Offset> _slideAnimation = Tween<Offset>(
     begin: const Offset(0, .05),
     end: Offset.zero,
   ).animate(
@@ -86,20 +79,15 @@ class _EmailVerificationPageState
   Future<void> _createProfile(User user) async {
     final metadata = user.userMetadata ?? {};
 
-    final name =
-        metadata['name']?.toString().trim() ?? '';
+    final name = metadata['name']?.toString().trim() ?? '';
 
-    final studentId =
-        metadata['student_id']?.toString().trim() ?? '';
+    final studentId = metadata['student_id']?.toString().trim() ?? '';
 
-    final contact =
-        metadata['contact']?.toString().trim() ?? '';
+    final contact = metadata['contact']?.toString().trim() ?? '';
 
-    final facebook =
-        metadata['facebook']?.toString().trim() ?? '';
+    final facebook = metadata['facebook']?.toString().trim() ?? '';
 
-    final email =
-        user.email?.trim() ?? widget.email.trim();
+    final email = user.email?.trim() ?? widget.email.trim();
 
     if (name.isEmpty) {
       throw Exception(
@@ -113,9 +101,7 @@ class _EmailVerificationPageState
       );
     }
 
-    await Supabase.instance.client
-        .from('profiles')
-        .upsert(
+    await Supabase.instance.client.from('profiles').upsert(
       {
         'id': user.id,
         'name': name,
@@ -141,9 +127,8 @@ class _EmailVerificationPageState
       return;
     }
 
-    final code = _otpControllers
-        .map((controller) => controller.text.trim())
-        .join();
+    final code =
+        _otpControllers.map((controller) => controller.text.trim()).join();
 
     if (code.length != 6) {
       _showMessage(
@@ -158,8 +143,7 @@ class _EmailVerificationPageState
     });
 
     try {
-      final response =
-          await Supabase.instance.client.auth.verifyOTP(
+      final response = await Supabase.instance.client.auth.verifyOTP(
         email: widget.email.trim(),
         token: code,
         type: OtpType.signup,
@@ -398,8 +382,7 @@ class _EmailVerificationPageState
       ..showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor:
-              error ? _kError : _kSuccess,
+          backgroundColor: error ? _kError : _kSuccess,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -413,80 +396,62 @@ class _EmailVerificationPageState
   // ============================================================
 
   Widget _otpField(int index) {
-    final hasFocus =
-        _otpFocusNodes[index].hasFocus;
+    final hasFocus = _otpFocusNodes[index].hasFocus;
 
     return SizedBox(
       width: 48,
       height: 58,
       child: AnimatedContainer(
-        duration:
-            const Duration(milliseconds: 150),
+        duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius:
-              BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: hasFocus
-                ? _kBlue
-                : _kBorder,
+            color: hasFocus ? _kBlue : _kBorder,
             width: hasFocus ? 2 : 1.2,
           ),
           boxShadow: hasFocus
               ? [
                   BoxShadow(
-                    color:
-                        _kBlue.withValues(alpha: .12),
+                    color: _kBlue.withValues(alpha: .12),
                     blurRadius: 8,
-                    offset:
-                        const Offset(0, 2),
+                    offset: const Offset(0, 2),
                   ),
                 ]
               : [],
         ),
         child: TextField(
-          controller:
-              _otpControllers[index],
-          focusNode:
-              _otpFocusNodes[index],
+          controller: _otpControllers[index],
+          focusNode: _otpFocusNodes[index],
           textAlign: TextAlign.center,
-          keyboardType:
-              TextInputType.number,
+          keyboardType: TextInputType.number,
           maxLength: 1,
           inputFormatters: [
-            FilteringTextInputFormatter
-                .digitsOnly,
+            FilteringTextInputFormatter.digitsOnly,
           ],
           style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w700,
             color: _kText,
           ),
-          decoration:
-              const InputDecoration(
+          decoration: const InputDecoration(
             border: InputBorder.none,
             counterText: '',
-            contentPadding:
-                EdgeInsets.zero,
+            contentPadding: EdgeInsets.zero,
           ),
           onChanged: (value) {
-            if (value.isNotEmpty &&
-                index < 5) {
-              FocusScope.of(context)
-                  .requestFocus(
+            if (value.isNotEmpty && index < 5) {
+              FocusScope.of(context).requestFocus(
                 _otpFocusNodes[index + 1],
               );
-            } else if (value.isEmpty &&
-                index > 0) {
-              FocusScope.of(context)
-                  .requestFocus(
+            } else if (value.isEmpty && index > 0) {
+              FocusScope.of(context).requestFocus(
                 _otpFocusNodes[index - 1],
               );
             }
 
             if (_otpControllers.every(
-              (controller) =>
-                  controller.text.isNotEmpty,
+              (controller) => controller.text.isNotEmpty,
             )) {
               _verifyCode();
             }
@@ -538,8 +503,7 @@ class _EmailVerificationPageState
               vertical: 20,
             ),
             child: ConstrainedBox(
-              constraints:
-                  const BoxConstraints(
+              constraints: const BoxConstraints(
                 maxWidth: 400,
               ),
               child: FadeTransition(
@@ -547,8 +511,7 @@ class _EmailVerificationPageState
                 child: SlideTransition(
                   position: _slideAnimation,
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // ======================================================
                       // ICON
@@ -559,16 +522,13 @@ class _EmailVerificationPageState
                           width: 82,
                           height: 82,
                           decoration: BoxDecoration(
-                            color: _kBlue
-                                .withValues(alpha: .08),
-                            borderRadius:
-                                BorderRadius.circular(
+                            color: _kBlue.withValues(alpha: .08),
+                            borderRadius: BorderRadius.circular(
                               24,
                             ),
                           ),
                           child: const Icon(
-                            Icons
-                                .mark_email_unread_outlined,
+                            Icons.mark_email_unread_outlined,
                             color: _kBlue,
                             size: 40,
                           ),
@@ -584,12 +544,10 @@ class _EmailVerificationPageState
                       const Center(
                         child: Text(
                           'Check your email',
-                          textAlign:
-                              TextAlign.center,
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 28,
-                            fontWeight:
-                                FontWeight.w800,
+                            fontWeight: FontWeight.w800,
                             color: _kText,
                             letterSpacing: -.5,
                           ),
@@ -604,35 +562,26 @@ class _EmailVerificationPageState
 
                       Center(
                         child: RichText(
-                          textAlign:
-                              TextAlign.center,
+                          textAlign: TextAlign.center,
                           text: TextSpan(
-                            style:
-                                const TextStyle(
+                            style: const TextStyle(
                               fontSize: 14,
-                              color:
-                                  _kSubText,
+                              color: _kSubText,
                               height: 1.6,
                             ),
                             children: [
                               const TextSpan(
-                                text:
-                                    'We sent a 6-digit verification code to ',
+                                text: 'We sent a 6-digit verification code to ',
                               ),
                               TextSpan(
-                                text:
-                                    widget.email,
-                                style:
-                                    const TextStyle(
-                                  fontWeight:
-                                      FontWeight.w700,
-                                  color:
-                                      _kText,
+                                text: widget.email,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: _kText,
                                 ),
                               ),
                               const TextSpan(
-                                text:
-                                    '.',
+                                text: '.',
                               ),
                             ],
                           ),
@@ -646,14 +595,10 @@ class _EmailVerificationPageState
                       // ======================================================
 
                       Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment
-                                .spaceBetween,
-                        children:
-                            List.generate(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(
                           6,
-                          (index) =>
-                              _otpField(index),
+                          (index) => _otpField(index),
                         ),
                       ),
 
@@ -666,33 +611,22 @@ class _EmailVerificationPageState
                       Center(
                         child: TextButton(
                           onPressed:
-                              (_loading ||
-                                      _resending)
-                                  ? null
-                                  : _resendCode,
+                              (_loading || _resending) ? null : _resendCode,
                           child: _resending
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child:
-                                      CircularProgressIndicator(
-                                    strokeWidth:
-                                        2,
-                                    color:
-                                        _kBlue,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: _kBlue,
                                   ),
                                 )
                               : const Text(
                                   "Didn't receive a code? Resend",
-                                  style:
-                                      TextStyle(
-                                    color:
-                                        _kBlue,
-                                    fontSize:
-                                        13,
-                                    fontWeight:
-                                        FontWeight
-                                            .w600,
+                                  style: TextStyle(
+                                    color: _kBlue,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                         ),
@@ -705,30 +639,18 @@ class _EmailVerificationPageState
                       // ======================================================
 
                       SizedBox(
-                        width:
-                            double.infinity,
+                        width: double.infinity,
                         height: 54,
-                        child:
-                            ElevatedButton(
-                          onPressed:
-                              _loading
-                                  ? null
-                                  : _verifyCode,
-                          style:
-                              ElevatedButton
-                                  .styleFrom(
-                            backgroundColor:
-                                _kBlue,
-                            disabledBackgroundColor:
-                                _kBlue.withValues(alpha: 
-                              .45,
+                        child: ElevatedButton(
+                          onPressed: _loading ? null : _verifyCode,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _kBlue,
+                            disabledBackgroundColor: _kBlue.withValues(
+                              alpha: .45,
                             ),
                             elevation: 0,
-                            shape:
-                                RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
                                 30,
                               ),
                             ),
@@ -737,28 +659,18 @@ class _EmailVerificationPageState
                               ? const SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child:
-                                      CircularProgressIndicator(
-                                    strokeWidth:
-                                        2.5,
-                                    color:
-                                        Colors.white,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
                                   ),
                                 )
                               : const Text(
                                   'VERIFY ACCOUNT',
-                                  style:
-                                      TextStyle(
-                                    fontSize:
-                                        15,
-                                    fontWeight:
-                                        FontWeight
-                                            .w800,
-                                    color:
-                                        Colors
-                                            .white,
-                                    letterSpacing:
-                                        .5,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: .5,
                                   ),
                                 ),
                         ),
@@ -773,10 +685,8 @@ class _EmailVerificationPageState
                       Center(
                         child: Text(
                           widget.email,
-                          style:
-                              const TextStyle(
-                            color:
-                                _kSubText,
+                          style: const TextStyle(
+                            color: _kSubText,
                             fontSize: 12,
                           ),
                         ),

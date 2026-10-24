@@ -18,7 +18,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/core/app_state.dart (2568 lines)
+## lib/core/app_state.dart (2570 lines)
 - classes: Notification, StudentProfile, Application, Member, Event, User, OrgMediaItem, OrgOfficerProfile, Organization, ApplicationSubmitException, AppState
 - uses (other project classes): 
 - supabase tables: 
@@ -36,8 +36,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Admin_Role/admin_dashboard_screen.dart (1197 lines)
-- classes: AdminDashboard, _AdminDashboardState, _DeleteOrgDialog, _DeleteOrgDialogState
+## lib/screens/Admin_Role/admin_dashboard_screen.dart (2102 lines)
+- classes: _NavItem, AdminDashboard, _AdminDashboardState, _DeleteOrgDialog, _DeleteOrgDialogState
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -45,8 +45,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Admin_Role/admin_manage_accounts.dart (819 lines)
-- classes: AdminAccountsScreen, _AdminAccountsScreenState
+## lib/screens/Admin_Role/admin_manage_accounts.dart (1459 lines)
+- classes: AdminAccountsScreen, _AdminAccountsScreenState, _Section, _Palette, _RoleStyle, _HoverCard, _HoverCardState
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -63,7 +63,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Admin_Role/admin_profile_screen.dart (796 lines)
+## lib/screens/Admin_Role/admin_profile_screen.dart (1169 lines)
 - classes: AdminProfileScreen, _AdminProfileScreenState, _IconBox
 - uses (other project classes): 
 - supabase tables: 
@@ -72,7 +72,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Adviser_Role/adviser_accounts_screen.dart (402 lines)
+## lib/screens/Adviser_Role/adviser_accounts_screen.dart (490 lines)
 - classes: AdviserAccountsScreen, _AdviserAccountsScreenState
 - uses (other project classes): 
 - supabase tables: 
@@ -99,7 +99,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Adviser_Role/adviser_meeting_minutes_screen.dart (52 lines)
+## lib/screens/Adviser_Role/adviser_meeting_minutes_screen.dart (243 lines)
 - classes: AdviserMeetingMinutesScreen, _AdviserMeetingMinutesScreenState
 - uses (other project classes): 
 - supabase tables: 
@@ -117,7 +117,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/analytics/admin_analytics_screen.dart (273 lines)
+## lib/screens/analytics/admin_analytics_screen.dart (282 lines)
 - classes: AdminAnalyticsScreen, _AdminAnalyticsScreenState
 - uses (other project classes): 
 - supabase tables: 
@@ -126,7 +126,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/analytics/event_comments_sheet.dart (599 lines)
+## lib/screens/analytics/event_comments_sheet.dart (951 lines)
 - classes: EventCommentsSheet, _EventCommentsSheetState, EventCommentCountLabel, _EventCommentCountLabelState, _FloatingReaction, _FloatingReactionState
 - uses (other project classes): 
 - supabase tables: 
@@ -153,7 +153,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/auth/email_verification_page.dart (794 lines)
+## lib/screens/auth/email_verification_page.dart (704 lines)
 - classes: EmailVerificationPage, _EmailVerificationPageState
 - uses (other project classes): 
 - supabase tables: 
@@ -216,7 +216,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_applications_screen.dart (1694 lines)
+## lib/screens/Officer_Role/officer_applications_screen.dart (1782 lines)
 - classes: OfficerApplicationsScreen, _AppHeroHeader, _AppCard, _SC, _Chip, _DateTimeChip, _GradientButton, _ConfirmDialog, _DeclinedHeader, _EmptyState, _SectionLabel, _AttachmentImage, _AttachmentVideo, _FullScreenImage, _VideoPlayerScreen, _VideoPlayerScreenState
 - uses (other project classes): 
 - supabase tables: 
@@ -252,7 +252,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_profile_screen.dart (923 lines)
+## lib/screens/Officer_Role/officer_profile_screen.dart (929 lines)
 - classes: OfficerProfileScreen, _OfficerProfileScreenState, _IconBox
 - uses (other project classes): 
 - supabase tables: 
@@ -279,7 +279,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/organizations/org_list_screen.dart (1217 lines)
+## lib/screens/organizations/org_list_screen.dart (1221 lines)
 - classes: _AppColors, OrgListScreen, _OrgListScreenState, _SearchBarAndFilter, _CategoryChips, _CategoryChipsState, _ResultHeader, _OrgCard, _OrganizationImage, _ImageLoading, _ImageFallback, _EmptyState, _ErrorState, _LoadingState, _OrgHeader
 - uses (other project classes): 
 - supabase tables: 
@@ -297,7 +297,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/profile/profile_screen.dart (2797 lines)
+## lib/screens/profile/profile_screen.dart (3362 lines)
 - classes: _OrgBrief, ProfileScreen, _ProfileScreenState, _ProfileHeader, _ProfileIdentity, _Card, _SectionTitle, _Tag, _Handle, _EmptyCard, _OrgLogo, _FieldDef, _InfoRow, _ImpactCard, _AvatarZoomOverlay, _EditProfilePage, _EditProfilePageState, _EditForm, _BwFormField, _BlackButton, _BwSectionLabel
 - uses (other project classes): 
 - supabase tables: 
@@ -306,7 +306,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/student_dashboard_events.dart (1962 lines)
+## lib/screens/Student_Role/student_dashboard_events.dart (2376 lines)
 - classes: _DT, _DisplayItem, _MonthHeaderDisplayItem, _EventDisplayItem, _PaginationFooterDisplayItem, _FilterChipsHeaderDelegate, StudentDashboard, _StudentDashboardState, _CompactEventRow, _CompactEventRowState, _EventFeedCard, _EventFeedCardState
 - uses (other project classes): 
 - supabase tables: 
@@ -315,8 +315,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/student_dashboard_screen.dart (2269 lines)
-- classes: _C, _Snap, _Select, _SelectState, _SmartImage, StudentDashboardScreen, _StudentDashboardScreenState, _BottomNav, _NavItem, _AppRow, _MyApplicationsScreen, _MyApplicationsScreenState, _StudentHeader, _ApplicationsTop, _FilterChipButton, _ListFooter, _ApplicationCard, _JoinedOrganizationsScreen, _JoinedOrganizationsScreenState, _JoinedTop, _JoinedOrgCard, _OrgView, _MemberOrganizationSpace, _MemberOrganizationSpaceState, _AnnouncementTile, _UpcomingEventCard, _UpcomingBadge, _OfficersSection, _OrganizationPersonTile, _MemberCount, _ChatCard, _StudentOrgHeader, _CommunitySection, _QuickEmpty
+## lib/screens/Student_Role/student_dashboard_screen.dart (2421 lines)
+- classes: _C, _Snap, _Select, _SelectState, _SmartImage, StudentDashboardScreen, with, _StudentDashboardScreenState, directly, _SideNav, _BottomNav, _NavItem, _AppRow, _MyApplicationsScreen, _MyApplicationsScreenState, _StudentHeader, _ApplicationsTop, _FilterChipButton, _ListFooter, _ApplicationCard, _JoinedOrganizationsScreen, _JoinedOrganizationsScreenState, _JoinedTop, _JoinedOrgCard, _OrgView, _MemberOrganizationSpace, _MemberOrganizationSpaceState, _AnnouncementTile, _UpcomingEventCard, _UpcomingBadge, _OfficersSection, _OrganizationPersonTile, _MemberCount, _ChatCard, _StudentOrgHeader, _CommunitySection, _QuickEmpty
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -333,8 +333,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/event_details_sheet.dart (684 lines)
-- classes: _EventDetailsSheet, _EventDetailsSheetState, _EventInfoRow, _FullScreenImageGallery, _FullScreenImageGalleryState
+## lib/screens/Student_Role/home/event_details_sheet.dart (1481 lines)
+- classes: _ReactionOption, _EventDetailsSheet, _EventDetailsSheetState, _FullScreenImageGallery, _FullScreenImageGalleryState
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -342,7 +342,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/featured_event_carousel.dart (518 lines)
+## lib/screens/Student_Role/home/featured_event_carousel.dart (826 lines)
 - classes: FeaturedEventCarousel, _FeaturedEventCarouselState, _FeaturedMetaItem
 - uses (other project classes): 
 - supabase tables: 
@@ -360,7 +360,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/home_events_section.dart (277 lines)
+## lib/screens/Student_Role/home/home_events_section.dart (300 lines)
 - classes: HomeEventsSection, _HomeEventsSectionState
 - uses (other project classes): 
 - supabase tables: 
@@ -396,7 +396,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/home_recommended_section.dart (455 lines)
+## lib/screens/Student_Role/home/home_recommended_section.dart (586 lines)
 - classes: HomeRecommendedSection, _HomeRecommendedSectionState, _RecommendedOrgCard, _HomeTagPill
 - uses (other project classes): 
 - supabase tables: 
@@ -423,8 +423,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/home_tokens.dart (58 lines)
-- classes: HC, HomeLayout
+## lib/screens/Student_Role/home/home_tokens.dart (456 lines)
+- classes: HC, HomeBreakpoints, HomeLayoutScope, HomeLayout, corresponding, for
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -432,7 +432,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/new_home_tab.dart (685 lines)
+## lib/screens/Student_Role/home/new_home_tab.dart (987 lines)
 - classes: NewHomeTab, _NewHomeTabState, _Centered, _Hero, _Logo, _BellButton, _AvatarButton, _SearchBar, _QA, _QuickActions, _QuickCard, _Badge, _TemporaryNotice
 - uses (other project classes): 
 - supabase tables: 
@@ -459,7 +459,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/upcoming_events_row.dart (319 lines)
+## lib/screens/Student_Role/home/upcoming_events_row.dart (479 lines)
 - classes: UpcomingEventsRow, _UpcomingEventCard
 - uses (other project classes): 
 - supabase tables: 

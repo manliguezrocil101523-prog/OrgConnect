@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart' hide Notification;
 
 import '../../../core/app_state.dart';
@@ -8,8 +11,8 @@ import 'home_recommendations.dart';
 import 'home_saved_orgs.dart';
 import 'home_tokens.dart';
 
-/// Displays horizontally scrolling organization recommendations on the
-/// student Home screen.
+/// Displays organization recommendations responsively on the Student Home
+/// screen, using a horizontal scroller on mobile and a grid on wider screens.
 class HomeRecommendedSection extends StatefulWidget {
   final VoidCallback onViewAll;
 
@@ -135,105 +138,223 @@ class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
       return const SizedBox.shrink();
     }
 
-    final layout = HomeLayout.of(context);
-    final cardWidth = layout.cardWidth(min: 190, max: 240);
     final appliedIds = OrgRecommender.appliedOrgIds();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 8),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: layout.hPad),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Recommended For You',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: HC.ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: widget.onViewAll,
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(44, 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  foregroundColor: Colors.black,
-                  tapTargetSize: MaterialTapTargetSize.padded,
-                ),
-                child: const Text(
-                  'View All →',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.symmetric(horizontal: layout.hPad),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var index = 0; index < organizations.length; index++) ...[
-                  if (index > 0) const SizedBox(width: 12),
-                  SizedBox(
-                    width: cardWidth,
-                    child: _RecommendedOrgCard(
-                      organization: organizations[index],
-                      memberCount: _counts[organizations[index].id] ?? 0,
-                      isSaved: SavedOrgs.instance.isSaved(
-                        organizations[index].id,
-                      ),
-                      isApplied: appliedIds.contains(
-                        organizations[index].id,
-                      ),
-                      onSave: () {
-                        SavedOrgs.instance.toggle(organizations[index].id);
-                      },
-                      onTap: () {
-                        _openOrganization(
-                          context,
-                          organizations[index].id,
-                        );
-                      },
-                      onAction: () {
-                        final isApplied =
-                            appliedIds.contains(organizations[index].id);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sectionWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
 
-                        _openOrganization(
-                          context,
-                          organizations[index].id,
-                          initialTab: isApplied ? 0 : 2,
-                        );
-                      },
+        final layout = HomeLayout.of(context);
+        final homeHPad = layout.homeHPad;
+        final gap = layout.cardGap;
+
+        final innerWidth =
+            math.max(0.0, sectionWidth - (2 * homeHPad)).toDouble();
+
+        /// Builds a card while preserving its existing save and navigation
+        /// callbacks.
+        Widget buildCard(
+          Organization organization,
+          double cardWidth,
+        ) {
+          final orgId = organization.id;
+
+          return _RecommendedOrgCard(
+            organization: organization,
+            cardWidth: cardWidth,
+            memberCount: _counts[orgId] ?? 0,
+            isSaved: SavedOrgs.instance.isSaved(orgId),
+            isApplied: appliedIds.contains(orgId),
+            onSave: () {
+              SavedOrgs.instance.toggle(orgId);
+            },
+            onTap: () {
+              _openOrganization(context, orgId);
+            },
+            onAction: () {
+              final isApplied = appliedIds.contains(orgId);
+
+              _openOrganization(
+                context,
+                orgId,
+                initialTab: isApplied ? 0 : 2,
+              );
+            },
+          );
+        }
+
+        /// Builds the horizontally scrollable card list for mobile widths.
+        Widget buildMobileCards() {
+          final preferredCardWidth =
+              (innerWidth * 0.82).clamp(190.0, 240.0).toDouble();
+
+          final cardWidth = math.min(innerWidth, preferredCardWidth).toDouble();
+
+          return ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: const <PointerDeviceKind>{
+                PointerDeviceKind.touch,
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.trackpad,
+                PointerDeviceKind.stylus,
+              },
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.symmetric(horizontal: homeHPad),
+              child: IntrinsicHeight(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (var index = 0;
+                        index < organizations.length;
+                        index++) ...<Widget>[
+                      if (index > 0) SizedBox(width: gap),
+                      SizedBox(
+                        width: cardWidth,
+                        child: buildCard(
+                          organizations[index],
+                          cardWidth,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        /// Builds a two-row-maximum grid with equal-width cards, including
+        /// empty expanded slots when the final row is incomplete.
+        Widget buildWideCards() {
+          final columns = HomeLayout.gridColumns(
+            innerWidth,
+            minItemWidth: 240,
+            gap: gap,
+            maxColumns: 4,
+          );
+
+          final visibleCount =
+              math.min(organizations.length, columns * 2).toInt();
+
+          final cardWidth = HomeLayout.gridItemWidth(
+            innerWidth,
+            columns,
+            gap: gap,
+          );
+
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: homeHPad),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (var rowStart = 0;
+                    rowStart < visibleCount;
+                    rowStart += columns) ...<Widget>[
+                  if (rowStart > 0) SizedBox(height: gap),
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (var column = 0;
+                            column < columns;
+                            column++) ...<Widget>[
+                          if (column > 0) SizedBox(width: gap),
+                          if (rowStart + column < visibleCount)
+                            Expanded(
+                              child: buildCard(
+                                organizations[rowStart + column],
+                                cardWidth,
+                              ),
+                            )
+                          else
+                            const Expanded(
+                              child: SizedBox.shrink(),
+                            ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
               ],
             ),
-          ),
-        ),
-        const SizedBox(height: 32),
-      ],
+          );
+        }
+
+        /// Builds the section heading and its accessible View All action.
+        Widget buildSectionHeader() {
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: homeHPad),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'Recommended For You',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: HC.ink,
+                      fontSize: layout.isDesktop ? 19 : 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: widget.onViewAll,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(44, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: Colors.black,
+                    tapTargetSize: MaterialTapTargetSize.padded,
+                  ),
+                  child: const Text(
+                    'View All →',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final cards = sectionWidth < HomeBreakpoints.tabletMin
+            ? buildMobileCards()
+            : buildWideCards();
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const SizedBox(height: 8),
+            buildSectionHeader(),
+            SizedBox(height: gap),
+            cards,
+            SizedBox(height: layout.sectionGap),
+          ],
+        );
+      },
     );
   }
 }
 
 /// A recommendation card with save, organization navigation, and join actions.
+///
+/// Its width controls the logo and organization-name sizes. Its height is
+/// content-driven, allowing cards in the same row to share a common height.
 class _RecommendedOrgCard extends StatelessWidget {
   final Organization organization;
+  final double cardWidth;
   final int memberCount;
   final bool isSaved;
   final bool isApplied;
@@ -243,6 +364,7 @@ class _RecommendedOrgCard extends StatelessWidget {
 
   const _RecommendedOrgCard({
     required this.organization,
+    required this.cardWidth,
     required this.memberCount,
     required this.isSaved,
     required this.isApplied,
@@ -251,6 +373,10 @@ class _RecommendedOrgCard extends StatelessWidget {
     required this.onAction,
   });
 
+  /// Whether this card is wide enough for the larger logo and name.
+  bool get _isLargeCard => cardWidth >= 280;
+
+  /// Returns the existing category, member-count, or description subtitle.
   String _subtitle() {
     final category = organization.category.trim();
     final description = organization.shortDesc.trim();
@@ -274,6 +400,7 @@ class _RecommendedOrgCard extends StatelessWidget {
     return 'Discover this organization';
   }
 
+  /// Returns up to two distinct category and acronym tags.
   List<String> _tags() {
     final tags = <String>[];
 
@@ -294,6 +421,7 @@ class _RecommendedOrgCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tags = _tags();
+    final isLargeCard = _isLargeCard;
 
     return Material(
       color: Colors.white,
@@ -306,7 +434,7 @@ class _RecommendedOrgCard extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: HC.line),
-            boxShadow: [
+            boxShadow: <BoxShadow>[
               BoxShadow(
                 color: HC.primary.withValues(alpha: 0.07),
                 blurRadius: 14,
@@ -318,13 +446,14 @@ class _RecommendedOrgCard extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+              mainAxisSize: MainAxisSize.max,
+              children: <Widget>[
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  children: <Widget>[
                     OrgLogoAvatar(
                       logoAsset: organization.logoAsset,
-                      size: 52,
+                      size: isLargeCard ? 56 : 52,
                       radius: 16,
                     ),
                     const Spacer(),
@@ -357,9 +486,9 @@ class _RecommendedOrgCard extends StatelessWidget {
                   organization.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: HC.ink,
-                    fontSize: 15,
+                    fontSize: isLargeCard ? 16 : 15,
                     fontWeight: FontWeight.w800,
                     height: 1.25,
                   ),
@@ -375,26 +504,30 @@ class _RecommendedOrgCard extends StatelessWidget {
                     height: 1.3,
                   ),
                 ),
-                if (tags.isNotEmpty) ...[
+                if (tags.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: [
+                    children: <Widget>[
                       for (final tag in tags) _HomeTagPill(label: tag),
                     ],
                   ),
                 ],
+
+                // The Spacer absorbs extra row height so action buttons align.
+                // The fixed gap ensures at least 14 logical pixels above them.
+                const Spacer(),
                 const SizedBox(height: 14),
-                SizedBox(
-                  height: 44,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
                   child: FilledButton(
                     onPressed: onAction,
                     style: FilledButton.styleFrom(
                       backgroundColor: isApplied ? HC.mint : HC.primary,
                       foregroundColor: isApplied ? HC.dark : Colors.white,
                       elevation: 0,
-                      minimumSize: const Size.fromHeight(44),
+                      minimumSize: const Size(0, 44),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -403,6 +536,7 @@ class _RecommendedOrgCard extends StatelessWidget {
                     child: Text(
                       isApplied ? 'Applied' : 'Join',
                       maxLines: 1,
+                      softWrap: false,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,

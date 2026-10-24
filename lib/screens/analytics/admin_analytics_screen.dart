@@ -41,8 +41,7 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
       backgroundColor: dark ? const Color(0xFF0A140D) : const Color(0xFFF0FDF4),
       appBar: AppBar(
         title: const Text('Organization Analytics'),
-        actions: [
-        ],
+        actions: [],
       ),
       body: _loading || data == null
           ? const Center(child: CircularProgressIndicator())
@@ -86,7 +85,8 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
         children: [
           Text(
             'Finals Analytics',
-            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
+            style: TextStyle(
+                color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
           ),
           SizedBox(height: 6),
           Text(
@@ -100,12 +100,14 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
 
   Widget _metrics(AnalyticsSnapshot data, bool dark) {
     final metrics = <Widget>[
-      _metric('Active students', data.activeMembers, Icons.online_prediction_rounded, dark),
+      _metric('Active students', data.activeMembers,
+          Icons.online_prediction_rounded, dark),
       _metric('Members', data.totalMembers, Icons.groups_rounded, dark),
       _metric('Posted events', data.totalEvents, Icons.event_rounded, dark),
       _metric('Event views', data.totalViews, Icons.visibility_rounded, dark),
       _metric('Comments', data.totalComments, Icons.forum_rounded, dark),
-      _metric('Organizations', data.organizations.length, Icons.apartment_rounded, dark),
+      _metric('Organizations', data.organizations.length,
+          Icons.apartment_rounded, dark),
     ];
 
     return GridView.count(
@@ -132,7 +134,9 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
         children: [
           Icon(icon, color: const Color(0xFF16A34A)),
           const Spacer(),
-          Text('$value', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+          Text('$value',
+              style:
+                  const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
           Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11)),
         ],
       ),
@@ -144,7 +148,8 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
       children: [
         const Icon(Icons.eco_rounded, color: Color(0xFF16A34A), size: 20),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+        Text(text,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
       ],
     );
   }
@@ -173,11 +178,13 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
             Row(
               children: [
                 Expanded(
-                  child: Text(row.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  child: Text(row.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                 ),
                 Text(
                   '${row.members} members',
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
                 ),
               ],
             ),
@@ -212,7 +219,8 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Organization impact on student life', style: TextStyle(fontWeight: FontWeight.w700)),
+          const Text('Organization impact on student life',
+              style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           const Text(
             'Students can record academic, social, leadership and confidence growth from their dashboard. These records can be reviewed alongside membership and event activity for finals analytics.',
@@ -222,7 +230,9 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
           OutlinedButton.icon(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Students can record their impact from the student dashboard.')),
+                const SnackBar(
+                    content: Text(
+                        'Students can record their impact from the student dashboard.')),
               );
             },
             icon: const Icon(Icons.info_outline_rounded),
@@ -270,4 +280,3 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
     );
   }
 }
-

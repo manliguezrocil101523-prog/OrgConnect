@@ -216,9 +216,7 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                       () => obscurePassword = !obscurePassword,
                     ),
                     icon: Icon(
-                      obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      obscurePassword ? Icons.visibility_off : Icons.visibility,
                     ),
                   ),
                   border: OutlineInputBorder(
@@ -239,9 +237,7 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                       () => obscureConfirm = !obscureConfirm,
                     ),
                     icon: Icon(
-                      obscureConfirm
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      obscureConfirm ? Icons.visibility_off : Icons.visibility,
                     ),
                   ),
                   border: OutlineInputBorder(
@@ -395,376 +391,382 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
     }
 
     final avatar = _imageProvider();
-    final displayName = _name.text.trim().isEmpty ? 'Officer' : _name.text.trim();
+    final displayName =
+        _name.text.trim().isEmpty ? 'Officer' : _name.text.trim();
 
     final profileBody = Stack(
       children: [
-          Column(
-            children: [
-              AppHeader(
-                title: displayName,
-                subtitle: 'Organization Officer',
-                status: 'OFFICER PROFILE',
-                avatarImage: avatar,
-                avatarEditing: _editing,
-                onAvatarTap: () {
-                  if (_editing) {
-                    _pickAvatar();
-                  } else if (avatar != null) {
-                    setState(() => _showZoom = true);
-                  }
-                },
-                trailing: GestureDetector(
-                  onTap: () => setState(() {
-                    _editing = !_editing;
-                    if (!_editing) _avatarBytes = null;
-                  }),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .15),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: Colors.white.withValues(alpha: .30)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(_editing ? Icons.close_rounded : Icons.edit_rounded,
-                            color: Colors.white, size: 15),
-                        const SizedBox(width: 5),
-                        Text(_editing ? 'Cancel' : 'Edit',
-                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
+        Column(
+          children: [
+            AppHeader(
+              title: displayName,
+              subtitle: 'Organization Officer',
+              status: 'OFFICER PROFILE',
+              avatarImage: avatar,
+              avatarEditing: _editing,
+              onAvatarTap: () {
+                if (_editing) {
+                  _pickAvatar();
+                } else if (avatar != null) {
+                  setState(() => _showZoom = true);
+                }
+              },
+              trailing: GestureDetector(
+                onTap: () => setState(() {
+                  _editing = !_editing;
+                  if (!_editing) _avatarBytes = null;
+                }),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .15),
+                    borderRadius: BorderRadius.circular(22),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: .30)),
                   ),
-                ),
-              ),
-              Expanded(
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 48),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 540),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _sectionLabel('Profile Details'),
-                            const SizedBox(height: 12),
-                            if (_editing) ...[
-                              _editCard(
-                                'Full Name',
-                                _name,
-                                Icons.person_rounded,
-                                _primary,
-                              ),
-                              _editCard(
-                                'Email',
-                                _email,
-                                Icons.email_rounded,
-                                const Color(0xFF0D9488),
-                              ),
-                              _editCard(
-                                'Contact',
-                                _contact,
-                                Icons.phone_rounded,
-                                _primary,
-                              ),
-                              _editCard(
-                                'Facebook / Social link',
-                                _facebook,
-                                Icons.facebook_rounded,
-                                const Color(0xFF2563EB),
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton.icon(
-                                onPressed: _saving ? null : _save,
-                                icon: _saving
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(Icons.check_rounded),
-                                label: Text(
-                                  _saving ? 'Saving...' : 'Save Profile',
-                                ),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _primary,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(double.infinity, 52),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                              ),
-                            ] else ...[
-                              _infoCard(
-                                Icons.person_rounded,
-                                'FULL NAME',
-                                _name.text,
-                                _primary,
-                              ),
-                              _infoCard(
-                                Icons.email_rounded,
-                                'EMAIL',
-                                _email.text,
-                                const Color(0xFF0D9488),
-                              ),
-                              _infoCard(
-                                Icons.phone_rounded,
-                                'CONTACT',
-                                _contact.text,
-                                _primary,
-                              ),
-                              _infoCard(
-                                Icons.facebook_rounded,
-                                'FACEBOOK',
-                                _facebook.text,
-                                const Color(0xFF2563EB),
-                              ),
-                            ],
-                            const SizedBox(height: 18),
-                            _sectionLabel('Growth & Impact'),
-                            const SizedBox(height: 12),
-                            GestureDetector(
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => StudentImpactScreen(
-                                    organizationId: widget.organizationId.isEmpty
-                                        ? null
-                                        : widget.organizationId,
-                                    organizationName: widget.organizationName.isEmpty
-                                        ? null
-                                        : widget.organizationName,
-                                  ),
-                                ),
-                              ),
-                              child: Container(
-                                padding: const EdgeInsets.fromLTRB(18, 17, 14, 17),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [_primary, _secondary],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _primary.withValues(alpha: .16),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: const Row(
-                                  children: [
-                                    _IconBox(
-                                      icon: Icons.insights_rounded,
-                                      color: Colors.white,
-                                    ),
-                                    SizedBox(width: 13),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Organization Impact',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 15.5,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                          SizedBox(height: 4),
-                                          Text(
-                                            'Record how your organization supports your growth.',
-                                            style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 11.5,
-                                              height: 1.35,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: Colors.white70,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            _sectionLabel('Account & Security'),
-                            const SizedBox(height: 12),
-                            Container(
-                              decoration: _cardDecoration(),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Column(
-                                  children: [
-                                    ListTile(
-                                      onTap: _changePassword,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 8,
-                                      ),
-                                      leading: const _IconBox(
-                                        icon: Icons.lock_reset_rounded,
-                                        color: _primary,
-                                      ),
-                                      title: const Text(
-                                        'Change Password',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: _slate0F,
-                                        ),
-                                      ),
-                                      subtitle: const Text(
-                                        'Update your account password securely',
-                                        style: TextStyle(
-                                          fontSize: 11.5,
-                                          color: _slate94,
-                                        ),
-                                      ),
-                                      trailing: const Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: _primary,
-                                      ),
-                                    ),
-                                    Divider(
-                                      height: 1,
-                                      indent: 76,
-                                      endIndent: 20,
-                                      color: Colors.grey.shade100,
-                                    ),
-                                    ListTile(
-                                      onTap: _logout,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 8,
-                                      ),
-                                      leading: const _IconBox(
-                                        icon: Icons.logout_rounded,
-                                        color: _red,
-                                      ),
-                                      title: const Text(
-                                        'Log Out',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: _red,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        _email.text.trim().isNotEmpty
-                                            ? 'Logged in as: ${_email.text.trim()}'
-                                            : 'Tap to sign out',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          color: _slate94,
-                                        ),
-                                      ),
-                                      trailing: Container(
-                                        width: 30,
-                                        height: 30,
-                                        decoration: BoxDecoration(
-                                          color: _red.withValues(alpha: .08),
-                                          borderRadius:
-                                              BorderRadius.circular(9),
-                                        ),
-                                        child: const Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: _red,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            const Center(
-                              child: Text(
-                                'OrgConnect Officer • Profile',
-                                style: TextStyle(
-                                  color: Color(0xFF94A3A8),
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_showZoom)
-            Positioned.fill(
-              child: Material(
-                color: Colors.black.withValues(alpha: .72),
-                child: SafeArea(
-                  child: Stack(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Center(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _showZoom = false),
-                          child: Container(
-                            width: 270,
-                            height: 270,
-                            padding: const EdgeInsets.all(5),
-                            decoration: const BoxDecoration(
+                      Icon(_editing ? Icons.close_rounded : Icons.edit_rounded,
+                          color: Colors.white, size: 15),
+                      const SizedBox(width: 5),
+                      Text(_editing ? 'Cancel' : 'Edit',
+                          style: const TextStyle(
                               color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: CircleAvatar(
-                              backgroundColor: Color(0xFFE8F5EC),
-                              backgroundImage: avatar,
-                              child: avatar == null
-                                  ? const Icon(
-                                      Icons.person_rounded,
-                                      color: _primary,
-                                      size: 100,
-                                    )
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 12,
-                        right: 16,
-                        child: IconButton(
-                          onPressed: () => setState(() => _showZoom = false),
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                            size: 30,
-                          ),
-                        ),
-                      ),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700)),
                     ],
                   ),
                 ),
               ),
             ),
-        ],
-      );
+            Expanded(
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 48),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 540),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _sectionLabel('Profile Details'),
+                          const SizedBox(height: 12),
+                          if (_editing) ...[
+                            _editCard(
+                              'Full Name',
+                              _name,
+                              Icons.person_rounded,
+                              _primary,
+                            ),
+                            _editCard(
+                              'Email',
+                              _email,
+                              Icons.email_rounded,
+                              const Color(0xFF0D9488),
+                            ),
+                            _editCard(
+                              'Contact',
+                              _contact,
+                              Icons.phone_rounded,
+                              _primary,
+                            ),
+                            _editCard(
+                              'Facebook / Social link',
+                              _facebook,
+                              Icons.facebook_rounded,
+                              const Color(0xFF2563EB),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                              onPressed: _saving ? null : _save,
+                              icon: _saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_rounded),
+                              label: Text(
+                                _saving ? 'Saving...' : 'Save Profile',
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _primary,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(double.infinity, 52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ] else ...[
+                            _infoCard(
+                              Icons.person_rounded,
+                              'FULL NAME',
+                              _name.text,
+                              _primary,
+                            ),
+                            _infoCard(
+                              Icons.email_rounded,
+                              'EMAIL',
+                              _email.text,
+                              const Color(0xFF0D9488),
+                            ),
+                            _infoCard(
+                              Icons.phone_rounded,
+                              'CONTACT',
+                              _contact.text,
+                              _primary,
+                            ),
+                            _infoCard(
+                              Icons.facebook_rounded,
+                              'FACEBOOK',
+                              _facebook.text,
+                              const Color(0xFF2563EB),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          _sectionLabel('Growth & Impact'),
+                          const SizedBox(height: 12),
+                          GestureDetector(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => StudentImpactScreen(
+                                  organizationId: widget.organizationId.isEmpty
+                                      ? null
+                                      : widget.organizationId,
+                                  organizationName:
+                                      widget.organizationName.isEmpty
+                                          ? null
+                                          : widget.organizationName,
+                                ),
+                              ),
+                            ),
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.fromLTRB(18, 17, 14, 17),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [_primary, _secondary],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _primary.withValues(alpha: .16),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                children: [
+                                  _IconBox(
+                                    icon: Icons.insights_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(width: 13),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Organization Impact',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 15.5,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Record how your organization supports your growth.',
+                                          style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 11.5,
+                                            height: 1.35,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.white70,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Account & Security'),
+                          const SizedBox(height: 12),
+                          Container(
+                            decoration: _cardDecoration(),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: Column(
+                                children: [
+                                  ListTile(
+                                    onTap: _changePassword,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 8,
+                                    ),
+                                    leading: const _IconBox(
+                                      icon: Icons.lock_reset_rounded,
+                                      color: _primary,
+                                    ),
+                                    title: const Text(
+                                      'Change Password',
+                                      style: TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: _slate0F,
+                                      ),
+                                    ),
+                                    subtitle: const Text(
+                                      'Update your account password securely',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: _slate94,
+                                      ),
+                                    ),
+                                    trailing: const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: _primary,
+                                    ),
+                                  ),
+                                  Divider(
+                                    height: 1,
+                                    indent: 76,
+                                    endIndent: 20,
+                                    color: Colors.grey.shade100,
+                                  ),
+                                  ListTile(
+                                    onTap: _logout,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 8,
+                                    ),
+                                    leading: const _IconBox(
+                                      icon: Icons.logout_rounded,
+                                      color: _red,
+                                    ),
+                                    title: const Text(
+                                      'Log Out',
+                                      style: TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: _red,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      _email.text.trim().isNotEmpty
+                                          ? 'Logged in as: ${_email.text.trim()}'
+                                          : 'Tap to sign out',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: _slate94,
+                                      ),
+                                    ),
+                                    trailing: Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        color: _red.withValues(alpha: .08),
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                      child: const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: _red,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Center(
+                            child: Text(
+                              'OrgConnect Officer • Profile',
+                              style: TextStyle(
+                                color: Color(0xFF94A3A8),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_showZoom)
+          Positioned.fill(
+            child: Material(
+              color: Colors.black.withValues(alpha: .72),
+              child: SafeArea(
+                child: Stack(
+                  children: [
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _showZoom = false),
+                        child: Container(
+                          width: 270,
+                          height: 270,
+                          padding: const EdgeInsets.all(5),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: CircleAvatar(
+                            backgroundColor: Color(0xFFE8F5EC),
+                            backgroundImage: avatar,
+                            child: avatar == null
+                                ? const Icon(
+                                    Icons.person_rounded,
+                                    color: _primary,
+                                    size: 100,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 12,
+                      right: 16,
+                      child: IconButton(
+                        onPressed: () => setState(() => _showZoom = false),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
 
     if (widget.embedded) return profileBody;
     return Scaffold(
@@ -850,8 +852,11 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
           ),
           const SizedBox(width: 8),
           Icon(
-            empty ? Icons.add_circle_outline_rounded : Icons.check_circle_rounded,
-            color: empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
+            empty
+                ? Icons.add_circle_outline_rounded
+                : Icons.check_circle_rounded,
+            color:
+                empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
             size: 18,
           ),
         ],
@@ -864,7 +869,8 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
     TextEditingController controller,
     IconData icon,
     Color color,
-  ) => Container(
+  ) =>
+      Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: _cardDecoration(),
         child: TextField(

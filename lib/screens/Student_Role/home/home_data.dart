@@ -30,7 +30,7 @@ class HomeData {
     if (ids.isEmpty) return <String, int>{};
     try {
       final rows = await supabase.Supabase.instance.client
-          .from('event_reactions')
+          .from('event_interests')
           .select('event_id')
           .inFilter('event_id', ids);
       final out = <String, int>{};

@@ -12,6 +12,7 @@ import '/screens/profile/profile_screen.dart';
 import '../community/org_community_chat_screen.dart';
 import '/screens/organizations/org_list_screen.dart';
 import '../../widgets/app_header.dart';
+import 'home/home_tokens.dart' show HomeBreakpoints;
 import 'home/new_home_tab.dart';
 
 // =============================================================================
@@ -324,11 +325,16 @@ class StudentDashboardScreen extends StatefulWidget {
   State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
 }
 
+// REPLACE the whole _StudentDashboardScreenState class with this:
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   DateTime? _lastBackPressed;
   int _selectedIndex = 0;
   final Set<int> _visited = <int>{0};
   final List<Widget?> _tabs = List<Widget?>.filled(4, null);
+
+  // Preserves the IndexedStack element and its descendant states when the
+  // content moves between the Scaffold body and the desktop Expanded body.
+  final GlobalKey _tabContentKey = GlobalKey();
 
   void _select(int i) => setState(() {
         _selectedIndex = i;
@@ -395,17 +401,163 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: _onBack,
-      child: Scaffold(
-        backgroundColor: _C.pageBg,
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: [
-            for (var i = 0; i < 4; i++)
-              _visited.contains(i) ? _tab(i) : const SizedBox.shrink(),
-          ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= HomeBreakpoints.desktopMin;
+
+          // Build the keyed content exactly once per frame. Only its parent
+          // changes at the breakpoint; the IndexedStack and its key stay the
+          // same so Flutter can reparent the existing element.
+          final tabContent = IndexedStack(
+            key: _tabContentKey,
+            index: _selectedIndex,
+            children: <Widget>[
+              for (var i = 0; i < 4; i++)
+                _visited.contains(i) ? _tab(i) : const SizedBox.shrink(),
+            ],
+          );
+
+          return Scaffold(
+            backgroundColor: _C.pageBg,
+            body: wide
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _SideNav(
+                        selectedIndex: _selectedIndex,
+                        onSelect: _select,
+                      ),
+                      const SizedBox(
+                        width: 1,
+                        child: ColoredBox(color: _C.border),
+                      ),
+                      Expanded(child: tabContent),
+                    ],
+                  )
+                : tabContent,
+            bottomNavigationBar: wide
+                ? null
+                : _BottomNav(
+                    selected: _selectedIndex,
+                    onSelect: _select,
+                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ADD this new class directly after _StudentDashboardScreenState:
+
+/// Provides the desktop navigation rail for the four student dashboard tabs.
+///
+/// The rail uses a scroll-safe layout so its destinations remain accessible
+/// in short windows and at larger system text scales.
+class _SideNav extends StatelessWidget {
+  const _SideNav({
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
+        right: false,
+        child: SizedBox(
+          width: 88,
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: IntrinsicHeight(
+                      child: NavigationRail(
+                        selectedIndex: selectedIndex,
+                        onDestinationSelected: onSelect,
+                        labelType: NavigationRailLabelType.all,
+                        backgroundColor: Colors.white,
+                        indicatorColor: _C.softGreen,
+                        selectedIconTheme: const IconThemeData(
+                          color: _C.green,
+                        ),
+                        unselectedIconTheme: const IconThemeData(
+                          color: _C.navInactive,
+                        ),
+                        selectedLabelTextStyle: const TextStyle(
+                          color: _C.green,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        unselectedLabelTextStyle: const TextStyle(
+                          color: _C.navInactive,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        minWidth: 88,
+                        groupAlignment: -1.0,
+                        useIndicator: true,
+                        destinations: const <NavigationRailDestination>[
+                          NavigationRailDestination(
+                            icon: Icon(
+                              Icons.home_rounded,
+                              color: _C.navInactive,
+                            ),
+                            selectedIcon: Icon(
+                              Icons.home_rounded,
+                              color: _C.green,
+                            ),
+                            label: Text('Home'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(
+                              Icons.groups_rounded,
+                              color: _C.navInactive,
+                            ),
+                            selectedIcon: Icon(
+                              Icons.groups_rounded,
+                              color: _C.green,
+                            ),
+                            label: Text('Orgs'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(
+                              Icons.calendar_month_rounded,
+                              color: _C.navInactive,
+                            ),
+                            selectedIcon: Icon(
+                              Icons.calendar_month_rounded,
+                              color: _C.green,
+                            ),
+                            label: Text('Events'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(
+                              Icons.person_rounded,
+                              color: _C.navInactive,
+                            ),
+                            selectedIcon: Icon(
+                              Icons.person_rounded,
+                              color: _C.green,
+                            ),
+                            label: Text('Profile'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
-        bottomNavigationBar:
-            _BottomNav(selected: _selectedIndex, onSelect: _select),
       ),
     );
   }

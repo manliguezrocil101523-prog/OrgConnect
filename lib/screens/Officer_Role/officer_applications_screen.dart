@@ -94,172 +94,224 @@ class OfficerApplicationsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     var showAllApplications = false;
     return StatefulBuilder(
-      builder: (context, setLocalState) => Scaffold(
-      backgroundColor: _background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── Header ──────────────────────────────────────────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: MediaQuery.of(context).size.height * 0.18,
-            backgroundColor: _primary,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
-            ),
-            centerTitle: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: _AppHeroHeader(
-                primary: _primary,
-                secondary: _secondary,
-                title: _filterTitle(),
-              ),
-            ),
-          ),
-
-          // ── Body ────────────────────────────────────────────────────────
-          AnimatedBuilder(
-            animation: AppState.instance,
-            builder: (context, _) {
-              final orgId = AppState.instance.currentOfficerOrgId;
-              if (orgId == null) {
-                return const SliverFillRemaining(
-                  child: Center(child: Text('No organization selected.')),
-                );
-              }
-
-              final allApps = AppState.instance.applications
-                  .where((a) => a.orgId == orgId)
-                  .toList()
-                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-
-
-              // UNTOUCHED: original grouping logic
-              final pending = allApps
-                  .where((a) => a.status == ApplicationStatus.pending)
-                  .toList();
-              final interviewed = allApps
-                  .where((a) => a.status == ApplicationStatus.interviewed)
-                  .toList();
-              final forApproval = allApps
-                  .where((a) => a.status == ApplicationStatus.forApproval)
-                  .toList();
-              final approved = allApps
-                  .where((a) => a.status == ApplicationStatus.approved)
-                  .toList();
-              final declined = allApps
-                  .where((a) => a.status == ApplicationStatus.declined)
-                  .toList();
-
-// Filtered view
-              List<Application>? filtered;
-              if (filter == 'pending') {
-                filtered = pending;
-              } else if (filter == 'interviewed') {
-                filtered = interviewed;
-              } else if (filter == 'forApproval') {
-                filtered = forApproval;
-              } else if (filter == 'approved') {
-                filtered = approved;
-              } else if (filter == 'declined') {
-                filtered = declined;
-              }
-
-              if (filtered != null) {
-                if (filtered.isEmpty) {
-                  return SliverFillRemaining(
-                    child: _EmptyState(label: _filterTitle()),
-                  );
-                }
-                final filteredApps = showAllApplications ? filtered : filtered.take(10).toList();
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      ...filteredApps.asMap().entries.map((entry) {
-                        final app = entry.value;
-                        return _AppCard(
-                          app: app,
-                          index: entry.key,
-                          onView: () => _showDetails(context, app),
-                          onAccept: _canAccept(app) ? () => _accept(context, app) : null,
-                          onDecline: _canDecline(app) ? () => _decline(context, app) : null,
-                          onSchedule: _canSchedule(app) ? () => _scheduleInterview(context, app) : null,
-                          onMoveToApproval: _canMoveToApproval(app) ? () => _moveToApproval(context, app) : null,
-                          onFinalApprove: _canFinalApprove(app) ? () => _finalApprove(context, app) : null,
-                          onDelete: app.status == ApplicationStatus.declined ? () => _deleteApplication(context, app) : null,
-                        );
-                      }),
-                      if (filtered.length > 10)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: OutlinedButton.icon(
-                            onPressed: () => setLocalState(() => showAllApplications = !showAllApplications),
-                            icon: Icon(showAllApplications ? Icons.expand_less_rounded : Icons.expand_more_rounded),
-                            label: Text(showAllApplications ? 'Show Less' : 'View All ${filtered.length} Applications'),
-                          ),
-                        ),
-                    ]),
-                  ),
-                );
-              }
-
-              // All view — grouped by section
-              if (allApps.isEmpty) {
-                return const SliverFillRemaining(
-                  child: _EmptyState(label: 'Applications'),
-                );
-              }
-
-              final visibleApps = showAllApplications ? allApps : allApps.take(10).toList();
-              final visibleIds = visibleApps.map((a) => a.id).toSet();
-              final visiblePending = pending.where((a) => visibleIds.contains(a.id)).toList();
-              final visibleInterviewed = interviewed.where((a) => visibleIds.contains(a.id)).toList();
-              final visibleForApproval = forApproval.where((a) => visibleIds.contains(a.id)).toList();
-              final visibleApproved = approved.where((a) => visibleIds.contains(a.id)).toList();
-              final visibleDeclined = declined.where((a) => visibleIds.contains(a.id)).toList();
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 540),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (visiblePending.isNotEmpty) ..._section(context, 'Pending', visiblePending),
-                            if (visibleInterviewed.isNotEmpty) ..._section(context, 'Interviewees', visibleInterviewed),
-                            if (visibleForApproval.isNotEmpty) ..._section(context, 'For Approval', visibleForApproval),
-                            if (visibleApproved.isNotEmpty) ..._section(context, 'Approved', visibleApproved),
-                            if (visibleDeclined.isNotEmpty) ...[
-                              _DeclinedHeader(onClearAll: () => _clearDeclined(context, visibleDeclined)),
-                              const SizedBox(height: 12),
-                              ..._buildCards(context, visibleDeclined),
-                              const SizedBox(height: 24),
-                            ],
-                            if (allApps.length > 10)
-                              OutlinedButton.icon(
-                                onPressed: () => setLocalState(() => showAllApplications = !showAllApplications),
-                                icon: Icon(showAllApplications ? Icons.expand_less_rounded : Icons.expand_more_rounded),
-                                label: Text(showAllApplications ? 'Show Less' : 'View All ${allApps.length} Applications'),
-                              ),
-                          ],
-                        ),
+        builder: (context, setLocalState) => Scaffold(
+              backgroundColor: _background,
+              body: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  // ── Header ──────────────────────────────────────────────────────
+                  SliverAppBar(
+                    pinned: true,
+                    expandedHeight: MediaQuery.of(context).size.height * 0.18,
+                    backgroundColor: _primary,
+                    elevation: 0,
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    centerTitle: true,
+                    flexibleSpace: FlexibleSpaceBar(
+                      background: _AppHeroHeader(
+                        primary: _primary,
+                        secondary: _secondary,
+                        title: _filterTitle(),
                       ),
                     ),
-                  ]),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    ));
+                  ),
+
+                  // ── Body ────────────────────────────────────────────────────────
+                  AnimatedBuilder(
+                    animation: AppState.instance,
+                    builder: (context, _) {
+                      final orgId = AppState.instance.currentOfficerOrgId;
+                      if (orgId == null) {
+                        return const SliverFillRemaining(
+                          child:
+                              Center(child: Text('No organization selected.')),
+                        );
+                      }
+
+                      final allApps = AppState.instance.applications
+                          .where((a) => a.orgId == orgId)
+                          .toList()
+                        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+                      // UNTOUCHED: original grouping logic
+                      final pending = allApps
+                          .where((a) => a.status == ApplicationStatus.pending)
+                          .toList();
+                      final interviewed = allApps
+                          .where(
+                              (a) => a.status == ApplicationStatus.interviewed)
+                          .toList();
+                      final forApproval = allApps
+                          .where(
+                              (a) => a.status == ApplicationStatus.forApproval)
+                          .toList();
+                      final approved = allApps
+                          .where((a) => a.status == ApplicationStatus.approved)
+                          .toList();
+                      final declined = allApps
+                          .where((a) => a.status == ApplicationStatus.declined)
+                          .toList();
+
+// Filtered view
+                      List<Application>? filtered;
+                      if (filter == 'pending') {
+                        filtered = pending;
+                      } else if (filter == 'interviewed') {
+                        filtered = interviewed;
+                      } else if (filter == 'forApproval') {
+                        filtered = forApproval;
+                      } else if (filter == 'approved') {
+                        filtered = approved;
+                      } else if (filter == 'declined') {
+                        filtered = declined;
+                      }
+
+                      if (filtered != null) {
+                        if (filtered.isEmpty) {
+                          return SliverFillRemaining(
+                            child: _EmptyState(label: _filterTitle()),
+                          );
+                        }
+                        final filteredApps = showAllApplications
+                            ? filtered
+                            : filtered.take(10).toList();
+                        return SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+                          sliver: SliverList(
+                            delegate: SliverChildListDelegate([
+                              ...filteredApps.asMap().entries.map((entry) {
+                                final app = entry.value;
+                                return _AppCard(
+                                  app: app,
+                                  index: entry.key,
+                                  onView: () => _showDetails(context, app),
+                                  onAccept: _canAccept(app)
+                                      ? () => _accept(context, app)
+                                      : null,
+                                  onDecline: _canDecline(app)
+                                      ? () => _decline(context, app)
+                                      : null,
+                                  onSchedule: _canSchedule(app)
+                                      ? () => _scheduleInterview(context, app)
+                                      : null,
+                                  onMoveToApproval: _canMoveToApproval(app)
+                                      ? () => _moveToApproval(context, app)
+                                      : null,
+                                  onFinalApprove: _canFinalApprove(app)
+                                      ? () => _finalApprove(context, app)
+                                      : null,
+                                  onDelete: app.status ==
+                                          ApplicationStatus.declined
+                                      ? () => _deleteApplication(context, app)
+                                      : null,
+                                );
+                              }),
+                              if (filtered.length > 10)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => setLocalState(() =>
+                                        showAllApplications =
+                                            !showAllApplications),
+                                    icon: Icon(showAllApplications
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded),
+                                    label: Text(showAllApplications
+                                        ? 'Show Less'
+                                        : 'View All ${filtered.length} Applications'),
+                                  ),
+                                ),
+                            ]),
+                          ),
+                        );
+                      }
+
+                      // All view — grouped by section
+                      if (allApps.isEmpty) {
+                        return const SliverFillRemaining(
+                          child: _EmptyState(label: 'Applications'),
+                        );
+                      }
+
+                      final visibleApps = showAllApplications
+                          ? allApps
+                          : allApps.take(10).toList();
+                      final visibleIds = visibleApps.map((a) => a.id).toSet();
+                      final visiblePending = pending
+                          .where((a) => visibleIds.contains(a.id))
+                          .toList();
+                      final visibleInterviewed = interviewed
+                          .where((a) => visibleIds.contains(a.id))
+                          .toList();
+                      final visibleForApproval = forApproval
+                          .where((a) => visibleIds.contains(a.id))
+                          .toList();
+                      final visibleApproved = approved
+                          .where((a) => visibleIds.contains(a.id))
+                          .toList();
+                      final visibleDeclined = declined
+                          .where((a) => visibleIds.contains(a.id))
+                          .toList();
+                      return SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            Center(
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 540),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (visiblePending.isNotEmpty)
+                                      ..._section(
+                                          context, 'Pending', visiblePending),
+                                    if (visibleInterviewed.isNotEmpty)
+                                      ..._section(context, 'Interviewees',
+                                          visibleInterviewed),
+                                    if (visibleForApproval.isNotEmpty)
+                                      ..._section(context, 'For Approval',
+                                          visibleForApproval),
+                                    if (visibleApproved.isNotEmpty)
+                                      ..._section(
+                                          context, 'Approved', visibleApproved),
+                                    if (visibleDeclined.isNotEmpty) ...[
+                                      _DeclinedHeader(
+                                          onClearAll: () => _clearDeclined(
+                                              context, visibleDeclined)),
+                                      const SizedBox(height: 12),
+                                      ..._buildCards(context, visibleDeclined),
+                                      const SizedBox(height: 24),
+                                    ],
+                                    if (allApps.length > 10)
+                                      OutlinedButton.icon(
+                                        onPressed: () => setLocalState(() =>
+                                            showAllApplications =
+                                                !showAllApplications),
+                                        icon: Icon(showAllApplications
+                                            ? Icons.expand_less_rounded
+                                            : Icons.expand_more_rounded),
+                                        label: Text(showAllApplications
+                                            ? 'Show Less'
+                                            : 'View All ${allApps.length} Applications'),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ));
   }
 
   // ── Section helper ────────────────────────────────────────────────────
@@ -330,8 +382,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
   }
 
   void _moveToApproval(BuildContext context, Application a) {
-    AppState.instance
-        .setApplicationStatus(a.id, ApplicationStatus.forApproval);
+    AppState.instance.setApplicationStatus(a.id, ApplicationStatus.forApproval);
     _snack(context, '${a.name} moved to For Approval.');
   }
 
@@ -373,17 +424,32 @@ class OfficerApplicationsScreen extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Decline application'),
-        content: TextField(controller: controller, maxLines: 5, decoration: const InputDecoration(labelText: 'Reason for not qualifying', hintText: 'Explain what the student can improve or why they did not qualify.')),
+        content: TextField(
+            controller: controller,
+            maxLines: 5,
+            decoration: const InputDecoration(
+                labelText: 'Reason for not qualifying',
+                hintText:
+                    'Explain what the student can improve or why they did not qualify.')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () { if (controller.text.trim().isNotEmpty) Navigator.pop(context, controller.text.trim()); }, child: const Text('Send Reason')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty)
+                  Navigator.pop(context, controller.text.trim());
+              },
+              child: const Text('Send Reason')),
         ],
       ),
     );
     controller.dispose();
     if (reason == null) return;
     await AppState.instance.declineApplication(a.id, reason);
-    if (context.mounted) _snack(context, 'Application declined and reason sent to the student.', Colors.redAccent);
+    if (context.mounted)
+      _snack(context, 'Application declined and reason sent to the student.',
+          Colors.redAccent);
   }
 
   void _clearDeclined(BuildContext context, List<Application> declined) async {
@@ -574,7 +640,9 @@ class OfficerApplicationsScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     _infoCard([
                       _detailRow('Status', _statusText(a.status)),
-                      if (a.status == ApplicationStatus.declined && a.declineReason.isNotEmpty) _detailRow('Reason', a.declineReason),
+                      if (a.status == ApplicationStatus.declined &&
+                          a.declineReason.isNotEmpty)
+                        _detailRow('Reason', a.declineReason),
                       _detailRow('Submitted',
                           a.createdAt.toLocal().toString().split('.')[0]),
                       if (a.interviewAt != null)
@@ -592,9 +660,12 @@ class OfficerApplicationsScreen extends StatelessWidget {
                           padding: EdgeInsets.symmetric(vertical: 8),
                           child: Row(
                             children: [
-                              Icon(Icons.attach_file_rounded, color: Color(0xFF94A3B8)),
+                              Icon(Icons.attach_file_rounded,
+                                  color: Color(0xFF94A3B8)),
                               SizedBox(width: 10),
-                              Expanded(child: Text('No attachments were submitted with this application.')),
+                              Expanded(
+                                  child: Text(
+                                      'No attachments were submitted with this application.')),
                             ],
                           ),
                         ),
@@ -648,22 +719,32 @@ class OfficerApplicationsScreen extends StatelessWidget {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 2),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10)),
                                   tileColor: const Color(0xFFF8FAFC),
-                                  leading: const Icon(Icons.insert_drive_file_rounded, color: _primary),
+                                  leading: const Icon(
+                                      Icons.insert_drive_file_rounded,
+                                      color: _primary),
                                   title: Text(
                                     url.split('/').last.split('?').first,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                                    style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700),
                                   ),
-                                  subtitle: const Text('Tap to open attachment'),
-                                  trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                                  subtitle:
+                                      const Text('Tap to open attachment'),
+                                  trailing: const Icon(
+                                      Icons.open_in_new_rounded,
+                                      size: 18),
                                   onTap: () async {
                                     final uri = Uri.tryParse(url);
                                     if (uri != null) {
-                                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                      await launchUrl(uri,
+                                          mode: LaunchMode.externalApplication);
                                     }
                                   },
                                 ),
@@ -860,8 +941,6 @@ class OfficerApplicationsScreen extends StatelessWidget {
     );
   }
 
-
-
   void _deleteApplication(BuildContext context, Application a) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -1015,7 +1094,8 @@ class _AppHeroHeader extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-            shape: BoxShape.circle, color: Colors.white.withValues(alpha: opacity)),
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: opacity)),
       );
 }
 
@@ -1109,10 +1189,19 @@ class _AppCard extends StatelessWidget {
                                     height: 40,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Center(
-                                      child: Text(initial, style: TextStyle(color: cfg.fg, fontSize: 16, fontWeight: FontWeight.w800)),
+                                      child: Text(initial,
+                                          style: TextStyle(
+                                              color: cfg.fg,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800)),
                                     ),
                                   )
-                                : Center(child: Text(initial, style: TextStyle(color: cfg.fg, fontSize: 16, fontWeight: FontWeight.w800))),
+                                : Center(
+                                    child: Text(initial,
+                                        style: TextStyle(
+                                            color: cfg.fg,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800))),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -1691,4 +1780,3 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
     );
   }
 }
-

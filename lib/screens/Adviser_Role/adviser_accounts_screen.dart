@@ -3,7 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdviserAccountsScreen extends StatefulWidget {
   final String orgId, orgName;
-  const AdviserAccountsScreen({super.key, required this.orgId, required this.orgName});
+  const AdviserAccountsScreen(
+      {super.key, required this.orgId, required this.orgName});
 
   @override
   State<AdviserAccountsScreen> createState() => _AdviserAccountsScreenState();
@@ -53,7 +54,8 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
       // member records from `profiles.role` or `assigned_org_id`.
       final response = await db
           .from('members')
-          .select('id,name,position,profile_id,profiles(id,name,email,role,active,avatar_url,student_id)')
+          .select(
+              'id,name,position,profile_id,profiles(id,name,email,role,active,avatar_url,student_id)')
           .eq('org_id', widget.orgId)
           .order('name');
       final rows = List<Map<String, dynamic>>.from(response as List);
@@ -83,11 +85,14 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           title: Row(children: [
             const Icon(Icons.workspace_premium_rounded, color: green),
             const SizedBox(width: 10),
-            Expanded(child: Text('Assign position to $name', maxLines: 2, overflow: TextOverflow.ellipsis)),
+            Expanded(
+                child: Text('Assign position to $name',
+                    maxLines: 2, overflow: TextOverflow.ellipsis)),
           ]),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -98,27 +103,35 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                 style: TextStyle(color: muted, height: 1.4, fontSize: 12.5),
               ),
               const SizedBox(height: 16),
-              const Text('Organization position', style: TextStyle(fontWeight: FontWeight.w800, color: dark)),
+              const Text('Organization position',
+                  style: TextStyle(fontWeight: FontWeight.w800, color: dark)),
               const SizedBox(height: 7),
               DropdownButtonFormField<String>(
                 initialValue: position,
                 isExpanded: true,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.badge_rounded, color: green),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
                 items: [
-                  ...officerPositions.map((v) => DropdownMenuItem(value: v, child: Text(v))),
-                  const DropdownMenuItem(value: 'Member', child: Text('Member')),
+                  ...officerPositions
+                      .map((v) => DropdownMenuItem(value: v, child: Text(v))),
+                  const DropdownMenuItem(
+                      value: 'Member', child: Text('Member')),
                 ],
-                onChanged: (v) => setDialogState(() => position = v ?? 'Member'),
+                onChanged: (v) =>
+                    setDialogState(() => position = v ?? 'Member'),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: green, foregroundColor: Colors.white),
+              style: FilledButton.styleFrom(
+                  backgroundColor: green, foregroundColor: Colors.white),
               onPressed: () => Navigator.pop(ctx, position),
               child: const Text('Save Position'),
             ),
@@ -138,12 +151,18 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
         'assigned_org_id': makeOfficer ? widget.orgId : null,
       }).eq('id', profile['id'].toString());
 
-      await db.from('members').update({
-        'position': result,
-      }).eq('id', member['id'].toString()).eq('org_id', widget.orgId);
+      await db
+          .from('members')
+          .update({
+            'position': result,
+          })
+          .eq('id', member['id'].toString())
+          .eq('org_id', widget.orgId);
 
       if (!mounted) return;
-      _snack(makeOfficer ? '$name is now $result and can access the Officer area.' : '$name is now a regular member.');
+      _snack(makeOfficer
+          ? '$name is now $result and can access the Officer area.'
+          : '$name is now a regular member.');
       await load();
     } catch (e) {
       if (!mounted) return;
@@ -174,7 +193,11 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFFF1FCF6), Color(0xFFE1F6EB), Color(0xFFD1EFDF)],
+                    colors: [
+                      Color(0xFFF1FCF6),
+                      Color(0xFFE1F6EB),
+                      Color(0xFFD1EFDF)
+                    ],
                   ),
                 ),
                 child: Column(
@@ -195,7 +218,8 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                           thickness: 7,
                           child: ListView(
                             controller: _accountsScrollController,
-                            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                            physics: const AlwaysScrollableScrollPhysics(
+                                parent: BouncingScrollPhysics()),
                             padding: const EdgeInsets.fromLTRB(16, 18, 16, 34),
                             children: [
                               const SizedBox(height: 4),
@@ -204,12 +228,17 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                                   const Expanded(
                                     child: Text(
                                       'Organization Members',
-                                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: dark),
+                                      style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w900,
+                                          color: dark),
                                     ),
                                   ),
                                   Text(
                                     '${members.length} total',
-                                    style: const TextStyle(color: muted, fontWeight: FontWeight.w700),
+                                    style: const TextStyle(
+                                        color: muted,
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ],
                               ),
@@ -217,7 +246,10 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                               if (members.isEmpty)
                                 _empty()
                               else
-                                ...members.asMap().entries.map((e) => _memberCard(e.value, e.key)),
+                                ...members
+                                    .asMap()
+                                    .entries
+                                    .map((e) => _memberCard(e.value, e.key)),
                             ],
                           ),
                         ),
@@ -231,9 +263,9 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
   }
 
   Widget _accountHeader() => SizedBox(
-        width: double.infinity,
-        height: 126,
-        child: Container(
+      width: double.infinity,
+      height: 126,
+      child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -251,7 +283,8 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
               child: IconButton(
                 tooltip: 'Back',
                 onPressed: () => Navigator.maybePop(context),
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 26),
+                icon: const Icon(Icons.arrow_back_rounded,
+                    color: Colors.white, size: 26),
               ),
             ),
             Padding(
@@ -264,9 +297,12 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: .15),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: .24), width: 1.4),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: .24),
+                          width: 1.4),
                     ),
-                    child: const Icon(Icons.manage_accounts_rounded, color: Colors.white, size: 28),
+                    child: const Icon(Icons.manage_accounts_rounded,
+                        color: Colors.white, size: 28),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -278,14 +314,22 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                           'ORGANIZATION ACCOUNTS',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.0),
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0),
                         ),
                         const SizedBox(height: 5),
                         Text(
                           widget.orgName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, height: 1.0),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0),
                         ),
                       ],
                     ),
@@ -316,7 +360,12 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
         color: card,
         borderRadius: BorderRadius.circular(23),
         border: Border.all(color: green.withValues(alpha: .09)),
-        boxShadow: [BoxShadow(color: green.withValues(alpha: .055), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [
+          BoxShadow(
+              color: green.withValues(alpha: .055),
+              blurRadius: 16,
+              offset: const Offset(0, 6))
+        ],
       ),
       child: Row(
         children: [
@@ -328,13 +377,23 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: officer ? green.withValues(alpha: .18) : const Color(0xFFDBEAFE),
+                  color: officer
+                      ? green.withValues(alpha: .18)
+                      : const Color(0xFFDBEAFE),
                 ),
                 child: CircleAvatar(
-                  backgroundColor: officer ? const Color(0xFFE0F7EA) : const Color(0xFFEFF6FF),
-                  backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                  backgroundColor: officer
+                      ? const Color(0xFFE0F7EA)
+                      : const Color(0xFFEFF6FF),
+                  backgroundImage:
+                      avatar.isNotEmpty ? NetworkImage(avatar) : null,
                   child: avatar.isEmpty
-                      ? Icon(officer ? Icons.workspace_premium_rounded : Icons.person_rounded, color: officer ? green : const Color(0xFF2563EB), size: 27)
+                      ? Icon(
+                          officer
+                              ? Icons.workspace_premium_rounded
+                              : Icons.person_rounded,
+                          color: officer ? green : const Color(0xFF2563EB),
+                          size: 27)
                       : null,
                 ),
               ),
@@ -358,19 +417,40 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, color: dark, fontSize: 15)),
+                Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: dark,
+                        fontSize: 15)),
                 const SizedBox(height: 3),
-                Text(x['email']?.toString() ?? 'No email linked', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: muted)),
+                Text(x['email']?.toString() ?? 'No email linked',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11.5, color: muted)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(color: green.withValues(alpha: .10), borderRadius: BorderRadius.circular(30)),
-                      child: Text(officer ? position.toUpperCase() : 'MEMBER', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: green, letterSpacing: .45)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                          color: green.withValues(alpha: .10),
+                          borderRadius: BorderRadius.circular(30)),
+                      child: Text(officer ? position.toUpperCase() : 'MEMBER',
+                          style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: green,
+                              letterSpacing: .45)),
                     ),
                     const SizedBox(width: 7),
-                    Text(active ? 'Active' : 'Inactive', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: active ? green : muted)),
+                    Text(active ? 'Active' : 'Inactive',
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: active ? green : muted)),
                   ],
                 ),
               ],
@@ -378,7 +458,8 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
           ),
           IconButton(
             tooltip: 'Change member role',
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: green, size: 28),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                color: green, size: 28),
             onPressed: () => changeRole(member),
           ),
         ],
@@ -388,14 +469,21 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
 
   Widget _empty() => Container(
         padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(25), border: Border.all(color: green.withValues(alpha: .10))),
+        decoration: BoxDecoration(
+            color: card,
+            borderRadius: BorderRadius.circular(25),
+            border: Border.all(color: green.withValues(alpha: .10))),
         child: const Column(
           children: [
             Icon(Icons.groups_2_outlined, color: green, size: 45),
             SizedBox(height: 10),
-            Text('No members yet', style: TextStyle(color: dark, fontSize: 17, fontWeight: FontWeight.w900)),
+            Text('No members yet',
+                style: TextStyle(
+                    color: dark, fontSize: 17, fontWeight: FontWeight.w900)),
             SizedBox(height: 4),
-            Text('Approved organization members will appear here.', textAlign: TextAlign.center, style: TextStyle(color: muted, height: 1.4)),
+            Text('Approved organization members will appear here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: muted, height: 1.4)),
           ],
         ),
       );

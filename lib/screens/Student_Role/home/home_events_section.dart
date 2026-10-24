@@ -114,33 +114,41 @@ class _HomeEventsSectionState extends State<HomeEventsSection> {
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, double horizontalPadding) {
+  /// Builds the section heading, subtitle, and View All action.
+  Widget _buildSectionHeader(
+    BuildContext context,
+    HomeLayout layout,
+  ) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      padding: EdgeInsets.symmetric(horizontal: layout.homeHPad),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Text(
-                  'Upcoming Events',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: HC.ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
+                Semantics(
+                  header: true,
+                  child: Text(
+                    'Upcoming Events',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: HC.ink,
+                      fontSize: layout.isDesktop ? 19 : 17,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   'Latest posts from campus organizations',
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: HC.muted,
-                    fontSize: 11,
+                    fontSize: layout.isMobile ? 11 : 12,
                   ),
                 ),
               ],
@@ -170,62 +178,76 @@ class _HomeEventsSectionState extends State<HomeEventsSection> {
     );
   }
 
-  Widget _buildEmptyState(double horizontalPadding) {
+  /// Builds the empty-state card without imposing a fixed height.
+  ///
+  /// On desktop-sized Home layouts, the card is left-aligned and capped at
+  /// 720 pixels. At narrower widths, it uses the available content width.
+  Widget _buildEmptyState(HomeLayout layout) {
+    final cardPadding = layout.isMobile ? 20.0 : 24.0;
+
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: HC.mint,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: HC.line),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.event_available_rounded,
-                size: 27,
-                color: HC.primary,
-              ),
+      padding: EdgeInsets.symmetric(horizontal: layout.homeHPad),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: layout.isDesktop
+              ? const BoxConstraints(maxWidth: 720)
+              : const BoxConstraints(),
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(cardPadding),
+            decoration: BoxDecoration(
+              color: HC.mint,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: HC.line),
             ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'No upcoming events yet',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: HC.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  SizedBox(height: 5),
-                  Text(
-                    'Events from campus organizations will appear here.',
-                    style: TextStyle(
-                      color: HC.muted,
-                      fontSize: 12,
-                      height: 1.45,
-                    ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.event_available_rounded,
+                    size: 27,
+                    color: HC.primary,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'No upcoming events yet',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: HC.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        'Events from campus organizations will appear here.',
+                        style: TextStyle(
+                          color: HC.muted,
+                          fontSize: 12,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -234,19 +256,20 @@ class _HomeEventsSectionState extends State<HomeEventsSection> {
   @override
   Widget build(BuildContext context) {
     final events = HomeData.upcomingEvents();
-    final horizontalPadding = HomeLayout.of(context).hPad;
 
     _scheduleInterestLoad(
       events.map((event) => event.id).toList(growable: false),
     );
 
+    final layout = HomeLayout.of(context);
+
     if (events.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const SizedBox(height: 24),
-          _buildEmptyState(horizontalPadding),
-          const SizedBox(height: 32),
+          SizedBox(height: layout.sectionGap),
+          _buildEmptyState(layout),
+          SizedBox(height: layout.sectionGap),
         ],
       );
     }
@@ -254,23 +277,23 @@ class _HomeEventsSectionState extends State<HomeEventsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const SizedBox(height: 24),
+        SizedBox(height: layout.sectionGap),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          padding: EdgeInsets.symmetric(horizontal: layout.homeHPad),
           child: FeaturedEventCarousel(
             events: events,
             onViewDetails: (event) => _openEvent(context, event),
           ),
         ),
-        const SizedBox(height: 24),
-        _buildSectionHeader(context, horizontalPadding),
-        const SizedBox(height: 12),
+        SizedBox(height: layout.sectionGap),
+        _buildSectionHeader(context, layout),
+        SizedBox(height: layout.cardGap),
         UpcomingEventsRow(
           events: events,
           interestCounts: _interest,
           onOpen: (event) => _openEvent(context, event),
         ),
-        const SizedBox(height: 32),
+        SizedBox(height: layout.sectionGap),
       ],
     );
   }
