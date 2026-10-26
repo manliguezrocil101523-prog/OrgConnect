@@ -115,13 +115,14 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
     }
   }
 
-  // Show org picker when admin sets role to Officer or Adviser.
+  // Org picker. For 'officer', the chosen org makes the user its President.
   Future<void> _showOrgPickerDialog(
     Map<String, dynamic> user, {
     String role = 'officer',
   }) async {
     final orgs = AppState.instance.organizations;
     final p = _p;
+    final isOfficerFlow = role == 'officer';
 
     if (orgs.isEmpty) {
       _showSnack('No organizations found. Please add organizations first.');
@@ -182,11 +183,10 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Select which org ${user['name'] ?? user['email']} can access as ${role == 'adviser' ? 'Adviser' : 'Officer'}',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: p.textSub,
-                    ),
+                    isOfficerFlow
+                        ? 'Select an organization. ${_displayName(user)} will become its President.'
+                        : 'Select which org ${_displayName(user)} can access as Adviser',
+                    style: TextStyle(fontSize: 12.5, color: p.textSub),
                   ),
                 ],
               ),
@@ -198,6 +198,21 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                   itemBuilder: (_, index) {
                     final org = orgs[index];
                     final isChosen = selectedOrg?.id == org.id;
+
+                    String subtitle;
+                    if (!isOfficerFlow) {
+                      subtitle = 'ID: ${org.id}';
+                    } else {
+                      final president = _presidentOf(org.id);
+                      if (president == null) {
+                        subtitle = 'No president yet';
+                      } else if (president['id'].toString() ==
+                          user['id'].toString()) {
+                        subtitle = 'Current president: this account';
+                      } else {
+                        subtitle = 'President: ${_displayName(president)}';
+                      }
+                    }
 
                     return GestureDetector(
                       onTap: () => setDialogState(() => selectedOrg = org),
@@ -251,7 +266,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                                     ),
                                   ),
                                   Text(
-                                    'ID: ${org.id}',
+                                    subtitle,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -272,10 +287,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: p.textSub),
-                  ),
+                  child: Text('Cancel', style: TextStyle(color: p.textSub)),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -288,30 +300,23 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                   onPressed: selectedOrg == null
                       ? null
                       : () async {
+                          final org = selectedOrg!;
                           Navigator.pop(ctx);
 
+                          if (isOfficerFlow) {
+                            await _assignPresident(user, org);
+                            return;
+                          }
+
+                          // Adviser flow (unchanged behavior).
                           final userId = user['id'].toString();
-                          final orgId = selectedOrg!.id;
                           try {
-                            if (role == 'officer') {
-                              // Also creates the members row, so the officer
-                              // can pass the login designation check.
-                              await supabase.Supabase.instance.client.rpc(
-                                'admin_assign_officer',
-                                params: {
-                                  'p_user_id': userId,
-                                  'p_org_id': orgId,
-                                  'p_position': 'Officer',
-                                },
-                              );
-                            } else {
-                              await supabase.Supabase.instance.client
-                                  .from('profiles')
-                                  .update({
-                                'role': role,
-                                'assigned_org_id': orgId,
-                              }).eq('id', userId);
-                            }
+                            await supabase.Supabase.instance.client
+                                .from('profiles')
+                                .update({
+                              'role': role,
+                              'assigned_org_id': org.id,
+                            }).eq('id', userId);
 
                             if (!mounted) return;
 
@@ -319,18 +324,14 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                               final idx = dbUsers.indexWhere(
                                 (u) => u['id'] == userId,
                               );
-
                               if (idx != -1) {
                                 dbUsers[idx]['role'] = role;
-                                dbUsers[idx]['assigned_org_id'] = orgId;
-                                if (role == 'officer') {
-                                  dbUsers[idx]['officer_position'] = 'Officer';
-                                }
+                                dbUsers[idx]['assigned_org_id'] = org.id;
                               }
                             });
 
                             _showSnack(
-                              '${user['name'] ?? user['email']} is now ${role == 'adviser' ? 'Adviser' : 'Officer'} of ${selectedOrg!.name}',
+                              '${_displayName(user)} is now Adviser of ${org.name}',
                             );
                           } catch (e) {
                             if (!mounted) return;
@@ -348,6 +349,138 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
         );
       },
     );
+  }
+
+  // President of an org, read from the accounts already loaded on this screen.
+  Map<String, dynamic>? _presidentOf(String orgId) {
+    for (final u in dbUsers) {
+      if (_roleOf(u) == 'officer' &&
+          u['assigned_org_id']?.toString() == orgId &&
+          u['officer_position']?.toString() == 'President') {
+        return u;
+      }
+    }
+    return null;
+  }
+
+  String _displayName(Map<String, dynamic> u) {
+    final name = u['name']?.toString().trim() ?? '';
+    return name.isNotEmpty ? name : (u['email']?.toString() ?? 'Unknown');
+  }
+
+  Future<bool> _confirmReplacePresident({
+    required String orgName,
+    required String currentName,
+    required String newName,
+  }) async {
+    final p = _p;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: p.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: p.border),
+        ),
+        title: Text(
+          'Replace president?',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: p.textMain,
+          ),
+        ),
+        content: Text(
+          '$orgName already has a president ($currentName).\n\n'
+          '$newName will become the new President, and $currentName '
+          'will become a regular Officer.',
+          style: TextStyle(fontSize: 13.5, color: p.textSub, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: p.textSub)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accent,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Replace', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<void> _assignPresident(
+    Map<String, dynamic> user,
+    Organization org,
+  ) async {
+    final client = supabase.Supabase.instance.client;
+    final userId = user['id'].toString();
+    final current = _presidentOf(org.id);
+
+    if (current != null && current['id'].toString() == userId) {
+      _showSnack('${_displayName(user)} is already President of ${org.name}');
+      return;
+    }
+
+    String? demotedId;
+    if (current != null) {
+      final ok = await _confirmReplacePresident(
+        orgName: org.name,
+        currentName: _displayName(current),
+        newName: _displayName(user),
+      );
+      if (!ok || !mounted) return;
+      demotedId = current['id'].toString();
+    }
+
+    try {
+      // 1) Demote the old president first, so two presidents never exist.
+      if (demotedId != null) {
+        await client.rpc('admin_assign_officer', params: {
+          'p_user_id': demotedId,
+          'p_org_id': org.id,
+          'p_position': 'Officer',
+        });
+      }
+
+      // 2) Promote the new president. If this fails, restore the old one.
+      try {
+        await client.rpc('admin_assign_officer', params: {
+          'p_user_id': userId,
+          'p_org_id': org.id,
+          'p_position': 'President',
+        });
+      } catch (e) {
+        if (demotedId != null) {
+          try {
+            await client.rpc('admin_assign_officer', params: {
+              'p_user_id': demotedId,
+              'p_org_id': org.id,
+              'p_position': 'President',
+            });
+          } catch (_) {}
+        }
+        rethrow;
+      }
+
+      await _fetchUsersFromDatabase();
+      if (!mounted) return;
+      _showSnack('${_displayName(user)} is now President of ${org.name}');
+    } catch (e) {
+      await _fetchUsersFromDatabase();
+      if (!mounted) return;
+      _showSnack('Could not assign president: $e');
+    }
   }
 
   void _showSnack(String message) {
@@ -988,7 +1121,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 240),
                     child: role == 'officer'
-                        ? _buildOfficerPositionDropdown(p, u)
+                        ? _buildOfficerOrgSelector(p, u)
                         : _buildRoleDropdown(p, u, role),
                   ),
                 ),
@@ -1178,6 +1311,57 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
             _setOfficerPosition(u, position);
           }
         },
+      ),
+    );
+  }
+
+  Widget _buildOfficerOrgSelector(_Palette p, Map<String, dynamic> u) {
+    final orgId = u['assigned_org_id']?.toString() ?? '';
+    var label = 'Select organization';
+    if (orgId.isNotEmpty) {
+      label = orgId;
+      for (final o in AppState.instance.organizations) {
+        if (o.id == orgId) {
+          label = o.name;
+          break;
+        }
+      }
+    }
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => _showOrgPickerDialog(u, role: 'officer'),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: p.subtle,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: p.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.textMain,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: p.textSub,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

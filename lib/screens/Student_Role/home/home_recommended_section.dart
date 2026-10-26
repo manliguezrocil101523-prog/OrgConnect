@@ -543,7 +543,7 @@ class _RecommendedOrgCard extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      isApplied ? 'Applied' : 'Join',
+                      isApplied ? 'Applied' : 'Apply',
                       maxLines: 1,
                       softWrap: false,
                       overflow: TextOverflow.ellipsis,
