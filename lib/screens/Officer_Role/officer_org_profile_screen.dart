@@ -196,9 +196,10 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
 
   String _existingOfficerAvatar(String name) {
     final target = name.trim().toLowerCase();
+    // If this officer already has an org-level entry, trust it
+    // (even if the photo was intentionally removed).
     for (final profile in _officerProfiles) {
-      if (profile.name.trim().toLowerCase() == target &&
-          profile.avatarUrl.trim().isNotEmpty) {
+      if (profile.name.trim().toLowerCase() == target) {
         return profile.avatarUrl.trim();
       }
     }
@@ -210,18 +211,32 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     return '';
   }
 
-  Future<void> _editAdviserProfile() async {
-    final adviser = _personByRole('adviser');
-    if (adviser == null || adviser['id'] == null) {
-      _snack('The adviser account could not be found for this organization.',
-          isError: true);
-      return;
+  // ── Org-level adviser data (does NOT touch the adviser's real account) ────
+  OrgOfficerProfile? _adviserProfile() {
+    for (final p in _officerProfiles) {
+      if (p.role.trim().toLowerCase() == 'adviser') return p;
     }
-    final nameCtrl = TextEditingController(
-        text: adviser['name']?.toString() ?? _adviserCtrl.text);
+    return null;
+  }
+
+  String _adviserDisplayName() {
+    final typed = _adviserCtrl.text.trim();
+    if (typed.isNotEmpty) return typed;
+    return _personByRole('adviser')?['name']?.toString().trim() ?? '';
+  }
+
+  String _adviserDisplayAvatar() {
+    final saved = _adviserProfile();
+    if (saved != null) return saved.avatarUrl.trim();
+    return _personByRole('adviser')?['avatar_url']?.toString() ?? '';
+  }
+
+  Future<void> _editAdviserProfile() async {
+    final nameCtrl = TextEditingController(text: _adviserDisplayName());
     Uint8List? pickedBytes;
     String? pickedExt;
-    final currentAvatar = adviser['avatar_url']?.toString() ?? '';
+    var currentAvatar = _adviserDisplayAvatar();
+
     final save = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -273,7 +288,19 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                     textAlign: TextAlign.center,
                     style:
                         TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                const SizedBox(height: 16),
+                if (pickedBytes != null || currentAvatar.trim().isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => setDialogState(() {
+                      pickedBytes = null;
+                      pickedExt = null;
+                      currentAvatar = '';
+                    }),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Remove photo'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.red.shade400),
+                  ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: nameCtrl,
                   textCapitalization: TextCapitalization.words,
@@ -295,8 +322,12 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                 onPressed: () {
                   final name = nameCtrl.text.trim();
                   if (name.isNotEmpty) {
-                    Navigator.pop(dialogContext,
-                        {'name': name, 'bytes': pickedBytes, 'ext': pickedExt});
+                    Navigator.pop(dialogContext, {
+                      'name': name,
+                      'bytes': pickedBytes,
+                      'ext': pickedExt,
+                      'avatar': currentAvatar,
+                    });
                   }
                 },
                 child: const Text('Save Adviser')),
@@ -306,36 +337,28 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     );
     nameCtrl.dispose();
     if (save == null) return;
-    try {
-      var avatarUrl = currentAvatar;
-      final bytes = save['bytes'] as Uint8List?;
-      if (bytes != null) {
-        avatarUrl = await _uploadOfficerPhoto(
-                bytes, save['ext']?.toString() ?? 'jpg') ??
-            avatarUrl;
+
+    var avatarUrl = save['avatar']?.toString() ?? '';
+    final bytes = save['bytes'] as Uint8List?;
+    if (bytes != null) {
+      final uploaded =
+          await _uploadOfficerPhoto(bytes, save['ext']?.toString() ?? 'jpg');
+      if (uploaded == null) {
+        _snack('Photo upload failed. Please try again.', isError: true);
+        return;
       }
-      final changes = <String, dynamic>{
-        'name': save['name'],
-        'avatar_url': avatarUrl
-      };
-      await Supabase.instance.client
-          .from('profiles')
-          .update(changes)
-          .eq('id', adviser['id'].toString());
-      await Supabase.instance.client
-          .from('organizations')
-          .update({'adviser': save['name'].toString()}).eq('id', widget.orgId);
-      if (!mounted) return;
-      setState(() {
-        adviser.addAll(changes);
-        _adviserCtrl.text = save['name'].toString();
-        _org = _org.copyWith(adviser: save['name'].toString());
-      });
-      await AppState.instance.fetchOrganizations();
-      _snack('Adviser details updated.');
-    } catch (e) {
-      _snack('Could not save adviser details: $e', isError: true);
+      avatarUrl = uploaded;
     }
+    if (!mounted) return;
+    final name = save['name'].toString();
+    setState(() {
+      _adviserCtrl.text = name;
+      _officerProfiles
+          .removeWhere((p) => p.role.trim().toLowerCase() == 'adviser');
+      _officerProfiles.add(
+          OrgOfficerProfile(name: name, role: 'Adviser', avatarUrl: avatarUrl));
+    });
+    _snack('Adviser updated. Tap "Save Changes" to apply.');
   }
 
   Future<OrgOfficerProfile?> _showOfficerEditor({
@@ -413,6 +436,18 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
+                  if (pickedBytes != null || currentAvatar.trim().isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () => setDialogState(() {
+                        pickedBytes = null;
+                        pickedExt = null;
+                        currentAvatar = '';
+                      }),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      label: const Text('Remove photo'),
+                      style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade400),
+                    ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nameCtrl,
@@ -482,6 +517,46 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     return result;
   }
 
+  // ── Officer ordering (President → VPs → Secretary → Treasurer → ...) ──────
+  String _roleFromRaw(String raw) {
+    final split = raw.indexOf(':');
+    return split == -1 ? 'Officer' : raw.substring(0, split).trim();
+  }
+
+  int _roleRank(String role) {
+    final r = role.toLowerCase();
+    final assistant = (r.contains('assistant') || r.contains('asst')) ? 1 : 0;
+    if (r.contains('vice') || RegExp(r'\bvp\b').hasMatch(r))
+      return 20 + assistant;
+    if (r.contains('president') ||
+        r.contains('chairperson') ||
+        r.contains('chairman')) {
+      return 10 + assistant;
+    }
+    if (r.contains('secretary')) return 30 + assistant;
+    if (r.contains('treasurer')) return 40 + assistant;
+    if (r.contains('auditor')) return 50 + assistant;
+    if (r.contains('public relation') ||
+        r.contains('public information') ||
+        RegExp(r'\bpro\b').hasMatch(r)) {
+      return 60 + assistant;
+    }
+    return 100; // unknown roles keep their current order, at the end
+  }
+
+  // Dart's List.sort is not stable, so the original index is the tie-breaker.
+  void _sortOfficersByRank() {
+    final entries = <MapEntry<int, String>>[
+      for (var i = 0; i < _officers.length; i++) MapEntry(i, _officers[i]),
+    ];
+    entries.sort((a, b) {
+      final byRank = _roleRank(_roleFromRaw(a.value))
+          .compareTo(_roleRank(_roleFromRaw(b.value)));
+      return byRank != 0 ? byRank : a.key.compareTo(b.key);
+    });
+    _officers = entries.map((e) => e.value).toList();
+  }
+
   Future<void> _addOfficer() async {
     final profile = await _showOfficerEditor();
     if (profile == null) return;
@@ -492,6 +567,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
             item.name.trim().toLowerCase() == profile.name.trim().toLowerCase(),
       );
       _officerProfiles.add(profile);
+      _sortOfficersByRank();
     });
   }
 
@@ -522,6 +598,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
             item.name.trim().toLowerCase() == updated.name.trim().toLowerCase(),
       );
       _officerProfiles.add(updated);
+      _sortOfficersByRank();
     });
   }
 
@@ -818,18 +895,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                               Center(
                                   child: _ProfilePersonEditorCard(
                                 label: 'Adviser',
-                                name: _personByRole('adviser')?['name']
-                                            ?.toString()
-                                            .trim()
-                                            .isNotEmpty ==
-                                        true
-                                    ? _personByRole('adviser')!['name']
-                                        .toString()
-                                    : _adviserCtrl.text.trim(),
-                                avatarUrl:
-                                    _personByRole('adviser')?['avatar_url']
-                                            ?.toString() ??
-                                        '',
+                                name: _adviserDisplayName(),
+                                avatarUrl: _adviserDisplayAvatar(),
                                 width: 172,
                                 onEdit: _editAdviserProfile,
                               )),
@@ -1290,9 +1357,8 @@ class _OfficerPeopleEditor extends StatelessWidget {
   String _profileAvatar(String name) {
     final target = name.trim().toLowerCase();
     for (final profile in profiles) {
-      if (profile.name.trim().toLowerCase() == target &&
-          profile.avatarUrl.trim().isNotEmpty) {
-        return profile.avatarUrl.trim();
+      if (profile.name.trim().toLowerCase() == target) {
+        return profile.avatarUrl.trim(); // explicit entry wins, even if empty
       }
     }
     return _avatarFor(name);
@@ -1672,6 +1738,72 @@ class _MediaEditCardState extends State<_MediaEditCard> {
     }
   }
 
+  Future<void> _editItem(OrgMediaItem item) async {
+    final titleCtrl = TextEditingController(
+        text: item.title.trim().isNotEmpty
+            ? item.title.trim()
+            : item.caption.trim());
+    final descCtrl = TextEditingController(text: item.description.trim());
+    final details = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(item.type == 'video'
+            ? 'Edit activity video'
+            : 'Edit activity picture'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Activity name',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: descCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: 'Short description (optional)',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop({
+              'title': titleCtrl.text.trim(),
+              'description': descCtrl.text.trim(),
+            }),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (details == null) return;
+    final index = widget.items.indexWhere((c) => identical(c, item));
+    if (index == -1) return;
+    final updated = [...widget.items];
+    updated[index] = OrgMediaItem(
+      type: item.type,
+      content: item.content,
+      title: details['title'] ?? '',
+      description: details['description'] ?? '',
+    );
+    widget.onChanged(updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleItems = widget.items
@@ -1813,6 +1945,13 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                       ),
                     ),
                     // Delete
+                    GestureDetector(
+                      onTap: () => _editItem(item),
+                      child: Icon(Icons.edit_rounded,
+                          size: 20, color: widget.accentColor),
+                    ),
+                    const SizedBox(width: 10),
+
                     GestureDetector(
                       onTap: () {
                         final target = item;

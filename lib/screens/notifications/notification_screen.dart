@@ -23,7 +23,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
   void initState() {
     super.initState();
     _app.addListener(_onAppStateChanged);
-    // Force a fresh fetch every time this screen opens.
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
   }
 
@@ -33,7 +32,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
     super.dispose();
   }
 
-  // Guard: the listener can fire after the screen is gone.
   void _onAppStateChanged() {
     if (mounted) setState(() {});
   }
@@ -60,15 +58,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     if (!n.read) _app.markNotificationRead(n.id);
   }
 
-  @override
-  Widget build(BuildContext context) {
+  ({List<Notification> interviews, List<Notification> members})
+      _filterNotifications() {
     final student = _app.currentStudent;
     final interviews = <Notification>[];
     final members = <Notification>[];
 
     if (student != null) {
-      // One student-facing card per organization and category
-      // (guards against duplicates from cached or realtime state).
       final seen = <String>{};
       for (final n in _app.notifications) {
         if (n.studentId != student.id && n.studentId != student.studentId) {
@@ -84,6 +80,19 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
     }
 
+    return (interviews: interviews, members: members);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final insets = MediaQuery.paddingOf(context);
+    final dims = _Dims.fromWidth(width);
+    final filtered = _filterNotifications();
+    final interviews = filtered.interviews;
+    final members = filtered.members;
+    final isEmpty = interviews.isEmpty && members.isEmpty;
+
     Widget card(Notification n, int i, Color color, IconData icon) =>
         _NotificationCard(
           key: ValueKey(n.id),
@@ -91,129 +100,275 @@ class _NotificationScreenState extends State<NotificationScreen> {
           index: i,
           color: color,
           icon: icon,
+          dims: dims,
           onTap: () => _open(n),
         );
 
-    final isEmpty = interviews.isEmpty && members.isEmpty;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
-      body: Column(
-        children: [
-          _Header(
-            onBack: widget.showBackButton
-                ? () => Navigator.of(context).maybePop()
-                : null,
-          ),
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: RefreshIndicator(
-                  onRefresh: _refresh,
-                  color: _primary,
-                  child: CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      if (isEmpty)
-                        const SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: _EmptyState(),
-                        )
-                      else
-                        SliverPadding(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            20,
-                            16,
-                            32 + MediaQuery.paddingOf(context).bottom,
-                          ),
-                          sliver: SliverList.list(
-                            children: [
-                              if (interviews.isNotEmpty) ...[
-                                const _SectionLabel('Interview Notifications'),
-                                for (var i = 0; i < interviews.length; i++)
-                                  card(interviews[i], i, _amber,
-                                      Icons.schedule_rounded),
-                              ],
-                              if (members.isNotEmpty) ...[
-                                if (interviews.isNotEmpty)
-                                  const SizedBox(height: 12),
-                                const _SectionLabel('Other Notifications'),
-                                for (var i = 0; i < members.length; i++)
-                                  card(members[i], i, _teal,
-                                      Icons.celebration_rounded),
-                              ],
-                            ],
-                          ),
+    return MediaQuery.withClampedTextScaling(
+      minScaleFactor: 1.0,
+      maxScaleFactor: 1.3,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF1F5F9),
+        body: Column(
+          children: [
+            _Header(
+              dims: dims,
+              insets: insets,
+              onBack: widget.showBackButton
+                  ? () => Navigator.of(context).maybePop()
+                  : null,
+            ),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                left: false,
+                right: false,
+                bottom: true,
+                child: LayoutBuilder(
+                  builder: (context, viewport) => Center(
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(maxWidth: dims.contentMaxWidth),
+                      child: RefreshIndicator(
+                        onRefresh: _refresh,
+                        color: _primary,
+                        child: CustomScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            if (isEmpty)
+                              SliverToBoxAdapter(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    minHeight: viewport.maxHeight,
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                      dims.horizontalPadding + insets.left,
+                                      0,
+                                      dims.horizontalPadding + insets.right,
+                                      0,
+                                    ),
+                                    child: _EmptyState(dims: dims),
+                                  ),
+                                ),
+                              )
+                            else
+                              SliverPadding(
+                                padding: EdgeInsets.fromLTRB(
+                                  dims.horizontalPadding + insets.left,
+                                  20,
+                                  dims.horizontalPadding + insets.right,
+                                  32,
+                                ),
+                                sliver: SliverList.list(
+                                  children: [
+                                    if (interviews.isNotEmpty) ...[
+                                      const _SectionLabel(
+                                        'Interview Notifications',
+                                      ),
+                                      for (var i = 0;
+                                          i < interviews.length;
+                                          i++)
+                                        card(
+                                          interviews[i],
+                                          i,
+                                          _amber,
+                                          Icons.schedule_rounded,
+                                        ),
+                                    ],
+                                    if (members.isNotEmpty) ...[
+                                      if (interviews.isNotEmpty)
+                                        const SizedBox(height: 12),
+                                      const _SectionLabel(
+                                        'Other Notifications',
+                                      ),
+                                      for (var i = 0; i < members.length; i++)
+                                        card(
+                                          members[i],
+                                          i,
+                                          _teal,
+                                          Icons.celebration_rounded,
+                                        ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _Dims {
+  final double screenWidth;
+  final double horizontalPadding;
+  final double cardPadding;
+  final double iconBoxSize;
+  final double titleFontSize;
+  final double bodyFontSize;
+  final double timeFontSize;
+  final double headerHeight;
+  final double headerTitleFontSize;
+  final double contentMaxWidth;
+
+  const _Dims({
+    required this.screenWidth,
+    required this.horizontalPadding,
+    required this.cardPadding,
+    required this.iconBoxSize,
+    required this.titleFontSize,
+    required this.bodyFontSize,
+    required this.timeFontSize,
+    required this.headerHeight,
+    required this.headerTitleFontSize,
+    required this.contentMaxWidth,
+  });
+
+  factory _Dims.fromWidth(double width) {
+    final compact = width < 360;
+    final wide = width >= 600;
+
+    return _Dims(
+      screenWidth: width,
+      horizontalPadding: compact
+          ? 12
+          : wide
+              ? 24
+              : 16,
+      cardPadding: compact
+          ? 12
+          : wide
+              ? 24
+              : 16,
+      iconBoxSize: compact
+          ? 40
+          : wide
+              ? 48
+              : 44,
+      titleFontSize: compact
+          ? 13
+          : wide
+              ? 16
+              : 14,
+      bodyFontSize: compact
+          ? 12
+          : wide
+              ? 14
+              : 13,
+      timeFontSize: compact
+          ? 11
+          : wide
+              ? 12
+              : 11.5,
+      headerHeight: compact
+          ? 60
+          : wide
+              ? 76
+              : 68,
+      headerTitleFontSize: compact
+          ? 19
+          : wide
+              ? 24
+              : 22,
+      contentMaxWidth: wide ? 680 : 600,
     );
   }
 }
 
 class _Header extends StatelessWidget {
   final VoidCallback? onBack;
-  const _Header({this.onBack});
+  final _Dims dims;
+  final EdgeInsets insets;
 
-  static const double contentHeight = 72; // 👈 base height
+  const _Header({
+    required this.dims,
+    required this.insets,
+    this.onBack,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
+    final orbSize = (dims.screenWidth * 0.32).clamp(96.0, 184.0).toDouble();
 
     return Container(
       width: double.infinity,
-      height: contentHeight + topInset, // 👈 CHANGE 1: 72 + topInset
+      height: dims.headerHeight + insets.top,
       clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(
-        gradient: AppHeader.brandGradient,
-      ),
+      decoration: const BoxDecoration(gradient: AppHeader.brandGradient),
       child: Stack(
         children: [
-          Positioned(right: -45, top: -70, child: _orb(170)),
-          Positioned(right: 45, bottom: -70, child: _orb(125)),
-
-          // 👈 CHANGE 2: Positioned.fill + topInset-only padding,
-          // so the Row is centered inside the 72px content area
+          Positioned(
+            right: -orbSize * 0.28,
+            top: -orbSize * 0.42,
+            child: _orb(orbSize),
+          ),
+          Positioned(
+            right: orbSize * 0.28,
+            bottom: -orbSize * 0.50,
+            child: _orb(orbSize * 0.72),
+          ),
           Positioned.fill(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                onBack == null ? 20 : 8,
-                topInset,
-                20,
-                0,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (onBack != null)
-                    IconButton(
-                      onPressed: onBack,
-                      tooltip: 'Back',
-                      icon: const Icon(Icons.chevron_left_rounded,
-                          color: Colors.white, size: 32),
+              padding: EdgeInsets.only(top: insets.top),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: dims.contentMaxWidth),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      dims.horizontalPadding + insets.left,
+                      0,
+                      dims.horizontalPadding + insets.right,
+                      0,
                     ),
-                  const Expanded(
-                    child: Text(
-                      'Notifications',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (onBack != null) ...[
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: IconButton(
+                              onPressed: onBack,
+                              tooltip: 'Back',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 48,
+                                height: 48,
+                              ),
+                              icon: const Icon(
+                                Icons.chevron_left_rounded,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: Text(
+                            'Notifications',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: dims.headerTitleFontSize,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -227,19 +382,17 @@ class _Header extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: .07),
+          color: Colors.white.withValues(alpha: 0.07),
         ),
       );
 }
 
-// =============================================================================
-// _NotificationCard — shared by interview and membership notifications
-// =============================================================================
 class _NotificationCard extends StatelessWidget {
   final Notification notification;
   final int index;
   final Color color;
   final IconData icon;
+  final _Dims dims;
   final VoidCallback onTap;
 
   const _NotificationCard({
@@ -248,151 +401,178 @@ class _NotificationCard extends StatelessWidget {
     required this.index,
     required this.color,
     required this.icon,
+    required this.dims,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final unread = !notification.read;
+    final delay = (index.clamp(0, 8) * 0.06).toDouble();
 
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300 + index.clamp(0, 8) * 60),
-      curve: Curves.easeOut,
-      builder: (_, v, child) => Opacity(
-        opacity: v,
-        child:
-            Transform.translate(offset: Offset(0, 16 * (1 - v)), child: child),
-      ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: unread
-                ? color.withValues(alpha: 0.40)
-                : const Color(0xFFE2E8F0),
-            width: unread ? 1.5 : 1,
+    return Semantics(
+      container: true,
+      button: true,
+      label:
+          '${notification.title}, ${unread ? 'unread' : 'read'}, ${_prettyMessage(notification.message)}, ${_timeAgo(notification.date)}',
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 900),
+        curve: Interval(delay, 1.0, curve: Curves.easeOut),
+        builder: (_, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 16 * (1 - value)),
+            child: child,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: unread
-                  ? color.withValues(alpha: 0.10)
-                  : Colors.black.withValues(alpha: 0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: unread
-                          ? color.withValues(alpha: 0.12)
-                          : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: unread
+                  ? color.withValues(alpha: 0.40)
+                  : const Color(0xFFE2E8F0),
+              width: unread ? 1.5 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: unread
+                    ? color.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.04),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: onTap,
+              child: Padding(
+                padding: EdgeInsets.all(dims.cardPadding),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: dims.iconBoxSize,
+                      height: dims.iconBoxSize,
+                      decoration: BoxDecoration(
+                        color: unread
+                            ? color.withValues(alpha: 0.12)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        icon,
+                        size: dims.iconBoxSize * 0.5,
+                        color: unread ? color : const Color(0xFF94A3B8),
+                      ),
                     ),
-                    child: Icon(icon,
-                        size: 22,
-                        color: unread ? color : const Color(0xFF94A3B8)),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                notification.title,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: unread
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: unread
-                                      ? const Color(0xFF0F172A)
-                                      : const Color(0xFF64748B),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  notification.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: dims.titleFontSize,
+                                    fontWeight: unread
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: unread
+                                        ? const Color(0xFF0F172A)
+                                        : const Color(0xFF64748B),
+                                  ),
                                 ),
                               ),
-                            ),
-                            if (unread)
-                              Container(
-                                width: 8,
-                                height: 8,
-                                margin: const EdgeInsets.only(left: 8),
-                                decoration: BoxDecoration(
-                                    color: color, shape: BoxShape.circle),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          _prettyMessage(notification.message),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            height: 1.4,
-                            color: Color(0xFF64748B),
+                              if (unread)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 8,
+                                    top: 5,
+                                  ),
+                                  child: Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: color,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.access_time_rounded,
-                                    size: 12, color: Color(0xFF94A3B8)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _timeAgo(notification.date),
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w500,
+                          const SizedBox(height: 5),
+                          Text(
+                            _prettyMessage(notification.message),
+                            style: TextStyle(
+                              fontSize: dims.bodyFontSize,
+                              height: 1.4,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.access_time_rounded,
+                                    size: 12,
                                     color: Color(0xFF94A3B8),
                                   ),
-                                ),
-                              ],
-                            ),
-                            if (unread)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: color.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  'New',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: color,
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _timeAgo(notification.date),
+                                    style: TextStyle(
+                                      fontSize: dims.timeFontSize,
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (unread)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    'New',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: color,
+                                    ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -402,47 +582,50 @@ class _NotificationCard extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _EmptyState
-// =============================================================================
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  final _Dims dims;
+
+  const _EmptyState({required this.dims});
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(dims.cardPadding),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 80,
-              height: 80,
+              width: dims.iconBoxSize + 24,
+              height: dims.iconBoxSize + 24,
               decoration: BoxDecoration(
                 color: const Color(0xFF16A34A).withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.notifications_off_rounded,
-                  size: 36, color: Color(0xFF16A34A)),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'No notifications yet',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
+              child: Icon(
+                Icons.notifications_off_rounded,
+                size: dims.iconBoxSize * 0.8,
+                color: const Color(0xFF16A34A),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
+            const SizedBox(height: 16),
+            Text(
+              'No notifications yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: dims.titleFontSize + 3,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
               "You're all caught up!\nCheck back later for updates.",
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 13.5,
+                fontSize: dims.bodyFontSize,
                 height: 1.5,
-                color: Color(0xFF64748B),
+                color: const Color(0xFF64748B),
               ),
             ),
           ],
@@ -452,11 +635,9 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// _SectionLabel
-// =============================================================================
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
@@ -496,7 +677,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
 String _timeAgo(DateTime t) {
   final d = DateTime.now().difference(t);
   String unit(int n, String s) => '$n $s${n > 1 ? 's' : ''} ago';
@@ -506,8 +686,7 @@ String _timeAgo(DateTime t) {
   return 'Just now';
 }
 
-/// Display-only: turns "2026-10-24 22:13:00.000" inside a message into
-/// "Oct 24, 2026 at 10:13 PM". The stored message is never modified.
+/// Formats dates for display without modifying the stored notification.
 String _prettyMessage(String message) {
   const months = [
     'Jan',
@@ -521,8 +700,9 @@ String _prettyMessage(String message) {
     'Sep',
     'Oct',
     'Nov',
-    'Dec'
+    'Dec',
   ];
+
   return message.replaceAllMapped(
     RegExp(r'\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?'),
     (m) {

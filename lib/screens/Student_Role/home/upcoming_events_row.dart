@@ -462,6 +462,7 @@ class _UpcomingEventCard extends StatelessWidget {
                             const SizedBox(height: 6),
                           _buildTime(),
                           if (interestedCount > 0) ...<Widget>[
+                            const SizedBox(height: 12),
                             const Spacer(),
                             _buildInterestPill(),
                           ],

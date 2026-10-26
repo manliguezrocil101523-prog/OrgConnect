@@ -84,6 +84,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
     String position,
   ) async {
     final userId = user['id'].toString();
+    final orgId = user['assigned_org_id']?.toString() ?? '';
     final previousPosition = user['officer_position']?.toString() ?? '';
     setState(() {
       final index = dbUsers.indexWhere((item) => item['id'] == user['id']);
@@ -91,9 +92,17 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
     });
 
     try {
-      await supabase.Supabase.instance.client
-          .from('profiles')
-          .update({'officer_position': position}).eq('id', userId);
+      if (orgId.isEmpty) {
+        throw Exception('This officer has no organization assigned.');
+      }
+      await supabase.Supabase.instance.client.rpc(
+        'admin_assign_officer',
+        params: {
+          'p_user_id': userId,
+          'p_org_id': orgId,
+          'p_position': position,
+        },
+      );
       if (!mounted) return;
       _showSnack('Officer position updated to $position');
     } catch (e) {
@@ -283,14 +292,26 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
 
                           final userId = user['id'].toString();
                           final orgId = selectedOrg!.id;
-
                           try {
-                            await supabase.Supabase.instance.client
-                                .from('profiles')
-                                .update({
-                              'role': role,
-                              'assigned_org_id': orgId,
-                            }).eq('id', userId);
+                            if (role == 'officer') {
+                              // Also creates the members row, so the officer
+                              // can pass the login designation check.
+                              await supabase.Supabase.instance.client.rpc(
+                                'admin_assign_officer',
+                                params: {
+                                  'p_user_id': userId,
+                                  'p_org_id': orgId,
+                                  'p_position': 'Officer',
+                                },
+                              );
+                            } else {
+                              await supabase.Supabase.instance.client
+                                  .from('profiles')
+                                  .update({
+                                'role': role,
+                                'assigned_org_id': orgId,
+                              }).eq('id', userId);
+                            }
 
                             if (!mounted) return;
 
@@ -302,6 +323,9 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                               if (idx != -1) {
                                 dbUsers[idx]['role'] = role;
                                 dbUsers[idx]['assigned_org_id'] = orgId;
+                                if (role == 'officer') {
+                                  dbUsers[idx]['officer_position'] = 'Officer';
+                                }
                               }
                             });
 
@@ -941,7 +965,8 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                       runSpacing: 6,
                       children: [
                         _buildRolePill(p, role),
-                        if (assignedOrgName != null && role == 'adviser')
+                        if (assignedOrgName != null &&
+                            (role == 'adviser' || role == 'officer'))
                           _buildOrgPill(p, assignedOrgName),
                       ],
                     ),
@@ -1176,24 +1201,28 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
           color: p.textSub,
           size: 20,
         ),
-        items: const [
-          DropdownMenuItem(
+        items: [
+          const DropdownMenuItem(
             value: 'student',
             child: Text('Student'),
           ),
-          DropdownMenuItem(
+          if (role == 'student')
+            const DropdownMenuItem(
+              value: 'officer',
+              child: Text('Officer'),
+            ),
+          const DropdownMenuItem(
             value: 'admin',
             child: Text('Admin'),
           ),
-          DropdownMenuItem(
+          const DropdownMenuItem(
             value: 'adviser',
             child: Text('Adviser'),
           ),
         ],
         onChanged: (val) async {
           if (val == null) return;
-
-          if (val == 'adviser') {
+          if (val == 'adviser' || val == 'officer') {
             await _showOrgPickerDialog(
               u,
               role: val,
@@ -1386,7 +1415,7 @@ _RoleStyle _roleStyle(String role, bool isDark) {
     case 'officer':
       final fg = isDark ? const Color(0xFF34D399) : const Color(0xFF059669);
       return _RoleStyle(
-        'Officer — assigned by Adviser',
+        'Officer',
         Icons.lock_person_rounded,
         fg,
         bgOf(fg),

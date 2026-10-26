@@ -54,12 +54,68 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
 
   String? _orgId;
 
+  bool _loadingOrgs = true;
+  String? _orgsError;
+  List<dynamic> _joinedOrgs = <dynamic>[];
+
   @override
   void initState() {
     super.initState();
-    final orgs = AppState.instance.organizations;
-    _orgId = widget.organizationId ?? (orgs.isNotEmpty ? orgs.first.id : null);
-    if (_orgId != null) _loadImpact();
+    _loadJoinedOrgs();
+  }
+
+  Future<void> _loadJoinedOrgs() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      setState(() {
+        _loadingOrgs = false;
+        _orgsError = 'Please sign in again to send feedback.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingOrgs = true;
+      _orgsError = null;
+    });
+
+    try {
+      final rows = await Supabase.instance.client
+          .from('members')
+          .select('org_id')
+          .eq('profile_id', user.id);
+
+      final joinedIds = rows
+          .map((r) => r['org_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final joined = AppState.instance.organizations
+          .where((o) => joinedIds.contains(o.id))
+          .toList();
+
+      String? selected;
+      if (widget.organizationId != null &&
+          joined.any((o) => o.id == widget.organizationId)) {
+        selected = widget.organizationId;
+      } else if (joined.isNotEmpty) {
+        selected = joined.first.id;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _joinedOrgs = joined;
+        _orgId = selected;
+        _loadingOrgs = false;
+      });
+      if (selected != null) _loadImpact();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingOrgs = false;
+        _orgsError = 'Could not load your organizations. Please try again.';
+      });
+    }
   }
 
   Future<void> _loadImpact() async {
@@ -75,12 +131,19 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
           .eq('org_id', orgId)
           .maybeSingle();
 
-      if (!mounted || row == null) return;
+      if (!mounted) return;
       setState(() {
-        _scores['Academic'] = _normalizeScore(row['academic_growth']);
-        _scores['Social'] = _normalizeScore(row['social_growth']);
-        _scores['Leadership'] = _normalizeScore(row['leadership_growth']);
-        _scores['Confidence'] = _normalizeScore(row['confidence_growth']);
+        if (row == null) {
+          // No saved feedback for this org yet: reset to defaults
+          for (final key in _scores.keys) {
+            _scores[key] = 3;
+          }
+        } else {
+          _scores['Academic'] = _normalizeScore(row['academic_growth']);
+          _scores['Social'] = _normalizeScore(row['social_growth']);
+          _scores['Leadership'] = _normalizeScore(row['leadership_growth']);
+          _scores['Confidence'] = _normalizeScore(row['confidence_growth']);
+        }
       });
     } catch (_) {}
   }
@@ -98,6 +161,7 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
   Future<void> _save() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null || _orgId == null) return;
+    if (!_joinedOrgs.any((o) => o.id == _orgId)) return; // not a joined org
 
     setState(() => _saving = true);
     try {
@@ -156,7 +220,7 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final organizations = AppState.instance.organizations;
+    final organizations = _joinedOrgs;
     final ratedCount = _scores.values.where((v) => v > 0).length;
 
     return Scaffold(
@@ -172,210 +236,230 @@ class _StudentImpactScreenState extends State<StudentImpactScreen> {
 
             // Main Content Body
             Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  child: ListView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                    children: [
-                      // Sub-header details moved directly below the header
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: _cardBorder),
-                        ),
-                        child: Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Share how your organization supports your growth.',
-                                style: TextStyle(
-                                  color: _impactMuted,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: _impactGreenLight,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 6,
-                                    height: 6,
-                                    decoration: const BoxDecoration(
-                                      color: _impactGreen,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Text(
-                                    'EVALUATION',
-                                    style: TextStyle(
-                                      color: _impactGreen,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Target Organization Dropdown Picker
-                      _OrganizationPicker(
-                        organizations: organizations,
-                        selectedId: _orgId,
-                        onChanged: (value) {
-                          setState(() => _orgId = value);
-                          _loadImpact();
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Assessment Summary Card
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: _cardBorder),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x0A0F172A),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                color: _impactGreenLight,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.rate_review_rounded,
-                                  color: _impactGreen, size: 22),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Impact Assessment',
-                                    style: TextStyle(
-                                      color: _impactInk,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '$ratedCount of ${_scores.length} categories evaluated',
-                                    style: const TextStyle(
-                                      color: _impactMuted,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: _impactGreenLight,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '${(ratedCount / _scores.length * 100).toInt()}%',
-                                style: const TextStyle(
-                                  color: _impactGreen,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Impact Cards List
-                      ..._scores.entries.map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: _ImpactCard(
-                            label: entry.key,
-                            value: entry.value,
-                            icon: _icons[entry.key] ?? Icons.insights_rounded,
-                            question: _questions[entry.key] ??
-                                'How is this organization helping you?',
-                            onChanged: (value) => setState(
-                              () => _scores[entry.key] = value,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Submit Button
-                      SizedBox(
-                        height: 52,
-                        child: FilledButton.icon(
-                          onPressed: _saving ? null : _save,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _impactGreen,
-                            foregroundColor: Colors.white,
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
+              child: _loadingOrgs
+                  ? const Center(
+                      child: CircularProgressIndicator(color: _impactGreen),
+                    )
+                  : (_orgsError != null || organizations.isEmpty)
+                      ? _EmptyOrgsState(
+                          message: _orgsError ??
+                              'You haven\'t joined any organization yet. Join an organization to share your feedback.',
+                          showRetry: _orgsError != null,
+                          onRetry: _loadJoinedOrgs,
+                        )
+                      : Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 680),
+                            child: ListView(
+                              physics: const BouncingScrollPhysics(),
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                              children: [
+                                // Sub-header details moved directly below the header
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
                                     color: Colors.white,
-                                    strokeWidth: 2.5,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: _cardBorder),
                                   ),
-                                )
-                              : const Icon(Icons.send_rounded, size: 20),
-                          label: Text(
-                            _saving
-                                ? 'Submitting feedback...'
-                                : 'Submit feedback',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
+                                  child: Row(
+                                    children: [
+                                      const Expanded(
+                                        child: Text(
+                                          'Share how your organization supports your growth.',
+                                          style: TextStyle(
+                                            color: _impactMuted,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: _impactGreenLight,
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 6,
+                                              height: 6,
+                                              decoration: const BoxDecoration(
+                                                color: _impactGreen,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Text(
+                                              'EVALUATION',
+                                              style: TextStyle(
+                                                color: _impactGreen,
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Target Organization Dropdown Picker
+                                _OrganizationPicker(
+                                  organizations: organizations,
+                                  selectedId: _orgId,
+                                  onChanged: (value) {
+                                    setState(() => _orgId = value);
+                                    _loadImpact();
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Assessment Summary Card
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: _cardBorder),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x0A0F172A),
+                                        blurRadius: 10,
+                                        offset: Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: _impactGreenLight,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                            Icons.rate_review_rounded,
+                                            color: _impactGreen,
+                                            size: 22),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Impact Assessment',
+                                              style: TextStyle(
+                                                color: _impactInk,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '$ratedCount of ${_scores.length} categories evaluated',
+                                              style: const TextStyle(
+                                                color: _impactMuted,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: _impactGreenLight,
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                        child: Text(
+                                          '${(ratedCount / _scores.length * 100).toInt()}%',
+                                          style: const TextStyle(
+                                            color: _impactGreen,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Impact Cards List
+                                ..._scores.entries.map(
+                                  (entry) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 14),
+                                    child: _ImpactCard(
+                                      label: entry.key,
+                                      value: entry.value,
+                                      icon: _icons[entry.key] ??
+                                          Icons.insights_rounded,
+                                      question: _questions[entry.key] ??
+                                          'How is this organization helping you?',
+                                      onChanged: (value) => setState(
+                                        () => _scores[entry.key] = value,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Submit Button
+                                SizedBox(
+                                  height: 52,
+                                  child: FilledButton.icon(
+                                    onPressed: _saving ? null : _save,
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: _impactGreen,
+                                      foregroundColor: Colors.white,
+                                      elevation: 2,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                    icon: _saving
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2.5,
+                                            ),
+                                          )
+                                        : const Icon(Icons.send_rounded,
+                                            size: 20),
+                                    label: Text(
+                                      _saving
+                                          ? 'Submitting feedback...'
+                                          : 'Submit feedback',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ),
           ],
         ),
@@ -666,6 +750,60 @@ class _ImpactCard extends StatelessWidget {
             }),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyOrgsState extends StatelessWidget {
+  const _EmptyOrgsState({
+    required this.message,
+    required this.showRetry,
+    required this.onRetry,
+  });
+
+  final String message;
+  final bool showRetry;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: _impactGreenLight,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(Icons.groups_rounded,
+                  color: _impactGreen, size: 32),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _impactMuted,
+                fontSize: 14,
+                height: 1.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (showRetry) ...[
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: onRetry,
+                child: const Text('Try again'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

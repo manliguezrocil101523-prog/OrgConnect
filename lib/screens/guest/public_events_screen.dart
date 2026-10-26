@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +22,16 @@ const _kMint = Color(0xFFF0F9F5);
 const _kInk = Color(0xFF17382C);
 const _kMuted = Color(0xFF6B8178);
 const _kLine = Color(0xFFD7EBE2);
+
+const double _kDialogBreakpoint = 600;
+
+enum _EventSort { newest, soonest, az }
+
+String _sortLabel(_EventSort s) => switch (s) {
+      _EventSort.newest => 'Newest',
+      _EventSort.soonest => 'Upcoming',
+      _EventSort.az => 'A–Z',
+    };
 
 /// Horizontal gutter that keeps content centered with a max width
 /// while the scroll view itself stays full width.
@@ -65,6 +77,10 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   List<Event> _events = <Event>[];
   bool _loading = true;
   bool _showAllEvents = false;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  String _query = '';
+  _EventSort _sort = _EventSort.newest;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _eventsKey = GlobalKey();
   RealtimeChannel? _eventsChannel;
@@ -91,6 +107,8 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel);
     }
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -199,6 +217,59 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   }
 
   // ============================================================
+  // SEARCH AND SORT
+  // ============================================================
+
+  bool get _hasActiveFilters => _query.isNotEmpty;
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _query = value.trim());
+    });
+  }
+
+  void _submitSearch(String value) {
+    _searchDebounce?.cancel();
+    setState(() => _query = value.trim());
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    setState(() => _query = '');
+  }
+
+  bool _matchesQuery(Event e) {
+    final q = _query.toLowerCase();
+    if (q.isEmpty) return true;
+    return e.title.toLowerCase().contains(q) ||
+        e.description.toLowerCase().contains(q) ||
+        e.orgName.toLowerCase().contains(q);
+  }
+
+  List<Event> _filterUpcoming(List<Event> list) {
+    final result = list.where(_matchesQuery).toList();
+    switch (_sort) {
+      case _EventSort.newest:
+        break; // _upcomingEvents is already newest-posted first.
+      case _EventSort.soonest:
+        result.sort((a, b) {
+          final byDate = a.date.compareTo(b.date);
+          return byDate != 0 ? byDate : b.createdAt.compareTo(a.createdAt);
+        });
+      case _EventSort.az:
+        result.sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    }
+    return result;
+  }
+
+  List<Event> _filterPast(List<Event> list) =>
+      list.where(_matchesQuery).toList();
+
+  // ============================================================
   // BUILD
   // ============================================================
 
@@ -218,9 +289,13 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
               .scale(1.0)
               .clamp(1.0, 1.4)
               .toDouble();
-          final upcoming = _upcomingEvents;
-          final visible = _showAllEvents ? upcoming : upcoming.take(5).toList();
-          final history = _pastEvents;
+          final allUpcoming = _upcomingEvents;
+          final upcoming = _filterUpcoming(allUpcoming);
+          final hasFilters = _hasActiveFilters;
+          final visible = (_showAllEvents || hasFilters)
+              ? upcoming
+              : upcoming.take(5).toList();
+          final history = _filterPast(_pastEvents);
 
           SliverToBoxAdapter pad(Widget child,
                   [double top = 0, double bottom = 0]) =>
@@ -257,6 +332,20 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                     pad(_hero(w), 14),
                     pad(const _InterestMatchCard(), 14),
                     pad(_sectionHeader(upcoming.length)),
+                    if (!_loading && _events.isNotEmpty)
+                      pad(
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 640),
+                            child: _filterBar(
+                              shown: upcoming.length,
+                              total: allUpcoming.length,
+                            ),
+                          ),
+                        ),
+                        0,
+                        14,
+                      ),
                     if (_loading)
                       const SliverFillRemaining(
                         hasScrollBody: false,
@@ -265,7 +354,11 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                         ),
                       )
                     else if (upcoming.isEmpty && !_showAllEvents)
-                      pad(_emptyState(), 0, 20)
+                      pad(
+                        allUpcoming.isEmpty ? _emptyState() : _noResultsState(),
+                        0,
+                        20,
+                      )
                     else ...[
                       ..._eventSlivers(
                         visible,
@@ -273,9 +366,10 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                         mobile: isMobile,
                         ts: ts,
                         w: w,
-                        featuredFirst: true,
+                        featuredFirst:
+                            _sort == _EventSort.newest && !hasFilters,
                       ),
-                      if (!_showAllEvents && upcoming.length > 5)
+                      if (!_showAllEvents && !hasFilters && upcoming.length > 5)
                         pad(
                           Center(
                             child: OutlinedButton.icon(
@@ -675,7 +769,8 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     final contentWidth = math.max(0.0, w - (g * 2));
     final cardWidth =
         (contentWidth - (16.0 * (crossAxisCount - 1))) / crossAxisCount;
-    final baseExtent = math.max(380.0, (cardWidth / 1.6) + 190.0);
+    final imageHeight = cardWidth * 9 / 16;
+    const textAreaHeight = 150.0;
 
     return [
       SliverPadding(
@@ -693,7 +788,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
             crossAxisCount: crossAxisCount,
             mainAxisSpacing: 16,
             crossAxisSpacing: 16,
-            mainAxisExtent: baseExtent * ts,
+            mainAxisExtent: imageHeight + (textAreaHeight * ts),
           ),
         ),
       ),
@@ -703,7 +798,11 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   String? _img(Event e) =>
       e.imageUrl ?? (e.imageUrls.isNotEmpty ? e.imageUrls.first : null);
 
-  Widget _thumb(String? url, {required double cacheLogicalWidth}) {
+  Widget _thumb(
+    String? url, {
+    required double cacheLogicalWidth,
+    bool showFull = false,
+  }) {
     if (url == null || url.isEmpty) return _ph();
 
     final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -712,9 +811,24 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       fit: StackFit.expand,
       children: [
         _ph(),
+        // Blurred copy fills the card so there are no empty bars.
+        if (showFull)
+          ClipRect(
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Image.network(
+                url,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                cacheWidth: 120,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
         Image.network(
           url,
-          fit: BoxFit.cover,
+          fit: showFull ? BoxFit.contain : BoxFit.cover,
           width: double.infinity,
           height: double.infinity,
           cacheWidth: cacheWidth,
@@ -768,14 +882,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         ],
       );
 
-  Widget _commentBtn(Event e) => IconButton(
-        tooltip: 'Comments',
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        onPressed: () => _openComments(e),
-        icon: const Icon(Icons.forum_outlined, size: 20, color: _kGreen),
-      );
-
   /// Compact horizontal card used on phones.
   Widget _tile(Event e, double thumb) {
     return _surface(
@@ -816,7 +922,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                 ],
               ),
             ),
-            _commentBtn(e),
           ],
         ),
       ),
@@ -831,7 +936,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     final image = Stack(
       fit: StackFit.expand,
       children: [
-        _thumb(_img(e), cacheLogicalWidth: imageCacheWidth),
+        _thumb(_img(e), cacheLogicalWidth: imageCacheWidth, showFull: true),
         Positioned(
           top: 10,
           left: 10,
@@ -884,7 +989,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
             ),
           ],
           const SizedBox(height: 6),
-          Row(children: [Expanded(child: _dateRow(e)), _commentBtn(e)]),
+          _dateRow(e),
         ],
       ),
     );
@@ -908,13 +1013,14 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     required double imageCacheWidth,
   }) {
     final image = AspectRatio(
-      aspectRatio: 16 / 10,
+      aspectRatio: 16 / 9,
       child: Stack(
         fit: StackFit.expand,
         children: [
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
-            child: _thumb(_img(e), cacheLogicalWidth: imageCacheWidth),
+            child: _thumb(_img(e),
+                cacheLogicalWidth: imageCacheWidth, showFull: true),
           ),
           if (isFeatured)
             Positioned(
@@ -980,12 +1086,7 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                       ),
                     ],
                     const Spacer(),
-                    Row(
-                      children: [
-                        Expanded(child: _dateRow(e)),
-                        _commentBtn(e),
-                      ],
-                    ),
+                    _dateRow(e),
                   ],
                 ),
               ),
@@ -1004,98 +1105,401 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         ),
       );
 
-  /// Full event details (full description, uncropped image, comments).
+  /// Full event details with a cover image, full description, and comments.
   void _showDetails(Event e) {
-    final img = _img(e);
-    showModalBottomSheet<void>(
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    if (screenWidth < _kDialogBreakpoint) {
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        constraints: const BoxConstraints(maxWidth: 560),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        builder: (ctx) => SingleChildScrollView(
+          child: _detailsContent(ctx, e, isDesktopDialog: false),
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      clipBehavior: Clip.antiAlias,
-      constraints: const BoxConstraints(maxWidth: 560),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (ctx) => SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (img != null && img.isNotEmpty)
-              SizedBox(
-                height: 220,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _ph(),
-                    Image.network(
-                      img,
-                      fit: BoxFit.contain,
-                      width: double.infinity,
-                      height: double.infinity,
-                      cacheWidth: (MediaQuery.devicePixelRatioOf(ctx) * 560)
-                          .round()
-                          .clamp(1, 4096)
-                          .toInt(),
-                      gaplessPlayback: true,
-                      frameBuilder:
-                          (context, child, frame, wasSynchronouslyLoaded) {
-                        if (wasSynchronouslyLoaded) return child;
-                        return AnimatedOpacity(
-                          opacity: frame == null ? 0 : 1,
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOut,
-                          child: child,
-                        );
-                      },
-                      errorBuilder: (_, __, ___) => _ph(),
-                    ),
-                  ],
-                ),
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final screenHeight = MediaQuery.sizeOf(dialogContext).height;
+        return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 440,
+              maxHeight: screenHeight * .9,
+            ),
+            child: SingleChildScrollView(
+              child: _detailsContent(
+                dialogContext,
+                e,
+                isDesktopDialog: true,
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Shared event-detail body for the mobile sheet and desktop dialog.
+  Widget _detailsContent(
+    BuildContext ctx,
+    Event e, {
+    required bool isDesktopDialog,
+  }) {
+    final img = _img(e);
+    final sheetWidth = math.min(MediaQuery.sizeOf(ctx).width, 560.0);
+    final mobileImageHeight =
+        (sheetWidth * 0.68).clamp(220.0, 320.0).toDouble();
+    final imageCacheWidth =
+        (MediaQuery.devicePixelRatioOf(ctx) * (isDesktopDialog ? 440 : 560))
+            .round()
+            .clamp(1, 4096)
+            .toInt();
+    final description = _parseDetailDescription(e.description);
+    final hasInfoRows = description.rows.isNotEmpty;
+    final showPlainDescription =
+        !description.hasLabels && description.plainText.isNotEmpty;
+    final bottomInset =
+        isDesktopDialog ? 0.0 : MediaQuery.paddingOf(ctx).bottom;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(24),
+          ),
+          child: isDesktopDialog
+              ? AspectRatio(
+                  aspectRatio: 4 / 3,
+                  child: _detailsImage(ctx, e.orgName, img, imageCacheWidth),
+                )
+              : SizedBox(
+                  height: mobileImageHeight,
+                  child: _detailsImage(ctx, e.orgName, img, imageCacheWidth),
+                ),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18, 16, 18, 16 + bottomInset),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  _org(e),
-                  const SizedBox(height: 6),
-                  Text(e.title,
-                      style: const TextStyle(
-                          color: _kInk,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w900,
-                          height: 1.2)),
-                  const SizedBox(height: 10),
-                  _dateRow(e),
-                  if (e.description.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    Text(e.description,
-                        style: const TextStyle(
-                            color: _kMuted, fontSize: 14, height: 1.5)),
-                  ],
-                  const SizedBox(height: 18),
                   SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _openComments(e);
-                      },
-                      icon: const Icon(Icons.forum_outlined, size: 18),
-                      label: const Text('View comments'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _kGreen,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
+                    width: 28,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: _kGreen, width: 1.4),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: const Icon(
+                        Icons.calendar_today_outlined,
+                        color: _kGreen,
+                        size: 15,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      e.title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _kInk,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        height: 1.2,
+                        letterSpacing: -.3,
                       ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: _kGreen, width: 1.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(
+                          Icons.calendar_today_outlined,
+                          color: _kGreen,
+                          size: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      DateFormat('MMM d, yyyy • h:mm a').format(e.date),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _kInk,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (hasInfoRows) ...[
+                const SizedBox(height: 12),
+                Container(height: 1, color: _kLine),
+                const SizedBox(height: 12),
+                for (var i = 0; i < description.rows.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: i == description.rows.length - 1 ? 0 : 10,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 28,
+                          child: Align(
+                            alignment: Alignment.topLeft,
+                            child: Icon(
+                              description.rows[i].icon,
+                              size: 18,
+                              color: _kMuted,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            description.rows[i].text,
+                            style: const TextStyle(
+                              color: _kMuted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ] else if (showPlainDescription) ...[
+                const SizedBox(height: 14),
+                Text(
+                  description.plainText,
+                  style: const TextStyle(
+                    color: _kMuted,
+                    fontSize: 13.5,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _openComments(e);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kGreen,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.forum_outlined,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 8),
+                      const Flexible(
+                        child: Text(
+                          'View comments',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailsImage(
+    BuildContext ctx,
+    String orgName,
+    String? imageUrl,
+    int cacheWidth,
+  ) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _ph(),
+        if (imageUrl != null && imageUrl.isNotEmpty) ...[
+          // Blurred copy fills the box so there are no empty bars.
+          ClipRect(
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                cacheWidth: 120,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
             ),
-          ],
+          ),
+          // Sharp copy shown in full, nothing cropped.
+          Image.network(
+            imageUrl,
+            fit: BoxFit.contain,
+            width: double.infinity,
+            height: double.infinity,
+            cacheWidth: cacheWidth,
+            gaplessPlayback: true,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded) return child;
+              return AnimatedOpacity(
+                opacity: frame == null ? 0 : 1,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                child: child,
+              );
+            },
+            errorBuilder: (_, __, ___) => _ph(),
+          ),
+        ],
+        Positioned(
+          left: 12,
+          top: 12,
+          right: 60,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _detailOrgPill(orgName),
+          ),
+        ),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .92),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .16),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: IconButton(
+              tooltip: 'Close',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(
+                width: 34,
+                height: 34,
+              ),
+              visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(
+                shape: const CircleBorder(),
+              ),
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(
+                Icons.close_rounded,
+                color: _kInk,
+                size: 18,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailOrgPill(String orgName) {
+    final label =
+        orgName.trim().isEmpty ? 'CAMPUS ORGANIZATION' : orgName.toUpperCase();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _kGreen,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: .8,
         ),
       ),
     );
@@ -1154,11 +1558,524 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       ),
     );
   }
+
+  // ============================================================
+  // FILTER BAR UI
+  // ============================================================
+
+  Widget _pill({required bool active, required Widget child}) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFFE2F6ED) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: active ? _kGreen : _kLine),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _filterBar({required int shown, required int total}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: _cardDeco(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _searchField()),
+              const SizedBox(width: 8),
+              _sortButton(),
+            ],
+          ),
+          if (_query.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Showing $shown of $total upcoming events',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _kMuted, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _searchField() {
+    OutlineInputBorder border(Color c, [double width = 1]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: c, width: width),
+        );
+
+    return SizedBox(
+      height: 40,
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        onSubmitted: _submitSearch,
+        textInputAction: TextInputAction.search,
+        style: const TextStyle(color: _kInk, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Search events or organizations',
+          hintStyle: const TextStyle(color: _kMuted, fontSize: 13),
+          prefixIcon:
+              const Icon(Icons.search_rounded, color: _kMuted, size: 20),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _searchController,
+            builder: (_, value, __) => value.text.isEmpty
+                ? const SizedBox.shrink()
+                : IconButton(
+                    tooltip: 'Clear search',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.close_rounded,
+                        color: _kMuted, size: 18),
+                  ),
+          ),
+          filled: true,
+          fillColor: _kMint,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          border: border(_kLine),
+          enabledBorder: border(_kLine),
+          focusedBorder: border(_kGreen, 1.5),
+        ),
+      ),
+    );
+  }
+
+  Widget _sortButton() {
+    return PopupMenuButton<_EventSort>(
+      tooltip: 'Sort events',
+      initialValue: _sort,
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      onSelected: (v) => setState(() => _sort = v),
+      itemBuilder: (_) => [
+        for (final s in _EventSort.values)
+          PopupMenuItem<_EventSort>(
+            value: s,
+            child: Text(
+              _sortLabel(s),
+              style: TextStyle(
+                color: _sort == s ? _kGreenDark : _kInk,
+                fontWeight: _sort == s ? FontWeight.w900 : FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+      child: _pill(
+        active: _sort != _EventSort.newest,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.swap_vert_rounded, size: 18, color: _kGreenDark),
+            const SizedBox(width: 6),
+            Text(
+              _sortLabel(_sort),
+              style: const TextStyle(
+                color: _kGreenDark,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _noResultsState() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: _cardDeco(24),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+                color: const Color(0xFFE2F6ED),
+                borderRadius: BorderRadius.circular(20)),
+            child:
+                const Icon(Icons.search_off_rounded, color: _kGreen, size: 30),
+          ),
+          const SizedBox(height: 14),
+          const Text('No events match your filters',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: _kInk,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  height: 1.15)),
+          const SizedBox(height: 6),
+          const Text('Try a different keyword.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _kMuted, height: 1.45, fontSize: 13)),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _clearSearch,
+            icon: const Icon(Icons.close_rounded, size: 18),
+            label: const Text('Clear search'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _kGreenDark,
+              side: const BorderSide(color: _kGreen),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Parsed description data used only by the event-details popup.
+class _DetailInfoRow {
+  const _DetailInfoRow({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+}
+
+class _DetailDescription {
+  const _DetailDescription({
+    required this.rows,
+    required this.hasLabels,
+    required this.plainText,
+  });
+
+  final List<_DetailInfoRow> rows;
+  final bool hasLabels;
+  final String plainText;
+}
+
+// Converts 24-hour times (e.g. "16:00") to 12-hour (e.g. "4:00 PM").
+// Times that already have AM/PM are left alone.
+String _to12Hour(String text) {
+  return text.replaceAllMapped(
+    RegExp(r'\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[AaPp][Mm])'),
+    (m) {
+      final hour = int.parse(m.group(1)!);
+      final minute = m.group(2)!;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+      return '$hour12:$minute $period';
+    },
+  );
+}
+
+_DetailDescription _parseDetailDescription(String description) {
+  final normalized =
+      description.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+  final lines = normalized
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+
+  if (lines.isEmpty) {
+    return const _DetailDescription(
+      rows: <_DetailInfoRow>[],
+      hasLabels: false,
+      plainText: '',
+    );
+  }
+
+  final labelPattern = RegExp(r'^([A-Za-z ]{1,30}?)\s*:\s*(.*)$');
+  final hasAnyLabel = lines.any((line) => labelPattern.hasMatch(line));
+
+  if (!hasAnyLabel) {
+    return _DetailDescription(
+      rows: const <_DetailInfoRow>[],
+      hasLabels: false,
+      plainText: lines.join('\n'),
+    );
+  }
+
+  final rows = <_DetailInfoRow>[];
+
+  for (final line in lines) {
+    final match = labelPattern.firstMatch(line);
+
+    if (match == null) {
+      if (rows.isEmpty) {
+        rows.add(
+          _DetailInfoRow(
+            icon: Icons.info_outline_rounded,
+            text: line,
+          ),
+        );
+      } else {
+        final previous = rows.removeLast();
+        rows.add(
+          _DetailInfoRow(
+            icon: previous.icon,
+            text: '${previous.text}\n$line',
+          ),
+        );
+      }
+      continue;
+    }
+
+    final label = (match.group(1) ?? '').trim();
+    final value = (match.group(2) ?? '').trim();
+    final normalizedLabel = label.toLowerCase();
+
+    if (normalizedLabel == 'about' ||
+        normalizedLabel == 'venue' ||
+        normalizedLabel == 'time') {
+      if (value.isEmpty) continue;
+
+      final canonicalLabel = switch (normalizedLabel) {
+        'about' => 'About',
+        'venue' => 'Venue',
+        'time' => 'Time',
+        _ => label,
+      };
+
+      final icon = switch (normalizedLabel) {
+        'about' => Icons.info_outline_rounded,
+        'venue' => Icons.location_on_outlined,
+        'time' => Icons.schedule_rounded,
+        _ => Icons.info_outline_rounded,
+      };
+      rows.add(
+        _DetailInfoRow(
+          icon: icon,
+          text:
+              '$canonicalLabel: ${normalizedLabel == 'time' ? _to12Hour(value) : value}',
+        ),
+      );
+    } else {
+      rows.add(
+        _DetailInfoRow(
+          icon: Icons.info_outline_rounded,
+          text: value.isEmpty ? '$label:' : '$label: $value',
+        ),
+      );
+    }
+  }
+
+  return _DetailDescription(
+    rows: rows,
+    hasLabels: true,
+    plainText: '',
+  );
 }
 
 // ============================================================
 // INTEREST QUIZ CARD
 // ============================================================
+
+class _QuizResult {
+  const _QuizResult({required this.answers, required this.categories});
+
+  final List<String> answers;
+  final List<String> categories;
+}
+
+class _QuizDialog extends StatefulWidget {
+  const _QuizDialog({required this.questions});
+
+  final List<Map<String, dynamic>> questions;
+
+  @override
+  State<_QuizDialog> createState() => _QuizDialogState();
+}
+
+class _QuizDialogState extends State<_QuizDialog> {
+  int _index = 0;
+  int? _selected;
+  final List<String> _answers = <String>[];
+  final List<String> _categories = <String>[];
+  bool _advancing = false;
+
+  Future<void> _selectOption(
+      int optionIndex, List<String> options, List<String> categories) async {
+    if (_advancing) return;
+
+    setState(() {
+      _selected = optionIndex;
+      _advancing = true;
+    });
+
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+
+    _answers.add(options[optionIndex]);
+    _categories.add(categories[optionIndex]);
+
+    if (_index == widget.questions.length - 1) {
+      Navigator.pop(
+        context,
+        _QuizResult(
+          answers: List<String>.from(_answers),
+          categories: List<String>.from(_categories),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _index++;
+      _selected = null;
+      _advancing = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = widget.questions[_index];
+    final question = q['question'] as String;
+    final options = List<String>.from(q['options'] as List);
+    final categories = List<String>.from(q['categories'] as List);
+
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      scrollable: true,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF075A42), Color(0xFF20B77D)],
+                  ),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.psychology_alt_rounded,
+                  color: Colors.white,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Question ${_index + 1} of ${widget.questions.length}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F8A61),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .4,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Close',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 40,
+                  minHeight: 40,
+                ),
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.black,
+                  size: 22,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(question,
+              style: const TextStyle(
+                  color: _kInk,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  height: 1.25)),
+          const SizedBox(height: 7),
+          const Text('Choose the option that feels most like you.',
+              style: TextStyle(color: _kMuted, fontSize: 11.5, height: 1.35)),
+        ],
+      ),
+      content: Column(
+        key: ValueKey<int>(_index),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < options.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 9),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 130),
+                curve: Curves.easeOut,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color:
+                      _selected == i ? const Color(0xFFE4F7EF) : Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(
+                    color: _selected == i ? _kGreen : const Color(0xFFCBE8DC),
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(15),
+                  child: InkWell(
+                    onTap: () => _selectOption(i, options, categories),
+                    borderRadius: BorderRadius.circular(15),
+                    child: Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 130),
+                            curve: Curves.easeOut,
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: _selected == i
+                                  ? _kGreen
+                                  : const Color(0xFFE4F7EF),
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              color: _selected == i
+                                  ? Colors.white
+                                  : const Color(0xFF0F8A61),
+                              size: 15,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(options[i],
+                                style: const TextStyle(
+                                    color: _kInk,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12.5,
+                                    height: 1.25)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 class _InterestMatchCard extends StatefulWidget {
   const _InterestMatchCard();
@@ -1266,161 +2183,22 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
   ];
 
   Future<void> _startQuiz() async {
-    final answers = <String>[];
-    final categories = <String>[];
+    if (!mounted) return;
 
-    for (var index = 0; index < _questions.length; index++) {
-      final q = _questions[index];
-      final question = q['question'] as String;
-      final options = List<String>.from(q['options'] as List);
-      final optionCategories = List<String>.from(q['categories'] as List);
-
-      if (!mounted) return;
-      final answer = await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) =>
-            _questionDialog(context, index, question, options),
-      );
-
-      if (!mounted) return;
-      if (answer == null) return;
-      final selectedIndex = options.indexOf(answer);
-      if (selectedIndex < 0) return;
-      answers.add(answer);
-      categories.add(optionCategories[selectedIndex]);
-    }
-
-    if (mounted) {
-      setState(() {
-        _answers = answers;
-        _answerCategories
-          ..clear()
-          ..addAll(categories);
-      });
-    }
-  }
-
-  Widget _questionDialog(
-      BuildContext context, int index, String question, List<String> options) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      scrollable: true,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-      contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF075A42), Color(0xFF20B77D)],
-                  ),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: const Icon(
-                  Icons.psychology_alt_rounded,
-                  color: Colors.white,
-                  size: 19,
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'Question ${index + 1} of ${_questions.length}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF0F8A61),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .4,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Close',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 40,
-                  minHeight: 40,
-                ),
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(
-                  Icons.close_rounded,
-                  color: Colors.black,
-                  size: 22,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(question,
-              style: const TextStyle(
-                  color: _kInk,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  height: 1.25)),
-          const SizedBox(height: 7),
-          const Text('Choose the option that feels most like you.',
-              style: TextStyle(color: _kMuted, fontSize: 11.5, height: 1.35)),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final option in options)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 9),
-              child: Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(15),
-                child: InkWell(
-                  onTap: () => Navigator.pop(context, option),
-                  borderRadius: BorderRadius.circular(15),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(13),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: const Color(0xFFCBE8DC)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                              color: const Color(0xFFE4F7EF),
-                              borderRadius: BorderRadius.circular(9)),
-                          child: const Icon(Icons.arrow_forward_rounded,
-                              color: Color(0xFF0F8A61), size: 15),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(option,
-                              style: const TextStyle(
-                                  color: _kInk,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12.5,
-                                  height: 1.25)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    final result = await showDialog<_QuizResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _QuizDialog(questions: _questions),
     );
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _answers = result.answers;
+      _answerCategories
+        ..clear()
+        ..addAll(result.categories);
+    });
   }
 
   Map<String, double> _interestProfile() {

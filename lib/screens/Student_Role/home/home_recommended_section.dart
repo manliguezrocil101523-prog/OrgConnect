@@ -27,7 +27,12 @@ class HomeRecommendedSection extends StatefulWidget {
 
 /// Manages recommendation counts and saved-organization updates.
 class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
-  Map<String, int> _counts = <String, int>{};
+  /// Last fetched member counts, kept for the app session. NewHomeTab's
+  /// ListView disposes this State when the section scrolls far off-screen,
+  /// so a fresh State would otherwise rank with empty counts first.
+  static Map<String, int> _cachedCounts = <String, int>{};
+
+  Map<String, int> _counts = _cachedCounts;
   String? _lastCountOrgKey;
 
   @override
@@ -101,6 +106,10 @@ class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
 
       if (!mounted || requestedKey != _organizationIdsKey()) {
         return;
+      }
+
+      if (counts.isNotEmpty) {
+        _cachedCounts = counts;
       }
 
       setState(() {

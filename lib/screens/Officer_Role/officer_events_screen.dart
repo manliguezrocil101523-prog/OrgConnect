@@ -1,5 +1,8 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_state.dart';
@@ -12,6 +15,34 @@ const bg = Color(0xFFE6F7EE);
 const dark = Color(0xFF073B2A);
 const muted = Color(0xFF4D6F62);
 const line = Color(0xFFB9E4CF);
+
+// Private tokens for the redesigned layout.
+const _ink = Color(0xFF173B30);
+const _sub = Color(0xFF55695F); // muted text, 5.9:1 on white
+const _border = Color(0xFFE3ECE7);
+const _mint = Color(0xFFE4F7EF);
+const _skeleton = Color(0xFFEDF2F0);
+const _cardDeco = BoxDecoration(
+  color: Colors.white,
+  borderRadius: BorderRadius.all(Radius.circular(16)),
+  border: Border.fromBorderSide(BorderSide(color: _border)),
+  boxShadow: [
+    BoxShadow(color: Color(0x0D173B30), blurRadius: 8, offset: Offset(0, 2)),
+  ],
+);
+
+enum _Filter { all, action, review, published }
+
+typedef _Flags = ({
+  String status,
+  List<String> images,
+  bool hasCreative,
+  bool hasAdviserBrief,
+  bool isWaitingForAdviser,
+  bool isReady,
+  bool needsProposalRevision,
+  bool isRejected,
+});
 
 class OfficerEventsScreen extends StatefulWidget {
   final String orgId;
@@ -35,8 +66,12 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   final _db = Supabase.instance.client;
   List<Map<String, dynamic>> _requests = <Map<String, dynamic>>[];
   bool _loading = true;
+  bool _refreshing = false;
+  bool _failed = false;
   bool _canSubmitProposals = false;
   bool _busy = false;
+  _Filter _filter = _Filter.all;
+  final Set<String> _expanded = <String>{};
   static const _finalBriefMarker = '[ADVISER_FINAL_LAYOUT_REQUESTED]';
 
   @override
@@ -68,7 +103,7 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   }
 
   Future<void> _load() async {
-    if (mounted) setState(() => _loading = true);
+    if (mounted && !_loading) setState(() => _refreshing = true);
     try {
       final rows = await _db
           .from('event_requests')
@@ -79,10 +114,16 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
       setState(() {
         _requests = List<Map<String, dynamic>>.from(rows as List);
         _loading = false;
+        _refreshing = false;
+        _failed = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _refreshing = false;
+        _failed = true;
+      });
       _snack('Unable to load proposals: $e', true);
     }
   }
@@ -609,12 +650,24 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   String _date(dynamic value) {
     final date = DateTime.tryParse('${value ?? ''}');
     if (date == null) return 'No date';
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    return '${date.year}-$month-$day • $hour:$minute $suffix';
+    return DateFormat('MMM d, y').format(date);
+  }
+
+  String _clock(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    final m = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(raw);
+    final h = int.tryParse(m?.group(1) ?? '');
+    final min = int.tryParse(m?.group(2) ?? '');
+    if (h == null || min == null || h > 23 || min > 59) return raw;
+    return DateFormat('h:mm a').format(DateTime(2000, 1, 1, h, min));
+  }
+
+  String _when(Map<String, dynamic> r) {
+    final start = _clock(r['start_time']);
+    final end = _clock(r['end_time']);
+    final date = _date(r['date']);
+    if (start.isEmpty) return date;
+    return '$date - $start${end.isEmpty ? '' : ' to $end'}';
   }
 
   void _snack(String text, [bool error = false]) {
@@ -625,118 +678,8 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     );
   }
 
-  Widget _buildContent() {
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          _ActivityHeader(
-            orgName: widget.orgName,
-            orgId: widget.orgId,
-            logoAsset: widget.logoAsset,
-          ),
-          Expanded(
-            child: RefreshIndicator(
-              color: green,
-              onRefresh: _load,
-              child: _loading
-                  ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 190),
-                        Center(child: CircularProgressIndicator(color: green)),
-                      ],
-                    )
-                  : ListView(
-                      physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics()),
-                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 110),
-                      children: [
-                        _IntroCard(orgName: widget.orgName),
-                        const SizedBox(height: 18),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Your Proposals',
-                              style: TextStyle(
-                                color: dark,
-                                fontSize: 21,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -.3,
-                              ),
-                            ),
-                            if (_requests.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDDF4E8),
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                child: Text(
-                                  '${_requests.length} total',
-                                  style: const TextStyle(
-                                      color: green,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        if (_requests.isEmpty)
-                          const _EmptyProposals()
-                        else
-                          ..._requests.map(_card),
-                      ],
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget? _buildFab() {
-    // Only the President and Vice President can create proposals. Other roles
-    // can still view existing proposals, but should not see the New Proposal button.
-    if (!_canSubmitProposals) return null;
-    return FloatingActionButton.extended(
-      backgroundColor: green,
-      foregroundColor: Colors.white,
-      elevation: 8,
-      onPressed: _canSubmitProposals ? _createRequest : null,
-      icon: const Icon(Icons.add_rounded),
-      label: const Text('New Proposal',
-          style: TextStyle(fontWeight: FontWeight.w800)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.embedded) {
-      return Stack(
-        children: [
-          _buildContent(),
-          if (_canSubmitProposals)
-            Positioned(
-              right: 16,
-              bottom: 16,
-              child: _buildFab()!,
-            ),
-        ],
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: bg,
-      body: _buildContent(),
-      floatingActionButton: _buildFab(),
-    );
-  }
-
-  Widget _card(Map<String, dynamic> request) {
+  // The derived flags, copied from the old _card, shared by the filter and the card.
+  _Flags _flags(Map<String, dynamic> request) {
     final status = request['status']?.toString() ?? 'pending';
     final images = (request['creative_urls'] is List
             ? request['creative_urls']
@@ -753,251 +696,537 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     final needsProposalRevision =
         status == 'revision_requested' && !hasCreative;
     final isRejected = status == 'rejected' || status == 'admin_rejected';
+    return (
+      status: status,
+      images: images,
+      hasCreative: hasCreative,
+      hasAdviserBrief: hasAdviserBrief,
+      isWaitingForAdviser: isWaitingForAdviser,
+      isReady: isReady,
+      needsProposalRevision: needsProposalRevision,
+      isRejected: isRejected,
+    );
+  }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: line),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D128058),
-            blurRadius: 20,
-            offset: Offset(0, 8),
+  _Filter _bucket(Map<String, dynamic> request) {
+    final f = _flags(request);
+    if (f.isReady || f.needsProposalRevision || f.isRejected) {
+      return _Filter.action;
+    }
+    return f.status == 'published' ? _Filter.published : _Filter.review;
+  }
+
+  Widget _grid(List<Widget> items, int cols) {
+    return Column(
+      children: [
+        for (var i = 0; i < items.length; i += cols)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var j = i; j < i + cols; j++) ...[
+                    if (j > i) const SizedBox(width: 12),
+                    Expanded(
+                        child: j < items.length ? items[j] : const SizedBox()),
+                  ],
+                ],
+              ),
+            ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildContent(double w) {
+    final pad = w < 600 ? 16.0 : 24.0;
+    final cols = w >= 700 ? 2 : 1;
+    final buckets = _requests.map(_bucket).toList();
+    int count(_Filter f) => f == _Filter.all
+        ? _requests.length
+        : buckets.where((b) => b == f).length;
+    final shown = [
+      for (var i = 0; i < _requests.length; i++)
+        if (_filter == _Filter.all || buckets[i] == _filter) _requests[i],
+    ];
+    const labels = {
+      _Filter.all: 'All',
+      _Filter.action: 'Needs action',
+      _Filter.review: 'In review',
+      _Filter.published: 'Published',
+    };
+    final needs = count(_Filter.action);
+    final total = _requests.length;
+
+    final Widget body;
+    if (_loading) {
+      body =
+          _grid([for (var i = 0; i < cols * 2; i++) const _Skeleton()], cols);
+    } else if (_failed && _requests.isEmpty) {
+      body = _Notice(
+        icon: Icons.cloud_off_rounded,
+        text: 'Could not load proposals. Check your connection and try again.',
+        button: 'Retry',
+        onTap: _load,
+      );
+    } else if (_requests.isEmpty) {
+      body = _Notice(
+        icon: Icons.auto_awesome_rounded,
+        text:
+            'No proposals yet. Submitted proposals appear here with adviser feedback.',
+        button: _canSubmitProposals ? 'New Proposal' : null,
+        onTap: _createRequest,
+      );
+    } else if (shown.isEmpty) {
+      body = const _Notice(
+          icon: Icons.inbox_rounded, text: 'No proposals in this filter.');
+    } else {
+      body = _grid([for (final r in shown) _card(r, w >= 600)], cols);
+    }
+
+    return Column(
+      children: [
+        _ActivityHeader(
+          orgName: widget.orgName,
+          orgId: widget.orgId,
+          logoAsset: widget.logoAsset,
+          pad: pad,
+        ),
+        if (_refreshing)
+          const LinearProgressIndicator(
+              minHeight: 2, color: green, backgroundColor: _mint),
+        Expanded(
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: RefreshIndicator(
+                color: green,
+                onRefresh: _load,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                      pad, 16, pad, _canSubmitProposals && w < 600 ? 96 : 28),
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1100),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Your Proposals',
+                                    style: TextStyle(
+                                        color: _ink,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Refresh',
+                                  onPressed:
+                                      (_loading || _refreshing) ? null : _load,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                ),
+                                if (_canSubmitProposals && w >= 600)
+                                  FilledButton.icon(
+                                    onPressed: _createRequest,
+                                    icon:
+                                        const Icon(Icons.add_rounded, size: 18),
+                                    label: const Text('New Proposal'),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: green,
+                                      foregroundColor: Colors.white,
+                                      minimumSize: const Size(0, 44),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (total > 0) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                '$total proposal${total == 1 ? '' : 's'} • $needs ${needs == 1 ? 'needs' : 'need'} action',
+                                style: const TextStyle(
+                                    color: _sub,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final f in labels.keys)
+                                    ChoiceChip(
+                                      label: Text('${labels[f]} ${count(f)}'),
+                                      selected: _filter == f,
+                                      onSelected: (_) =>
+                                          setState(() => _filter = f),
+                                      showCheckmark: false,
+                                      selectedColor: _mint,
+                                      backgroundColor: Colors.white,
+                                      side: BorderSide(
+                                          color:
+                                              _filter == f ? green : _border),
+                                      labelStyle: TextStyle(
+                                        color: _filter == f
+                                            ? const Color(0xFF0B6B4D)
+                                            : _ink,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.padded,
+                                    ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 14),
+                            body,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget? _buildFab() {
+    // Only the President and Vice President can create proposals. Other roles
+    // can still view existing proposals, but should not see the New Proposal button.
+    if (!_canSubmitProposals) return null;
+    return FloatingActionButton.extended(
+      backgroundColor: green,
+      foregroundColor: Colors.white,
+      elevation: 2,
+      onPressed: _canSubmitProposals ? _createRequest : null,
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('New Proposal',
+          style: TextStyle(fontWeight: FontWeight.w800)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Measure the real width of this tab, not the window (a rail may sit beside it).
+    return LayoutBuilder(
+      builder: (context, c) {
+        final fab = c.maxWidth < 600 ? _buildFab() : null;
+        final content = _buildContent(c.maxWidth);
+        if (widget.embedded) {
+          return Stack(
+            children: [
+              content,
+              if (fab != null) Positioned(right: 16, bottom: 16, child: fab),
+            ],
+          );
+        }
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: content,
+          floatingActionButton: fab,
+        );
+      },
+    );
+  }
+
+  Widget _thumb(List<String> images) {
+    if (images.isEmpty) {
+      return Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+            color: _mint, borderRadius: BorderRadius.circular(12)),
+        child: const Icon(Icons.event_note_rounded, color: green),
+      );
+    }
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: CachedNetworkImage(
+                imageUrl: images.first,
+                fit: BoxFit.cover,
+                memCacheWidth: 200,
+                placeholder: (_, __) => const ColoredBox(color: _skeleton),
+                errorWidget: (_, __, ___) => const ColoredBox(
+                  color: _skeleton,
+                  child: Center(
+                      child: Icon(Icons.broken_image_outlined, color: _sub)),
+                ),
+              ),
+            ),
+          ),
+          if (images.length > 1)
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: const Color(0xCC173B30),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Text('+${images.length - 1}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE6F7EE),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: const Text(
-                        'ACTIVITY PROPOSAL',
-                        style: TextStyle(
-                            color: green,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: .7),
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    Text(
-                      request['title']?.toString() ?? 'Untitled proposal',
-                      style: const TextStyle(
-                          color: dark,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          height: 1.15),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              _statusChip(status, hasAdviserBrief: hasAdviserBrief),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Icon(Icons.calendar_month_rounded, size: 17, color: green),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  _date(request['date']),
-                  style: const TextStyle(
-                      color: muted,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            request['description']?.toString() ?? '',
-            style: const TextStyle(
-                color: muted,
-                fontSize: 13,
-                height: 1.5,
-                fontWeight: FontWeight.w500),
-          ),
-          if ((request['feedback'] ?? '')
-              .toString()
-              .replaceAll(_finalBriefMarker, '')
-              .trim()
-              .isNotEmpty) ...[
-            const SizedBox(height: 13),
-            _feedbackBox(
-                'Adviser feedback / instructions',
-                request['feedback']
-                    .toString()
-                    .replaceAll(_finalBriefMarker, '')
-                    .trim(),
-                Colors.orange),
-          ],
-          if ((request['admin_feedback'] ?? '').toString().isNotEmpty) ...[
-            const SizedBox(height: 9),
-            _feedbackBox('Admin / CSO feedback',
-                request['admin_feedback'].toString(), Colors.red),
-          ],
-          if (images.isNotEmpty) ...[
-            const SizedBox(height: 15),
-            SizedBox(
-              width: double.infinity,
-              height: images.length == 1 ? 190 : 178,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    PageView.builder(
-                      itemCount: images.length,
-                      itemBuilder: (_, index) => Image.network(
-                        images[index],
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFFE6F7EE),
-                          child: const Icon(
-                            Icons.image_not_supported_rounded,
-                            color: green,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (images.length > 1)
-                      Positioned(
-                        right: 10,
-                        top: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xB3128058),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${images.length} pictures',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (needsProposalRevision) ...[
-            const SizedBox(height: 14),
-            Container(
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: .07),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                        color: Colors.orange.withValues(alpha: .15))),
-                child: const Row(
+    );
+  }
+
+  Widget _card(Map<String, dynamic> request, bool wide) {
+    final f = _flags(request);
+    final id = '${request['id']}';
+    final open = _expanded.contains(id);
+    final title = request['title']?.toString() ?? 'Untitled proposal';
+    final description = request['description']?.toString() ?? '';
+    final feedback = (request['feedback'] ?? '')
+        .toString()
+        .replaceAll(_finalBriefMarker, '')
+        .trim();
+    final adminFeedback = (request['admin_feedback'] ?? '').toString();
+
+    final (IconData, String, VoidCallback)? act = f.isReady
+        ? (
+            Icons.auto_awesome_rounded,
+            f.hasCreative
+                ? 'Improve & Resubmit Final Posting'
+                : 'Create & Send Final Posting',
+            () => _submitCreative(request),
+          )
+        : (f.needsProposalRevision || f.isRejected)
+            ? (
+                Icons.edit_note_rounded,
+                'Revise Proposal & Send to Adviser',
+                () => _editProposal(request),
+              )
+            : null;
+
+    final extra = <Widget>[
+      if (feedback.isNotEmpty)
+        _feedbackBox(
+            'Adviser feedback / instructions', feedback, Colors.orange),
+      if (adminFeedback.isNotEmpty)
+        _feedbackBox('Admin / CSO feedback', adminFeedback, Colors.red),
+      if (f.needsProposalRevision)
+        const _StatusNote(
+            icon: Icons.edit_note_rounded,
+            text:
+                'The adviser requested changes to the proposal. Revise it and send it back to the adviser.'),
+      if (f.isWaitingForAdviser)
+        const _StatusNote(
+            icon: Icons.schedule_rounded,
+            text:
+                'Waiting for your adviser to tell the team in Community Chat when to prepare the final event post.'),
+      if (f.isRejected)
+        const _StatusNote(
+            icon: Icons.info_outline_rounded,
+            text:
+                'This proposal was not approved. Review the feedback above before submitting a new proposal.'),
+      if (f.images.isNotEmpty) _Gallery(f.images, key: ValueKey(id)),
+    ];
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+              color: Color(0x0D173B30), blurRadius: 8, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+          side: BorderSide(color: _border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              label: '$title. Tap to ${open ? 'collapse' : 'expand'} details.',
+              child: InkWell(
+                hoverColor: const Color(0x0F128058),
+                focusColor: const Color(0x1F128058),
+                onTap: () => setState(() {
+                  if (open) {
+                    _expanded.remove(id);
+                  } else {
+                    _expanded.add(id);
+                  }
+                }),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.edit_note_rounded,
-                          color: Colors.orange, size: 17),
-                      SizedBox(width: 7),
+                      _thumb(f.images),
+                      const SizedBox(width: 12),
                       Expanded(
-                          child: Text(
-                              'The adviser requested changes to the proposal. Revise it and send it back to the adviser.',
-                              style: TextStyle(
-                                  color: dark,
-                                  fontSize: 11.5,
-                                  height: 1.4,
-                                  fontWeight: FontWeight.w600)))
-                    ])),
-          ],
-          if (isWaitingForAdviser) ...[
-            const SizedBox(height: 14),
-            const _StatusNote(
-                icon: Icons.schedule_rounded,
-                text:
-                    'Waiting for your adviser to tell the team in Community Chat when to prepare the final event post.'),
-          ],
-          if (isReady) ...[
-            const SizedBox(height: 15),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed:
-                    _canSubmitProposals ? () => _submitCreative(request) : null,
-                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                label: Text(
-                  hasCreative
-                      ? 'Improve & Resubmit Final Posting'
-                      : 'Create & Send Final Posting',
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: green,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15)),
-                ),
-              ),
-            ),
-          ],
-          if (needsProposalRevision || isRejected) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed:
-                    _canSubmitProposals ? () => _editProposal(request) : null,
-                icon: const Icon(Icons.edit_note_rounded, size: 18),
-                label: const Text('Revise Proposal & Send to Adviser'),
-                style: FilledButton.styleFrom(
-                    backgroundColor: green,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15))),
-              ),
-            ),
-          ],
-          if (isRejected) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: const [
-                Icon(Icons.info_outline_rounded, size: 17, color: Colors.red),
-                SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    'This proposal was not approved. Review the feedback above before submitting a new proposal.',
-                    style: TextStyle(
-                        color: Colors.red,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: _ink,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1.25),
+                                  ),
+                                ),
+                                Icon(
+                                    open
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    color: _sub),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            _statusChip(f.status,
+                                hasAdviserBrief: f.hasAdviserBrief),
+                            const SizedBox(height: 6),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 2),
+                                  child: Icon(Icons.calendar_month_rounded,
+                                      size: 15, color: _sub),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _when(request),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: _sub,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (description.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                description,
+                                maxLines: open ? null : 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: _sub, fontSize: 13, height: 1.4),
+                              ),
+                            ],
+                            if (!open &&
+                                (feedback.isNotEmpty ||
+                                    adminFeedback.isNotEmpty))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.feedback_outlined,
+                                        size: 14, color: Color(0xFFB45309)),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        feedback.isNotEmpty
+                                            ? 'Adviser feedback • tap to read'
+                                            : 'Admin / CSO feedback • tap to read',
+                                        style: const TextStyle(
+                                            color: Color(0xFFB45309),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: double.infinity,
+                child: open && extra.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final item in extra)
+                              Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: item),
+                          ],
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            if (act != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(
+                    width: wide ? null : double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _canSubmitProposals ? act.$3 : null,
+                      icon: Icon(act.$1, size: 18),
+                      label: Text(act.$2),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 44),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -1006,31 +1235,31 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: .15)),
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .25)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.feedback_rounded, size: 17, color: color),
+          Icon(Icons.feedback_rounded, size: 16, color: color),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: TextStyle(
-                        color: color,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w900)),
+                    style: const TextStyle(
+                        color: _ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
                 Text(value,
                     style: const TextStyle(
-                        color: dark,
-                        fontSize: 12,
+                        color: _ink,
+                        fontSize: 13,
                         height: 1.4,
-                        fontWeight: FontWeight.w600)),
+                        fontWeight: FontWeight.w500)),
               ],
             ),
           ),
@@ -1040,16 +1269,24 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
   }
 
   Widget _statusChip(String status, {bool hasAdviserBrief = false}) {
-    final Color color;
-    if (status == 'admin_approved' || status == 'creative_submitted') {
-      color = green;
-    } else if (status == 'admin_rejected' || status == 'rejected') {
-      color = Colors.red;
-    } else if (status == 'revision_requested') {
-      color = Colors.orange;
-    } else {
-      color = primary;
-    }
+    // In review = amber, ready/published = green, revision = orange, rejected = red.
+    // Text uses the darker shade of each color so it keeps >= 4.5:1 contrast.
+    final (Color bg, Color fg) = switch (status) {
+      'admin_approved' when hasAdviserBrief => (
+          const Color(0xFFE4F7EF),
+          const Color(0xFF0B6B4D)
+        ),
+      'published' => (const Color(0xFFE4F7EF), const Color(0xFF0B6B4D)),
+      'revision_requested' => (
+          const Color(0xFFFFEDD5),
+          const Color(0xFFC2410C)
+        ),
+      'admin_rejected' || 'rejected' => (
+          const Color(0xFFFEE2E2),
+          const Color(0xFFB91C1C)
+        ),
+      _ => (const Color(0xFFFEF3C7), const Color(0xFFB45309)),
+    };
 
     final label = status == 'pending'
         ? 'WAITING FOR ADVISER'
@@ -1063,20 +1300,20 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
                     ? 'FINAL POSTING SENT TO ADVISER'
                     : status.replaceAll('_', ' ').toUpperCase();
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: color.withValues(alpha: .16)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-            color: color,
-            fontSize: 8.5,
-            fontWeight: FontWeight.w900,
-            letterSpacing: .3),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration:
+            BoxDecoration(color: bg, borderRadius: BorderRadius.circular(30)),
+        child: Text(
+          label,
+          style: TextStyle(
+              color: fg,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .2),
+        ),
       ),
     );
   }
@@ -1086,44 +1323,30 @@ class _ActivityHeader extends StatelessWidget {
   final String orgName;
   final String orgId;
   final String logoAsset;
+  final double pad;
 
   const _ActivityHeader({
     required this.orgName,
     required this.orgId,
+    required this.pad,
     this.logoAsset = '',
   });
 
-  Widget _orb(double size) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: .07),
-        ),
-      );
-
   Widget _logo(String path) {
-    if (path.isEmpty) {
-      return const Icon(Icons.business_rounded, color: green, size: 31);
-    }
+    const fallback = Icon(Icons.business_rounded, color: green, size: 28);
+    if (path.isEmpty) return fallback;
     if (path.startsWith('http://') || path.startsWith('https://')) {
-      return Image.network(
-        path,
-        width: 58,
-        height: 58,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            const Icon(Icons.business_rounded, color: green, size: 31),
-      );
+      return Image.network(path,
+          width: 52,
+          height: 52,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => fallback);
     }
-    return Image.asset(
-      path,
-      width: 58,
-      height: 58,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) =>
-          const Icon(Icons.business_rounded, color: green, size: 31),
-    );
+    return Image.asset(path,
+        width: 52,
+        height: 52,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback);
   }
 
   @override
@@ -1139,97 +1362,102 @@ class _ActivityHeader extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 28, 18, 30),
+      clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF064E3B), Color(0xFF128058), Color(0xFF22C55E)],
+          colors: [Color(0xFF064E3B), Color(0xFF0B6B4D), Color(0xFF1A9E6B)],
         ),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
-        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Stack(
         children: [
-          Positioned(right: -45, top: -70, child: _orb(170)),
-          Positioned(right: 45, bottom: -70, child: _orb(125)),
-          Row(
-            children: [
-              Container(
-                width: 68,
-                height: 68,
-                padding: const EdgeInsets.all(3),
+          const Positioned(
+            right: -40,
+            top: -60,
+            child: SizedBox(
+              width: 160,
+              height: 160,
+              child: DecoratedBox(
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: .20),
-                ),
-                child: Container(
-                  decoration: const BoxDecoration(
-                      shape: BoxShape.circle, color: Colors.white),
-                  padding: const EdgeInsets.all(3),
-                  child: CircleAvatar(
-                    backgroundColor: const Color(0xFFE0F5E8),
-                    child: ClipOval(child: _logo(logo)),
-                  ),
-                ),
+                    shape: BoxShape.circle, color: Color(0x12FFFFFF)),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                pad, MediaQuery.paddingOf(context).top + 16, pad, 18),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1100),
+                child: Row(
                   children: [
-                    const Text(
-                      'Activity Proposals',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 29,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1,
-                        letterSpacing: -.7,
-                      ),
+                    Container(
+                      width: 56,
+                      height: 56,
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: Colors.white),
+                      child: ClipOval(child: _logo(logo)),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      orgName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: .86),
-                        fontSize: 13,
-                        height: 1.45,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                              color: Color(0xFF86EFAC), shape: BoxShape.circle),
-                          child: SizedBox(width: 9, height: 9),
-                        ),
-                        SizedBox(width: 7),
-                        Flexible(
-                          child: Text(
-                            'OFFICER ORGANIZATION HUB',
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Activity Proposals',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: .5),
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                height: 1.15),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 3),
+                          Text(
+                            orgName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Color(0xE6FFFFFF),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                    color: Color(0xFF86EFAC),
+                                    shape: BoxShape.circle),
+                                child: SizedBox(width: 8, height: 8),
+                              ),
+                              SizedBox(width: 7),
+                              Flexible(
+                                child: Text(
+                                  'OFFICER ORGANIZATION HUB',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: .4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -1249,28 +1477,22 @@ class _StatusNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: line),
-      ),
+      decoration:
+          BoxDecoration(color: _mint, borderRadius: BorderRadius.circular(12)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(width: 1),
           Icon(icon, color: green, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(
-                color: dark,
-                fontSize: 11.5,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-              ),
+                  color: _ink,
+                  fontSize: 13,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -1279,98 +1501,217 @@ class _StatusNote extends StatelessWidget {
   }
 }
 
-class _IntroCard extends StatelessWidget {
-  final String orgName;
-  const _IntroCard({required this.orgName});
+class _Gallery extends StatefulWidget {
+  final List<String> images;
+  const _Gallery(this.images, {super.key});
+
+  @override
+  State<_Gallery> createState() => _GalleryState();
+}
+
+class _GalleryState extends State<_Gallery> {
+  final _page = PageController();
+  int _i = 0;
+
+  @override
+  void dispose() {
+    _page.dispose();
+    super.dispose();
+  }
+
+  void _go(int d) => _page.animateToPage(_i + d,
+      duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+
+  Widget _arrow(IconData icon, String tip, VoidCallback? onTap) => IconButton(
+        tooltip: tip,
+        onPressed: onTap,
+        icon: Icon(icon),
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0x99173B30),
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: const Color(0x33173B30),
+          disabledForegroundColor: Colors.white54,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: line),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x0A128058), blurRadius: 18, offset: Offset(0, 7)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .72),
-              borderRadius: BorderRadius.circular(15),
+    final n = widget.images.length;
+    return SizedBox(
+      height: 220,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            PageView.builder(
+              controller: _page,
+              itemCount: n,
+              onPageChanged: (v) => setState(() => _i = v),
+              itemBuilder: (_, k) => CachedNetworkImage(
+                imageUrl: widget.images[k],
+                fit: BoxFit.cover,
+                memCacheWidth: 900,
+                placeholder: (_, __) => const ColoredBox(color: _skeleton),
+                errorWidget: (_, __, ___) => const ColoredBox(
+                  color: _skeleton,
+                  child: Center(
+                      child: Icon(Icons.broken_image_outlined, color: _sub)),
+                ),
+              ),
             ),
-            child: const Icon(Icons.lightbulb_rounded, color: green, size: 25),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
+            if (n > 1) ...[
+              Positioned(
+                left: 4,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                    child: _arrow(Icons.chevron_left_rounded,
+                        'Previous picture', _i > 0 ? () => _go(-1) : null)),
+              ),
+              Positioned(
+                right: 4,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                    child: _arrow(Icons.chevron_right_rounded, 'Next picture',
+                        _i < n - 1 ? () => _go(1) : null)),
+              ),
+              Positioned(
+                bottom: 8,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var k = 0; k < n; k++)
+                      Container(
+                        width: 7,
+                        height: 7,
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: k == _i ? Colors.white : Colors.white54,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Skeleton extends StatefulWidget {
+  const _Skeleton();
+
+  @override
+  State<_Skeleton> createState() => _SkeletonState();
+}
+
+class _SkeletonState extends State<_Skeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 1000))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Loading proposal',
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (_, __) {
+          final color =
+              Color.lerp(_skeleton, const Color(0xFFDDE7E3), _c.value)!;
+          Widget box(double w, double h, [double r = 8]) => Container(
+                width: w,
+                height: h,
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(r)),
+              );
+          return Container(
+            padding: const EdgeInsets.all(14),
+            decoration: _cardDeco,
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Plan it. Send it. Improve it.',
-                    style: TextStyle(
-                        color: dark,
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 4),
-                Text(
-                  'Submit polished activity proposals for $orgName and keep every adviser review in one place.',
-                  style: const TextStyle(
-                      color: muted,
-                      fontSize: 11.5,
-                      height: 1.45,
-                      fontWeight: FontWeight.w600),
+                box(72, 72, 12),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      box(double.infinity, 16),
+                      const SizedBox(height: 8),
+                      box(120, 12),
+                      const SizedBox(height: 8),
+                      box(double.infinity, 12),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-class _EmptyProposals extends StatelessWidget {
-  const _EmptyProposals();
+class _Notice extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final String? button;
+  final VoidCallback? onTap;
+
+  const _Notice({
+    required this.icon,
+    required this.text,
+    this.button,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final label = button;
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 30, 24, 30),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: line),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x0A128058), blurRadius: 18, offset: Offset(0, 7))
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+      decoration: _cardDeco,
       child: Column(
-        children: const [
-          Icon(Icons.auto_awesome_rounded, color: green, size: 34),
-          SizedBox(height: 10),
-          Text('No proposals yet',
-              style: TextStyle(
-                  color: dark, fontSize: 15, fontWeight: FontWeight.w900)),
-          SizedBox(height: 5),
+        children: [
+          Icon(icon, color: green, size: 32),
+          const SizedBox(height: 10),
           Text(
-            'Your submitted activity proposals will appear here with adviser feedback and creative status.',
+            text,
             textAlign: TextAlign.center,
-            style: TextStyle(
-                color: muted,
-                fontSize: 11.5,
+            style: const TextStyle(
+                color: _sub,
+                fontSize: 14,
                 height: 1.45,
-                fontWeight: FontWeight.w600),
+                fontWeight: FontWeight.w500),
           ),
+          if (label != null) ...[
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: onTap,
+              style: FilledButton.styleFrom(
+                backgroundColor: green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 44),
+              ),
+              child: Text(label),
+            ),
+          ],
         ],
       ),
     );

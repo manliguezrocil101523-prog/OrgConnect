@@ -316,6 +316,9 @@ class _Hero extends StatelessWidget {
     final searchHeight = 56.0 * searchScale;
     final searchOverlap = searchHeight / 2;
     final isDesktop = layout.size == HomeSize.desktop;
+    // On desktop the sidebar shows the logo + name, so the header drops them.
+    final showBrand =
+        MediaQuery.sizeOf(context).width < HomeBreakpoints.desktopMin;
 
     final double logoSize;
     final double titleSize;
@@ -396,21 +399,24 @@ class _Hero extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                _Logo(size: logoSize),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'OrgConnect',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: titleSize,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.3,
+                                if (showBrand) ...[
+                                  _Logo(size: logoSize),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'OrgConnect',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: titleSize,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.3,
+                                      ),
                                     ),
                                   ),
-                                ),
+                                ] else
+                                  const Spacer(),
                                 _BellButton(
                                   hasUnread: hasUnread,
                                   onTap: onBell,
@@ -423,27 +429,33 @@ class _Hero extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 18),
-                            Text(
-                              greeting,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: greetingSize,
-                                fontWeight: FontWeight.w800,
-                                height: 1.15,
-                                letterSpacing: -0.4,
+                            Transform.translate(
+                              offset: Offset(0, isDesktop ? -50 : 0),
+                              child: Text(
+                                greeting,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: greetingSize,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.15,
+                                  letterSpacing: -0.4,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text(
-                              'Your campus. Your organizations. Your journey.',
-                              softWrap: true,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: .88),
-                                fontSize: taglineSize,
-                                fontWeight: FontWeight.w500,
-                                height: 1.35,
+                            Transform.translate(
+                              offset: Offset(0, isDesktop ? -45 : 0),
+                              child: Text(
+                                'Your campus. Your organizations. Your journey.',
+                                softWrap: true,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: .88),
+                                  fontSize: taglineSize,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.35,
+                                ),
                               ),
                             ),
                           ],
@@ -472,7 +484,8 @@ class _Hero extends StatelessWidget {
                     horizontal: layout.homeHPad,
                   ),
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment:
+                        isDesktop ? Alignment.center : Alignment.centerLeft,
                     child: SizedBox(
                       width: searchMaxWidth,
                       child: _SearchBar(
@@ -851,7 +864,7 @@ class _QuickCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDesktop = layout.size == HomeSize.desktop;
     final iconBox = isDesktop ? 44.0 : (roomy ? 42.0 : 36.0);
-    final iconSize = isDesktop ? 28.0 : (roomy ? 25.0 : 22.0);
+    final iconSize = isDesktop ? 22.0 : (roomy ? 20.0 : 18.0);
     final arrowSize = isDesktop ? 18.0 : (roomy ? 16.0 : 14.0);
     final cardPadding = isDesktop ? 18.0 : (roomy ? 14.0 : 10.0);
 
@@ -881,13 +894,17 @@ class _QuickCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    SizedBox(
+                    Container(
                       width: iconBox,
                       height: iconBox,
+                      decoration: const BoxDecoration(
+                        color: HC.primary,
+                        shape: BoxShape.circle,
+                      ),
                       child: Center(
                         child: Icon(
                           a.icon,
-                          color: HC.primary,
+                          color: Colors.white,
                           size: iconSize,
                         ),
                       ),

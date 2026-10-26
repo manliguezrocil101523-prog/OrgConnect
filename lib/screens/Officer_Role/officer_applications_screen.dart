@@ -437,8 +437,9 @@ class OfficerApplicationsScreen extends StatelessWidget {
               child: const Text('Cancel')),
           FilledButton(
               onPressed: () {
-                if (controller.text.trim().isNotEmpty)
+                if (controller.text.trim().isNotEmpty) {
                   Navigator.pop(context, controller.text.trim());
+                }
               },
               child: const Text('Send Reason')),
         ],
@@ -447,9 +448,10 @@ class OfficerApplicationsScreen extends StatelessWidget {
     controller.dispose();
     if (reason == null) return;
     await AppState.instance.declineApplication(a.id, reason);
-    if (context.mounted)
+    if (context.mounted) {
       _snack(context, 'Application declined and reason sent to the student.',
           Colors.redAccent);
+    }
   }
 
   void _clearDeclined(BuildContext context, List<Application> declined) async {

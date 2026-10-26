@@ -1153,7 +1153,7 @@ class _IconBox extends StatelessWidget {
   const _IconBox({
     required this.icon,
     required this.color,
-    this.size = 40.0,
+    this.size = 36.0, // Added default value here
   });
 
   @override
@@ -1161,9 +1161,13 @@ class _IconBox extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: .10),
+          color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: color, size: size * .48),
+        child: Icon(
+          icon,
+          color: color,
+          size: size * 0.48,
+        ),
       );
 }

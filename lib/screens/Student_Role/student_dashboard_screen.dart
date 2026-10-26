@@ -55,6 +55,37 @@ double _sc(BuildContext c) => _scaleOf(MediaQuery.sizeOf(c).width);
 double _side(BuildContext c) =>
     math.max(0.0, (MediaQuery.sizeOf(c).width - _kMaxContent) / 2);
 
+/// Two cards per row once the window can fit them (each column >= ~400dp).
+/// Swap for HomeBreakpoints.desktopMin only if its value is around 900 or more.
+const double _kWideBreak = 900;
+const double _kMaxWide = 960;
+
+int _columns(BuildContext c) =>
+    MediaQuery.sizeOf(c).width >= _kWideBreak ? 2 : 1;
+
+/// Like [_side], for the two list screens: 640dp column below [_kWideBreak],
+/// 960dp (two columns) above it.
+double _listSide(BuildContext c) {
+  final w = MediaQuery.sizeOf(c).width;
+  return math.max(0.0, (w - (w >= _kWideBreak ? _kMaxWide : _kMaxContent)) / 2);
+}
+
+/// One list row of up to [cols] cards; cards in a row share the tallest height.
+Widget _cardRow(int cols, List<Widget> cards, double gap) {
+  if (cols == 1) return cards.first;
+  return IntrinsicHeight(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < cols; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          Expanded(child: i < cards.length ? cards[i] : const SizedBox()),
+        ],
+      ],
+    ),
+  );
+}
+
 String _mdy(DateTime d) => '${d.month}/${d.day}/${d.year}';
 
 /// "Role: Name" -> (role, name). A bare "Name" gets the role 'Officer'.
@@ -448,12 +479,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   }
 }
 
-// ADD this new class directly after _StudentDashboardScreenState:
-
-/// Provides the desktop navigation rail for the four student dashboard tabs.
-///
-/// The rail uses a scroll-safe layout so its destinations remain accessible
-/// in short windows and at larger system text scales.
+/// Desktop sidebar for the four student dashboard tabs.
+/// Each item is a row (icon + label), with a soft green pill on the selected one.
 class _SideNav extends StatelessWidget {
   const _SideNav({
     required this.selectedIndex,
@@ -463,6 +490,15 @@ class _SideNav extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
 
+  static const double _width = 240;
+
+  static const List<({IconData icon, String label})> _items = [
+    (icon: Icons.home_rounded, label: 'Home'),
+    (icon: Icons.groups_rounded, label: 'Organizations'),
+    (icon: Icons.calendar_month_rounded, label: 'Events'),
+    (icon: Icons.person_rounded, label: 'Profile'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
@@ -470,94 +506,138 @@ class _SideNav extends StatelessWidget {
       child: SafeArea(
         right: false,
         child: SizedBox(
-          width: 88,
+          width: _width,
           child: MediaQuery.withClampedTextScaling(
             maxScaleFactor: 1.3,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: IntrinsicHeight(
-                      child: NavigationRail(
-                        selectedIndex: selectedIndex,
-                        onDestinationSelected: onSelect,
-                        labelType: NavigationRailLabelType.all,
-                        backgroundColor: Colors.white,
-                        indicatorColor: _C.softGreen,
-                        selectedIconTheme: const IconThemeData(
-                          color: _C.green,
-                        ),
-                        unselectedIconTheme: const IconThemeData(
-                          color: _C.navInactive,
-                        ),
-                        selectedLabelTextStyle: const TextStyle(
-                          color: _C.green,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        unselectedLabelTextStyle: const TextStyle(
-                          color: _C.navInactive,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        minWidth: 88,
-                        groupAlignment: -1.0,
-                        useIndicator: true,
-                        destinations: const <NavigationRailDestination>[
-                          NavigationRailDestination(
-                            icon: Icon(
-                              Icons.home_rounded,
-                              color: _C.navInactive,
-                            ),
-                            selectedIcon: Icon(
-                              Icons.home_rounded,
-                              color: _C.green,
-                            ),
-                            label: Text('Home'),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(
-                              Icons.groups_rounded,
-                              color: _C.navInactive,
-                            ),
-                            selectedIcon: Icon(
-                              Icons.groups_rounded,
-                              color: _C.green,
-                            ),
-                            label: Text('Orgs'),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(
-                              Icons.calendar_month_rounded,
-                              color: _C.navInactive,
-                            ),
-                            selectedIcon: Icon(
-                              Icons.calendar_month_rounded,
-                              color: _C.green,
-                            ),
-                            label: Text('Events'),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(
-                              Icons.person_rounded,
-                              color: _C.navInactive,
-                            ),
-                            selectedIcon: Icon(
-                              Icons.person_rounded,
-                              color: _C.green,
-                            ),
-                            label: Text('Profile'),
-                          ),
-                        ],
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 20, 12, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const _SideNavBrand(),
+                  const SizedBox(height: 24),
+                  for (var i = 0; i < _items.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _SideNavItem(
+                        icon: _items[i].icon,
+                        label: _items[i].label,
+                        selected: selectedIndex == i,
+                        onTap: () => onSelect(i),
                       ),
                     ),
-                  ),
-                );
-              },
+                ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SideNavItem extends StatelessWidget {
+  const _SideNavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(12);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: selected ? _C.softGreen : Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  icon,
+                  size: 22,
+                  color: selected ? _C.green : _C.navInactive,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? _C.green : _C.muted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SideNavBrand extends StatelessWidget {
+  const _SideNavBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 38,
+            height: 38,
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: _C.border),
+            ),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/icon/app_logo_green.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.groups_rounded,
+                  color: _C.green,
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'OrgConnect',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _C.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -787,7 +867,7 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
       builder: (context, snap) {
         final rows = snap.items;
         final s = _sc(context);
-        final side = _side(context);
+        final side = _listSide(context);
         final bottom = MediaQuery.paddingOf(context).bottom;
 
         final pendingRows =
@@ -828,17 +908,24 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
                 : 'Applications with a final result will show up here.',
           );
         } else {
+          final cols = _columns(context);
+          final rowCount = (filtered.length / cols).ceil();
           body = ListView.separated(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
                 18 * s + side, 18, 18 * s + side, 36 + bottom),
             // +1 for the "That's all for now" footer.
-            itemCount: filtered.length + 1,
+            itemCount: rowCount + 1,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
-              if (i == filtered.length) return const _ListFooter();
-              return _ApplicationCard(
-                  key: ValueKey(filtered[i].app.id), row: filtered[i]);
+              if (i == rowCount) return const _ListFooter();
+              return _cardRow(
+                  cols,
+                  [
+                    for (final r in filtered.skip(i * cols).take(cols))
+                      _ApplicationCard(key: ValueKey(r.app.id), row: r),
+                  ],
+                  10);
             },
           );
         }
@@ -922,6 +1009,7 @@ class _StudentHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final top = mq.padding.top;
+    final side = _listSide(context);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -939,8 +1027,8 @@ class _StudentHeader extends StatelessWidget {
 
             // Title: vertically centered in the bar
             Positioned(
-              left: 60,
-              right: 16,
+              left: 60 + side,
+              right: 16 + side,
               top: top,
               height: _barHeight,
               child: Align(
@@ -960,7 +1048,7 @@ class _StudentHeader extends StatelessWidget {
 
             // Back button: same center line as the title
             Positioned(
-              left: 8,
+              left: 8 + side,
               top: top,
               height: _barHeight,
               child: Center(
@@ -1010,7 +1098,7 @@ class _ApplicationsTop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = _sc(context);
-    final side = _side(context);
+    final side = _listSide(context);
     return SizedBox(
       width: double.infinity,
       child: Padding(
@@ -1365,7 +1453,7 @@ class _JoinedOrganizationsScreenState
       builder: (context, snap) {
         final joined = snap.items;
         final s = _sc(context);
-        final side = _side(context);
+        final side = _listSide(context);
         final bottom = MediaQuery.paddingOf(context).bottom;
 
         final Widget body;
@@ -1380,13 +1468,20 @@ class _JoinedOrganizationsScreenState
                 'When an application is accepted, your organization will appear here.',
           );
         } else {
+          final cols = _columns(context);
+          final rowCount = (joined.length / cols).ceil();
           body = ListView.separated(
             padding: EdgeInsets.fromLTRB(
                 18 * s + side, 18, 18 * s + side, 36 + bottom),
-            itemCount: joined.length,
+            itemCount: rowCount,
             separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (_, i) =>
-                _JoinedOrgCard(key: ValueKey(joined[i].id), org: joined[i]),
+            itemBuilder: (_, i) => _cardRow(
+                cols,
+                [
+                  for (final o in joined.skip(i * cols).take(cols))
+                    _JoinedOrgCard(key: ValueKey(o.id), org: o),
+                ],
+                12),
           );
         }
 
@@ -1422,7 +1517,7 @@ class _JoinedTop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = _sc(context);
-    final side = _side(context);
+    final side = _listSide(context);
     return SizedBox(
       width: double.infinity,
       child: Padding(

@@ -348,6 +348,11 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
           )
         : null;
 
+    // Same rule the dashboard shell uses to show the sidebar.
+    final bool sidebarVisible =
+        MediaQuery.sizeOf(context).width >= HomeBreakpoints.desktopMin;
+    final bool controlsAtCorner = sidebarVisible && controls != null;
+
     // The control width is bounded and known from the number of dots and
     // whether wide-banner arrow buttons are present.
     final dotContentWidth = 16.0 + 9.0 * (_events.length - 1);
@@ -363,7 +368,7 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
     // line if the action row would be too tight.
     final actionRow = LayoutBuilder(
       builder: (context, actionConstraints) {
-        if (controls == null) {
+        if (controls == null || controlsAtCorner) {
           return Align(
             alignment: Alignment.centerLeft,
             child: detailsButton,
@@ -560,7 +565,13 @@ class _FeaturedEventCarouselState extends State<FeaturedEventCarousel> {
                       ),
                     ),
                   ),
-
+                  // 5b. Desktop only: arrows + dots at the bottom-right.
+                  if (controlsAtCorner)
+                    Positioned(
+                      right: horizontalPadding,
+                      bottom: verticalPadding,
+                      child: controls,
+                    ),
                   // 6. Hairline inner border.
                   Positioned.fill(
                     child: IgnorePointer(

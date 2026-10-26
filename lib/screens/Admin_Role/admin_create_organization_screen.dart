@@ -209,19 +209,11 @@ class _AdminCreateOrganizationScreenState
       final officer = _officer;
       if (officer != null) {
         try {
-          final updated = await db
-              .from('profiles')
-              .update({
-                'role': 'officer',
-                'assigned_org_id': id,
-                'updated_at': DateTime.now().toIso8601String(),
-              })
-              .eq('id', officer['id'].toString())
-              .select('id');
-          if ((updated as List).isEmpty) {
-            officerWarning =
-                'The organization was created, but the officer could not be assigned (no row updated).';
-          }
+          await db.rpc('admin_assign_officer', params: {
+            'p_user_id': officer['id'].toString(),
+            'p_org_id': id.toString(),
+            'p_position': 'Officer',
+          });
         } catch (error) {
           officerWarning =
               'The organization was created, but assigning the officer failed: $error';

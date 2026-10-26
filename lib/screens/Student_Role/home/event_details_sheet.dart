@@ -10,12 +10,52 @@ import 'home_event_utils.dart';
 import 'home_tokens.dart';
 
 /// Shows event information and lets students manage interest and comments.
+/// Desktop-sized windows get a centered dialog; everything else keeps the
+/// original draggable bottom sheet.
 Future<void> showEventDetailsSheet(
   BuildContext context, {
   required Event event,
   int interestedCount = 0,
   VoidCallback? onInterestChanged,
 }) async {
+  final screen = MediaQuery.sizeOf(context);
+  final isDesktop = screen.width >= 900 && screen.height >= 500;
+
+  if (isDesktop) {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final dialogHeight = (MediaQuery.sizeOf(dialogContext).height * 0.88)
+            .clamp(420.0, 820.0)
+            .toDouble();
+        return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          clipBehavior: Clip.antiAlias,
+          insetPadding: const EdgeInsets.all(24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: HomeLayout.capText(
+            dialogContext,
+            SizedBox(
+              width: 620,
+              height: dialogHeight,
+              child: _EventDetailsSheet(
+                event: event,
+                interestedCount: interestedCount,
+                onInterestChanged: onInterestChanged,
+                showHandle: false,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    return;
+  }
+
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -76,14 +116,16 @@ class _EventDetailsSheet extends StatefulWidget {
   const _EventDetailsSheet({
     required this.event,
     required this.interestedCount,
-    required this.scrollController,
+    this.scrollController,
+    this.showHandle = true,
     this.onInterestChanged,
   });
 
   final Event event;
   final int interestedCount;
   final VoidCallback? onInterestChanged;
-  final ScrollController scrollController;
+  final ScrollController? scrollController;
+  final bool showHandle;
 
   @override
   State<_EventDetailsSheet> createState() => _EventDetailsSheetState();
@@ -210,7 +252,7 @@ class _EventDetailsSheetState extends State<_EventDetailsSheet> {
         _isInterested = row != null;
         _isCheckingInterest = false;
       });
-    } catch (error, stackTrace) {
+    } catch (error) {
       if (!mounted || widget.event.id != eventId) {
         return;
       }
@@ -416,6 +458,7 @@ class _EventDetailsSheetState extends State<_EventDetailsSheet> {
   }
 
   /// Loads how many comments this event has.
+  /// Loads the total comments (top-level comments + replies) for this event.
   Future<void> _loadCommentCount() async {
     final client = supabase.Supabase.instance.client;
     final eventId = widget.event.id;
@@ -426,12 +469,32 @@ class _EventDetailsSheetState extends State<_EventDetailsSheet> {
           .select('id')
           .eq('event_id', eventId);
 
+      final ids = (rows as List)
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      var replyCount = 0;
+
+      if (ids.isNotEmpty) {
+        try {
+          final replies = await client
+              .from('event_comment_replies')
+              .select('id')
+              .inFilter('comment_id', ids);
+
+          replyCount = (replies as List).length;
+        } catch (error, stackTrace) {
+          debugPrint('Unable to load reply count: $error\n$stackTrace');
+        }
+      }
+
       if (!mounted || widget.event.id != eventId) {
         return;
       }
 
       setState(() {
-        _commentCount = (rows as List).length;
+        _commentCount = ids.length + replyCount;
       });
     } catch (error, stackTrace) {
       debugPrint('Unable to load comment count: $error\n$stackTrace');
@@ -1130,12 +1193,12 @@ class _EventDetailsSheetState extends State<_EventDetailsSheet> {
                       ),
                     ],
                     const SizedBox(width: 5),
-                    const Flexible(
+                    Flexible(
                       child: Text(
-                        'Comment',
+                        _commentCount == 1 ? 'Comment' : 'Comments',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: HC.muted,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -1271,17 +1334,19 @@ class _EventDetailsSheetState extends State<_EventDetailsSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: HC.line,
-                            borderRadius: BorderRadius.circular(10),
+                      if (widget.showHandle) ...<Widget>[
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: HC.line,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
+                        const SizedBox(height: 8),
+                      ],
                       Row(
                         children: <Widget>[
                           IconButton(

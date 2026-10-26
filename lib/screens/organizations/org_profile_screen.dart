@@ -131,6 +131,52 @@ class _Pad extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 18), child: child);
 }
 
+/// One card per row on narrow screens, two per row when the space allows.
+/// Cards in the same row share the tallest card's height.
+/// One card per row on narrow screens, two per row when the space allows.
+/// Cards in the same row share the tallest card's height.
+class _CardGrid extends StatelessWidget {
+  final List<Widget> children;
+  final double gap;
+
+  const _CardGrid({
+    required this.children,
+    this.gap = 16.0, // Added default value here
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final cols = constraints.maxWidth >= 600 && children.length > 1 ? 2 : 1;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i += cols)
+            Padding(
+              padding: EdgeInsets.only(bottom: gap),
+              child: cols == 1
+                  ? children[i]
+                  : IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: children[i]),
+                          SizedBox(width: gap),
+                          Expanded(
+                            child: i + 1 < children.length
+                                ? children[i + 1]
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+        ],
+      );
+    });
+  }
+}
+
 /// Vertical scrolling tab body.
 /// - owns its own controller (no shared PrimaryScrollController clashes)
 /// - keeps its state alive, so scroll position and typed form data survive
@@ -843,13 +889,14 @@ class _OrgDashboard extends StatelessWidget {
                 count: events.length),
           ),
           const SizedBox(height: 10),
-          for (final event in events)
-            _Pad(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: _EventVisualCard(event: event, expanded: true),
-              ),
+          _Pad(
+            child: _CardGrid(
+              children: [
+                for (final event in events)
+                  _EventVisualCard(event: event, expanded: true),
+              ],
             ),
+          ),
         ] else ...[
           const SizedBox(height: 14),
           const _Pad(
