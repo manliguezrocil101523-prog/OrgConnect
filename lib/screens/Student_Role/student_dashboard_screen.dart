@@ -5,7 +5,6 @@ import 'package:flutter/material.dart' hide Notification;
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
-import '../../core/student_chat_unread.dart'; // ✅ CORRECT
 import '../analytics/event_comments_sheet.dart';
 import '/screens/notifications/notification_screen.dart';
 import '/screens/Student_Role/student_dashboard_events.dart';
@@ -357,6 +356,7 @@ class StudentDashboardScreen extends StatefulWidget {
   State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
 }
 
+// REPLACE the whole _StudentDashboardScreenState class with this:
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   DateTime? _lastBackPressed;
   int _selectedIndex = 0;
@@ -366,18 +366,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   // Preserves the IndexedStack element and its descendant states when the
   // content moves between the Scaffold body and the desktop Expanded body.
   final GlobalKey _tabContentKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-    StudentChatUnread.instance.start();
-  }
-
-  @override
-  void dispose() {
-    StudentChatUnread.instance.stop();
-    super.dispose();
-  }
 
   void _select(int i) => setState(() {
         _selectedIndex = i;
@@ -492,6 +480,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 }
 
 /// Desktop sidebar for the four student dashboard tabs.
+/// Each item is a row (icon + label), with a soft green pill on the selected one.
 class _SideNav extends StatelessWidget {
   const _SideNav({
     required this.selectedIndex,
@@ -534,7 +523,6 @@ class _SideNav extends StatelessWidget {
                         icon: _items[i].icon,
                         label: _items[i].label,
                         selected: selectedIndex == i,
-                        badgeOrgs: i == 1,
                         onTap: () => onSelect(i),
                       ),
                     ),
@@ -554,14 +542,12 @@ class _SideNavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    this.badgeOrgs = false,
   });
 
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  final bool badgeOrgs;
 
   @override
   Widget build(BuildContext context) {
@@ -580,19 +566,11 @@ class _SideNavItem extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Row(
               children: <Widget>[
-                badgeOrgs
-                    ? _OrgAnnouncementBadge(
-                        child: Icon(
-                          icon,
-                          size: 22,
-                          color: selected ? _C.green : _C.navInactive,
-                        ),
-                      )
-                    : Icon(
-                        icon,
-                        size: 22,
-                        color: selected ? _C.green : _C.navInactive,
-                      ),
+                Icon(
+                  icon,
+                  size: 22,
+                  color: selected ? _C.green : _C.navInactive,
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -665,24 +643,6 @@ class _SideNavBrand extends StatelessWidget {
   }
 }
 
-class _OrgAnnouncementBadge extends StatelessWidget {
-  const _OrgAnnouncementBadge({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-        animation: Listenable.merge(
-            [AppState.instance, StudentChatUnread.instance.count]),
-        builder: (context, _) {
-          final n = AppState.instance.unreadOrgAnnouncementCount() +
-              StudentChatUnread.instance.count.value;
-          return n > 0
-              ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: child)
-              : child;
-        },
-      );
-}
-
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.selected, required this.onSelect});
   final int selected;
@@ -731,7 +691,6 @@ class _BottomNav extends StatelessWidget {
                         selected: i == selected,
                         iconSize: iconSize,
                         fontSize: fontSize,
-                        badgeOrgs: i == 1,
                         onTap: () => onSelect(i),
                       ),
                     ),
@@ -753,7 +712,6 @@ class _NavItem extends StatelessWidget {
     required this.iconSize,
     required this.fontSize,
     required this.onTap,
-    this.badgeOrgs = false,
   });
 
   final IconData icon;
@@ -762,7 +720,6 @@ class _NavItem extends StatelessWidget {
   final double iconSize;
   final double fontSize;
   final VoidCallback onTap;
-  final bool badgeOrgs;
 
   @override
   Widget build(BuildContext context) {
@@ -781,10 +738,7 @@ class _NavItem extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                badgeOrgs
-                    ? _OrgAnnouncementBadge(
-                        child: Icon(icon, size: iconSize, color: color))
-                    : Icon(icon, size: iconSize, color: color),
+                Icon(icon, size: iconSize, color: color),
                 const SizedBox(height: 3),
                 Text(
                   label,
@@ -877,6 +831,8 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
   @override
   void initState() {
     super.initState();
+    // Cached AppState data renders immediately; refresh happens after the
+    // first frame so AppState notifications never land mid-build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _refresh();
     });
@@ -958,6 +914,7 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
                 18 * s + side, 18, 18 * s + side, 36 + bottom),
+            // +1 for the "That's all for now" footer.
             itemCount: rowCount + 1,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
@@ -990,6 +947,11 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
               filter: _filter,
               onFilter: (f) => setState(() => _filter = f),
             ),
+            // Thin bar: old data stays visible while fresh data loads.
+            // Fixed 2dp strip: always reserved, so the layout never shifts.
+            // Idle = static divider line, refreshing = animated bar.
+            // Static divider. Background refresh is silent (the cached list
+            // stays visible); pull-to-refresh shows its own indicator.
             const Divider(height: 1, thickness: 1, color: _C.softGreen),
             Expanded(
               child: SafeArea(
@@ -1000,6 +962,8 @@ class _MyApplicationsScreenState extends State<_MyApplicationsScreen> {
                   onRefresh: _refresh,
                   child: filtered.isEmpty
                       ? ListView(
+                          // Must stay scrollable or pull-to-refresh is dead
+                          // on Android when the empty state fits the screen.
                           physics: const AlwaysScrollableScrollPhysics(),
                           children: [
                             SizedBox(
@@ -1060,6 +1024,8 @@ class _StudentHeader extends StatelessWidget {
           children: [
             Positioned(right: -30, top: -50, child: _orb(120)),
             Positioned(right: 45, bottom: -50, child: _orb(90)),
+
+            // Title: vertically centered in the bar
             Positioned(
               left: 60 + side,
               right: 16 + side,
@@ -1079,6 +1045,8 @@ class _StudentHeader extends StatelessWidget {
                 ),
               ),
             ),
+
+            // Back button: same center line as the title
             Positioned(
               left: 8 + side,
               top: top,
@@ -1105,6 +1073,7 @@ class _StudentHeader extends StatelessWidget {
   }
 }
 
+// Title, summary card and filter chips shown below the header.
 class _ApplicationsTop extends StatelessWidget {
   const _ApplicationsTop({
     required this.subtitle,
@@ -1305,6 +1274,7 @@ String _statusLabel(ApplicationStatus status) {
       status == ApplicationStatus.accepted) {
     return 'Approved';
   }
+  // Enum names are camelCase: forApproval -> "For Approval".
   final spaced =
       status.name.replaceAllMapped(RegExp(r'[A-Z]'), (m) => ' ${m[0]}').trim();
   return spaced[0].toUpperCase() + spaced.substring(1);
@@ -1321,6 +1291,9 @@ class _ApplicationCard extends StatelessWidget {
     final s = _sc(context);
     final color = _statusColor(application.status);
     final rawName = application.orgName.trim();
+
+    // The organization was renamed from SCAP to Student Catholic Action.
+    // Prefer the current organization record so old rows cannot revert it.
     final displayName = org?.name.trim().isNotEmpty == true
         ? org!.name
         : (rawName.toLowerCase() == 'scap'
@@ -1391,6 +1364,11 @@ class _ApplicationCard extends StatelessWidget {
 // Joined Organizations
 // =============================================================================
 
+/// Joined = profile.joinedOrgIds
+///        + orgs of member rows owned by this profile
+///        + orgs of approved/accepted applications owned by this student.
+/// Name matching is a fallback ONLY for legacy member rows with no profileId,
+/// so two students with the same name can never see each other's orgs.
 _Snap<Organization> _selectJoinedOrgs() {
   final app = AppState.instance;
   final student = app.currentStudent;
@@ -1455,6 +1433,7 @@ class _JoinedOrganizationsScreenState
     });
   }
 
+  /// Cached data is shown immediately; this refreshes in the background.
   Future<void> _load() async {
     try {
       final app = AppState.instance;
@@ -1529,6 +1508,7 @@ class _JoinedOrganizationsScreenState
   }
 }
 
+// Subtitle + status shown BELOW the header on the Joined Organizations screen.
 class _JoinedTop extends StatelessWidget {
   const _JoinedTop({required this.subtitle, required this.status});
   final String subtitle;
@@ -1678,6 +1658,7 @@ class _OrgView {
 
 _OrgView _orgViewFor(Organization base) {
   final app = AppState.instance;
+  // Use the freshest org record (realtime may have updated it).
   final org =
       app.organizations.firstWhere((o) => o.id == base.id, orElse: () => base);
 
@@ -1690,6 +1671,7 @@ _OrgView _orgViewFor(Organization base) {
       .toList()
     ..sort((a, b) => a.date.compareTo(b.date));
 
+  // Unique lowercase member names for this org + officer names not yet counted.
   final names = <String>{};
   for (final m in app.members) {
     if (m.orgId != org.id && m.orgName != org.name) continue;
@@ -1732,6 +1714,9 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
         .eq('org_id', orgId)
         .order('created_at', ascending: false)
         .limit(50);
+    // Read org rows directly so adviser announcements show even if an old row
+    // was mistakenly addressed to a student; personal types stay in
+    // Notifications.
     return [
       for (final r in (rows as List))
         _notificationFromRow(Map<String, dynamic>.from(r as Map)),
@@ -1747,6 +1732,7 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
         .from('profiles')
         .select('id,name,role,avatar_url,assigned_org_id,org_id')
         .or('assigned_org_id.eq.$orgId,org_id.eq.$orgId')
+        // PostgREST "in" is case-sensitive, so cover both spellings.
         .inFilter(
             'role', ['officer', 'Officer', 'adviser', 'Adviser']).order('name');
     return [
@@ -1754,6 +1740,9 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
     ];
   }
 
+  /// On open: only this org's two direct queries + a member refresh scoped to
+  /// this org. Pull-to-refresh (full: true) also refreshes the shared state.
+  /// Each request is guarded so one failure never wipes the others.
   Future<void> _load({bool full = false}) async {
     final app = AppState.instance;
     final id = widget.org.id;
@@ -1781,6 +1770,10 @@ class _MemberOrganizationSpaceState extends State<_MemberOrganizationSpace> {
       _loading = false;
     });
 
+    // Opening the space counts as seeing the announcements that are SHOWN.
+    // NOTE: org-wide announcements share one `read` column, so one student
+    // opening this marks them read for everyone. The real fix needs a
+    // per-user read table.
     final unread = announcements.take(10).where((n) => !n.read).toList();
     if (unread.isEmpty) return;
     try {
@@ -1952,6 +1945,7 @@ class _UpcomingEventCard extends StatelessWidget {
         : (e.imageUrls.isNotEmpty ? e.imageUrls.first : '');
 
     return LayoutBuilder(builder: (context, c) {
+      // ~175dp on a 360dp phone; grows with the card, within sane bounds.
       final imageHeight = math.min(260.0, math.max(150.0, c.maxWidth / 1.7));
       return Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -2093,6 +2087,8 @@ class _OfficersSection extends StatelessWidget {
   final Organization org;
   final List<Map<String, dynamic>> people;
 
+  /// Officer tile data: the org's own officer list when present (enriched with
+  /// live avatars / saved profiles), otherwise the live officer profiles.
   List<Map<String, dynamic>> _officerTiles(List<Map<String, dynamic>> live) {
     if (org.officers.isEmpty) return live;
     return [
@@ -2150,6 +2146,8 @@ class _OfficersSection extends StatelessWidget {
               style: TextStyle(color: _C.muted))
         else
           LayoutBuilder(builder: (context, c) {
+            // Tiles are at least 132dp wide, at least 2 per row, and stretch
+            // to fill the row so no space is wasted on any screen width.
             const minWidth = 132.0;
             const gap = 10.0;
             final cols =
@@ -2365,6 +2363,8 @@ class _StudentOrgHeader extends StatelessWidget {
     final pad = MediaQuery.paddingOf(context);
     final s = _sc(context);
 
+    // 150dp is a MINIMUM (it includes the status-bar inset); it grows with
+    // large text instead of overflowing.
     return ConstrainedBox(
       constraints:
           const BoxConstraints(minWidth: double.infinity, minHeight: 150),
@@ -2481,6 +2481,7 @@ class _QuickEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Scrollable so large text sizes can never cause a RenderFlex overflow.
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),

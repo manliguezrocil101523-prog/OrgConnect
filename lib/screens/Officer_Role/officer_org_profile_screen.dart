@@ -17,12 +17,12 @@ class OfficerOrgProfileScreen extends StatefulWidget {
 }
 
 class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
-  // ── Colors (Clean White Background Palette) ─────────────────────────────
+  // ── Colors (matches officer dashboard palette) ────────────────────────────
   static const Color _primary = Color(0xFF16A34A);
   static const Color _secondary = Color(0xFF0F766E);
-  static const Color _background = Colors.white;
+  static const Color _background = Color(0xFFF0FDF4);
   static const Color _textDark = Color(0xFF0F172A);
-  static const Color _textMuted = Color(0xFF64748B);
+  static const Color _textMuted = Color(0xFF94A3B8);
   static const Color _fieldBorder = Color(0xFFE2E8F0);
 
   // ── Form controllers ──────────────────────────────────────────────────────
@@ -197,6 +197,8 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
 
   String _existingOfficerAvatar(String name) {
     final target = name.trim().toLowerCase();
+    // If this officer already has an org-level entry, trust it
+    // (even if the photo was intentionally removed).
     for (final profile in _officerProfiles) {
       if (profile.name.trim().toLowerCase() == target) {
         return profile.avatarUrl.trim();
@@ -210,7 +212,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     return '';
   }
 
-  // ── Org-level adviser data ────────────────────────────────────────────────
+  // ── Org-level adviser data (does NOT touch the adviser's real account) ────
   OrgOfficerProfile? _adviserProfile() {
     for (final p in _officerProfiles) {
       if (p.role.trim().toLowerCase() == 'adviser') return p;
@@ -240,7 +242,6 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Edit Adviser'),
@@ -263,7 +264,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                     height: 118,
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: const Color(0xFFE7F7EF),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
                           color: _primary.withValues(alpha: .35), width: 2),
@@ -375,7 +376,6 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(existing == null ? 'Add Officer' : 'Edit Officer'),
@@ -400,7 +400,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                       width: 118,
                       height: 118,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: const Color(0xFFE7F7EF),
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(
                             color: _primary.withValues(alpha: .35), width: 2),
@@ -518,7 +518,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     return result;
   }
 
-  // ── Officer ordering ──────────────────────────────────────────────────────
+  // ── Officer ordering (President → VPs → Secretary → Treasurer → ...) ──────
   String _roleFromRaw(String raw) {
     final split = raw.indexOf(':');
     return split == -1 ? 'Officer' : raw.substring(0, split).trim();
@@ -543,9 +543,10 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         RegExp(r'\bpro\b').hasMatch(r)) {
       return 60 + assistant;
     }
-    return 100;
+    return 100; // unknown roles keep their current order, at the end
   }
 
+  // Dart's List.sort is not stable, so the original index is the tie-breaker.
   void _sortOfficersByRank() {
     final entries = <MapEntry<int, String>>[
       for (var i = 0; i < _officers.length; i++) MapEntry(i, _officers[i]),
@@ -644,10 +645,13 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     setState(() => _isSaving = true);
 
     try {
+      // Upload new logo if one was picked
+      // Upload new logo if one was picked
       String finalLogoAsset = _logoAsset;
       if (_pickedImageBytes != null) {
         final uploadedUrl = await _uploadLogo();
         if (uploadedUrl != null) {
+          // Evict old cached image so the new logo shows immediately everywhere
           await CachedNetworkImage.evictFromCache(_logoAsset);
           finalLogoAsset = uploadedUrl;
         } else {
@@ -656,6 +660,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         }
       }
 
+      // Build updated org object
       final updated = _org.copyWith(
         name: name,
         acronym: _org.acronym,
@@ -676,6 +681,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         logoAsset: finalLogoAsset,
       );
 
+      // This already handles Supabase + AppState update
       await AppState.instance.updateOrganization(updated);
 
       if (!mounted) return;
@@ -710,13 +716,22 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         top: false,
         child: Column(
           children: [
-            // Properly aligned title header without icon
+            // Fixed organization header. The form below is the only scrollable
+            // area, so the scrollbar starts exactly at Basic Info.
+
             AppHeader(
               title: _nameCtrl.text.trim().isEmpty
                   ? 'Your Organization'
                   : _nameCtrl.text.trim(),
               subtitle: 'Organization profile',
               status: 'EDITING ORGANIZATION',
+              leadingWidget: _LogoPicker(
+                pickedFile: _pickedImageBytes,
+                logoUrl: _logoUrl,
+                logoAsset: _logoAsset,
+                onTap: _pickLogo,
+                primary: _primary,
+              ),
               onBack: () => Navigator.of(context).pop(),
             ),
 
@@ -726,25 +741,13 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                 slivers: [
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 48),
+                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 48),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 560),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Organization Logo Picker (Centered above form)
-                              Center(
-                                child: _LogoPicker(
-                                  pickedFile: _pickedImageBytes,
-                                  logoUrl: _logoUrl,
-                                  logoAsset: _logoAsset,
-                                  onTap: _pickLogo,
-                                  primary: _primary,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-
                               // ── Basic Info ──────────────────────────────
                               _sectionLabel('Basic Info'),
                               const SizedBox(height: 12),
@@ -825,14 +828,13 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                               ),
                               const SizedBox(height: 12),
                               Center(
-                                child: _ProfilePersonEditorCard(
-                                  label: 'Adviser',
-                                  name: _adviserDisplayName(),
-                                  avatarUrl: _adviserDisplayAvatar(),
-                                  width: 172,
-                                  onEdit: _editAdviserProfile,
-                                ),
-                              ),
+                                  child: _ProfilePersonEditorCard(
+                                label: 'Adviser',
+                                name: _adviserDisplayName(),
+                                avatarUrl: _adviserDisplayAvatar(),
+                                width: 172,
+                                onEdit: _editAdviserProfile,
+                              )),
                               const SizedBox(height: 14),
                               _OfficerPeopleEditor(
                                 officers: _officers,
@@ -877,7 +879,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
                                     backgroundColor: _primary,
                                     disabledBackgroundColor:
                                         _primary.withValues(alpha: 0.45),
-                                    elevation: 2,
+                                    elevation: 5,
                                     shadowColor:
                                         _primary.withValues(alpha: .22),
                                     shape: RoundedRectangleBorder(
@@ -959,14 +961,18 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFE9FFF2), Color(0xFFBDF3D0)],
+        ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _fieldBorder),
+        border: Border.all(color: const Color(0xFFB9E4CF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 3))
+              color: _primary.withValues(alpha: 0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 6))
         ],
       ),
       child: TextField(
@@ -981,7 +987,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
         ),
         decoration: InputDecoration(
           filled: true,
-          fillColor: Colors.white,
+          fillColor: const Color(0xFFF8FFFB),
           labelText: label,
           labelStyle: const TextStyle(
             fontSize: 13,
@@ -990,15 +996,15 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
           ),
           prefixIcon: Icon(icon, color: _primary, size: 20),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: _fieldBorder, width: 1.2),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: _primary, width: 1.8),
           ),
           contentPadding: EdgeInsets.symmetric(
@@ -1012,7 +1018,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
 }
 
 // =============================================================================
-// _LogoPicker — shows current logo with camera edit button
+// _LogoPicker — shows current logo and a camera button to change it
 // =============================================================================
 class _LogoPicker extends StatelessWidget {
   final Uint8List? pickedFile;
@@ -1031,56 +1037,57 @@ class _LogoPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double size = 100;
+    const double size = 88;
     return SizedBox(
-      width: size,
-      height: size,
+      width: 96,
+      height: 96,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          // Compact logo for the member-style horizontal organization card.
           Container(
             width: size,
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white,
+              color: Colors.transparent,
               border:
                   Border.all(color: primary.withValues(alpha: 0.28), width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
                 ),
               ],
             ),
             child: ClipOval(child: _logoWidget()),
           ),
           Positioned(
-            right: 0,
-            bottom: 0,
+            right: -1,
+            bottom: 1,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onTap,
               child: Container(
-                width: 34,
-                height: 34,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: primary,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2.5),
+                  border: Border.all(color: Colors.white, width: 3),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.16),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+                      blurRadius: 7,
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
                 child: const Icon(
                   Icons.camera_alt_rounded,
                   color: Colors.white,
-                  size: 16,
+                  size: 18,
                 ),
               ),
             ),
@@ -1091,20 +1098,21 @@ class _LogoPicker extends StatelessWidget {
   }
 
   Widget _logoWidget() {
+    // Priority: newly picked file > network URL > asset
     if (pickedFile != null) {
       return Image.memory(
         pickedFile!,
-        fit: BoxFit.cover,
-        width: 100,
-        height: 100,
+        fit: BoxFit.contain,
+        width: 88,
+        height: 88,
       );
     }
     if (logoUrl.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: logoUrl,
-        fit: BoxFit.cover,
-        width: 100,
-        height: 100,
+        fit: BoxFit.contain,
+        width: 88,
+        height: 88,
         placeholder: (_, __) => _fallbackIcon(),
         errorWidget: (_, __, ___) => _fallbackIcon(),
       );
@@ -1112,9 +1120,9 @@ class _LogoPicker extends StatelessWidget {
     if (logoAsset.isNotEmpty) {
       return Image.asset(
         logoAsset,
-        fit: BoxFit.cover,
-        width: 100,
-        height: 100,
+        fit: BoxFit.contain,
+        width: 88,
+        height: 88,
         errorBuilder: (_, __, ___) => _fallbackIcon(),
       );
     }
@@ -1122,13 +1130,13 @@ class _LogoPicker extends StatelessWidget {
   }
 
   Widget _fallbackIcon() => Container(
-        color: const Color(0xFFF1F5F9),
+        color: const Color(0xFFE0E7FF),
         child: Icon(Icons.groups_rounded, color: primary, size: 40),
       );
 }
 
 // =============================================================================
-// _ProfilePersonEditorCard — visual officer/adviser profile card
+// _EditablePeopleCard — visual officer/adviser profile editor
 // =============================================================================
 class _ProfilePersonEditorCard extends StatelessWidget {
   final String label;
@@ -1157,14 +1165,17 @@ class _ProfilePersonEditorCard extends StatelessWidget {
             width: width,
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFFFFFF), Color(0xFFF3FCF6)]),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-              boxShadow: [
+              border: Border.all(color: const Color(0xFFB9E4CF), width: 1.2),
+              boxShadow: const [
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4))
+                    color: Color(0x0D0F8A61),
+                    blurRadius: 14,
+                    offset: Offset(0, 6))
               ],
             ),
             child: Column(
@@ -1189,7 +1200,7 @@ class _ProfilePersonEditorCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
+                        color: const Color(0xFFE3F7EA),
                         borderRadius: BorderRadius.circular(999)),
                     child: Text(displayRole,
                         softWrap: true,
@@ -1233,7 +1244,7 @@ class _ProfilePersonEditorCard extends StatelessWidget {
   }
 
   Widget _personFallback() => Container(
-      color: const Color(0xFFF1F5F9),
+      color: const Color(0xFFE7F7EF),
       child: const Center(
           child:
               Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 42)));
@@ -1282,7 +1293,7 @@ class _OfficerPeopleEditor extends StatelessWidget {
     final target = name.trim().toLowerCase();
     for (final profile in profiles) {
       if (profile.name.trim().toLowerCase() == target) {
-        return profile.avatarUrl.trim();
+        return profile.avatarUrl.trim(); // explicit entry wins, even if empty
       }
     }
     return _avatarFor(name);
@@ -1292,14 +1303,18 @@ class _OfficerPeopleEditor extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)],
+          ),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: const Color(0xFFB9E4CF)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+              color: const Color(0xFF16A34A).withValues(alpha: .07),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
             ),
           ],
         ),
@@ -1355,7 +1370,7 @@ class _OfficerPeopleEditor extends StatelessWidget {
                                           color: Colors.white,
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                              color: const Color(0xFFCBD5E1)),
+                                              color: const Color(0xFFB9E4CF)),
                                           boxShadow: const [
                                             BoxShadow(
                                               color: Color(0x12000000),
@@ -1490,7 +1505,6 @@ class _MediaEditCardState extends State<_MediaEditCard> {
           final details = await showDialog<Map<String, String>>(
             context: context,
             builder: (ctx) => AlertDialog(
-              backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18)),
               title: const Text('Add activity picture'),
@@ -1584,7 +1598,6 @@ class _MediaEditCardState extends State<_MediaEditCard> {
           final details = await showDialog<Map<String, String>>(
             context: context,
             builder: (ctx) => AlertDialog(
-              backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -1669,7 +1682,6 @@ class _MediaEditCardState extends State<_MediaEditCard> {
     final details = await showDialog<Map<String, String>>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(item.type == 'video'
             ? 'Edit activity video'
@@ -1735,14 +1747,17 @@ class _MediaEditCardState extends State<_MediaEditCard> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: const Color(0xFFB9E4CF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 3))
+              color: const Color(0xFF16A34A).withValues(alpha: 0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
@@ -1767,7 +1782,7 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: const Color(0xFFF0FDF4),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
@@ -1864,14 +1879,14 @@ class _MediaEditCardState extends State<_MediaEditCard> {
                         ],
                       ),
                     ),
-                    // Edit Button
+                    // Delete
                     GestureDetector(
                       onTap: () => _editItem(item),
                       child: Icon(Icons.edit_rounded,
                           size: 20, color: widget.accentColor),
                     ),
                     const SizedBox(width: 10),
-                    // Delete Button
+
                     GestureDetector(
                       onTap: () {
                         final target = item;

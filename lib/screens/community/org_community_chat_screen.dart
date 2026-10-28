@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:async';
+import '../../widgets/app_header.dart';
 
 class OrgCommunityChatScreen extends StatefulWidget {
   final String orgId, orgName;
@@ -24,26 +24,18 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
   final ctrl = TextEditingController();
   final scroll = ScrollController();
   List<Map<String, dynamic>> rows = [];
-  Map<String, dynamic>? _replyingTo;
-  final Map<String, DateTime> _reads = {};
-  RealtimeChannel? _readsChannel;
-  DateTime? _lastMarked;
   bool loading = true, sending = false;
   RealtimeChannel? _channel;
-  RealtimeChannel? _typingChannel;
-  final Map<String, Timer> _typingTimers = {};
-  final Map<String, String> _typingNames = {};
-  DateTime _lastTypingSent = DateTime.fromMillisecondsSinceEpoch(0);
-  String _myTypingName = 'Someone';
-
-  static const primaryGreen = Color(0xFF0B6B4D);
-  static const accentGreen = Color(0xFF16A34A);
-  static const bubbleBg1 = Color(0xFFF8FFFB);
-  static const bubbleBg2 = Color(0xFFDDF4E8);
+  static const green = Color(0xFF16A34A);
+  static const bright = Color(0xFF22C55E);
+  static const bg = Color(0xFFF0FDF4);
   static const dark = Color(0xFF12352A);
   static const muted = Color(0xFF64748B);
   static const imageMarker = '[[ORGCONNECT_IMAGE]]';
 
+  // Legacy video-call messages were created by an older version of OrgConnect.
+  // Video calling has been removed from the app, so these old database rows
+  // must never be displayed in the community chat for any role.
   bool _isLegacyVideoCallMessage(Map<String, dynamic> row) {
     final raw = row['message']?.toString().trim().toLowerCase() ?? '';
     if (raw.isEmpty) return false;
@@ -64,11 +56,8 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
       ctrl.text = widget.initialMessage!.trim();
       ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
     }
-
     _load();
     _subscribeToMessages();
-    _subscribeReads();
-    _initTyping();
   }
 
   void _subscribeToMessages() {
@@ -99,7 +88,6 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
                             DateTime.fromMillisecondsSinceEpoch(0)));
           });
           _scrollToBottom();
-          _markRead();
         },
       )
       ..onPostgresChanges(
@@ -150,8 +138,6 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
               .compareTo(DateTime.tryParse(b['created_at']?.toString() ?? '') ??
                   DateTime.fromMillisecondsSinceEpoch(0)));
       setState(() => rows = loaded);
-      _loadReads();
-      _markRead();
       _scrollToBottom();
     } catch (e) {
       if (mounted) _snack('Could not load community messages: $e', true);
@@ -174,6 +160,7 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
           'Member';
       String senderRole = user.userMetadata?['role']?.toString() ?? 'member';
 
+      // Profile lookup is helpful but must never prevent a message from being sent.
       try {
         final profile = await db
             .from('profiles')
@@ -196,16 +183,15 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
             'sender_name': senderName,
             'sender_role': senderRole,
             'message': text,
-            if (_replyingTo != null) 'reply_to_id': _replyingTo!['id'],
           })
           .select()
           .single();
 
+      // Put the confirmed database row on screen immediately.
       if (mounted) {
         setState(() {
           rows.add(Map<String, dynamic>.from(inserted));
           ctrl.clear();
-          _replyingTo = null;
         });
       }
       try {
@@ -386,34 +372,26 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
 
   void _messageMenu(Map<String, dynamic> row) {
     final isMine = row['sender_id']?.toString() == db.auth.currentUser?.id;
+    if (!isMine) return;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
-              leading: const Icon(Icons.reply_rounded),
-              title: const Text('Reply'),
+              leading: const Icon(Icons.edit_rounded),
+              title: const Text('Edit message'),
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _replyingTo = row);
+                _editMessage(row);
               }),
-          if (isMine) ...[
-            ListTile(
-                leading: const Icon(Icons.edit_rounded),
-                title: const Text('Edit message'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _editMessage(row);
-                }),
-            ListTile(
-                leading: const Icon(Icons.delete_outline_rounded),
-                title: const Text('Delete message'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _deleteMessage(row);
-                }),
-          ],
+          ListTile(
+              leading: const Icon(Icons.delete_outline_rounded),
+              title: const Text('Delete message'),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(row);
+              }),
           const SizedBox(height: 8),
         ]),
       ),
@@ -433,20 +411,13 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message),
-        backgroundColor: error ? Colors.red.shade700 : primaryGreen,
+        backgroundColor: error ? Colors.red.shade700 : green,
         behavior: SnackBarBehavior.floating));
   }
 
   @override
   void dispose() {
-    ctrl.removeListener(_onComposerChanged);
-    for (final t in _typingTimers.values) {
-      t.cancel();
-    }
-    final typingChannel = _typingChannel;
-    if (typingChannel != null) db.removeChannel(typingChannel);
     _channel?.unsubscribe();
-    _readsChannel?.unsubscribe();
     ctrl.dispose();
     scroll.dispose();
     super.dispose();
@@ -455,112 +426,57 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 850),
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(
-                child: loading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: primaryGreen))
-                    : rows.isEmpty
-                        ? _empty()
-                        : ListView.builder(
-                            controller: scroll,
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-                            itemCount: rows.length,
-                            itemBuilder: (_, i) => Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [_message(rows[i]), _seenLabel(i)],
-                            ),
-                          ),
-              ),
-              _composer(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Custom straight-bottom header with no icon before the title
-  Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(widget.showBackButton ? 8 : 16,
-          MediaQuery.paddingOf(context).top + 12, 16, 16),
-      decoration: const BoxDecoration(
-        color: primaryGreen,
-        borderRadius: BorderRadius.zero, // Completely straight bottom edge
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      backgroundColor: bg,
+      body: Column(
         children: [
-          if (widget.showBackButton)
-            IconButton(
-              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-          if (widget.showBackButton) const SizedBox(width: 4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF4ADE80),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'COMMUNITY CHAT',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.orgName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                const Text(
-                  'One shared space for members, officers, and advisers.',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+          AppHeader(
+            title: widget.orgName,
+            subtitle: 'One shared space for members, officers, and advisers.',
+            status: 'COMMUNITY CHAT',
+            icon: Icons.forum_rounded,
+            onBack: widget.showBackButton
+                ? () => Navigator.of(context).maybePop()
+                : null,
           ),
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator(color: green))
+                : rows.isEmpty
+                    ? _empty()
+                    : ListView.builder(
+                        controller: scroll,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                        itemCount: rows.length,
+                        itemBuilder: (_, i) => _message(rows[i]),
+                      ),
+          ),
+          _composer(),
         ],
       ),
     );
   }
+
+  Widget _orb(double size, Color color) => Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color));
+
+  Widget _chatLogo() => Container(
+        width: 72,
+        height: 72,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: .16),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: .30), width: 2)),
+        child: Container(
+          decoration: const BoxDecoration(
+              shape: BoxShape.circle, color: Color(0xFFE4F7EF)),
+          child: const Icon(Icons.forum_rounded, color: green, size: 34),
+        ),
+      );
 
   Widget _empty() => Center(
       child: Container(
@@ -570,12 +486,12 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
               gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [bubbleBg1, bubbleBg2]),
+                  colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: primaryGreen.withValues(alpha: .10)),
+              border: Border.all(color: green.withValues(alpha: .10)),
               boxShadow: [
                 BoxShadow(
-                    color: primaryGreen.withValues(alpha: .06),
+                    color: green.withValues(alpha: .06),
                     blurRadius: 20,
                     offset: const Offset(0, 8))
               ]),
@@ -583,9 +499,8 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
             Container(
                 width: 70,
                 height: 70,
-                decoration: const BoxDecoration(
-                    gradient:
-                        LinearGradient(colors: [primaryGreen, accentGreen]),
+                decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [green, bright]),
                     shape: BoxShape.circle),
                 child: const Icon(Icons.forum_rounded,
                     color: Colors.white, size: 34)),
@@ -601,6 +516,8 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
           ])));
 
   Widget _message(Map<String, dynamic> r) {
+    // Defensive guard: legacy video-call rows are never rendered, even if a
+    // stale realtime payload or cached list slips through.
     if (_isLegacyVideoCallMessage(r)) return const SizedBox.shrink();
     final me = r['sender_id'] == db.auth.currentUser?.id;
     final role = r['sender_role']?.toString() ?? 'member';
@@ -608,10 +525,9 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     final raw = r['message']?.toString() ?? '';
     final isImage = raw.startsWith(imageMarker);
     final imageUrl = isImage ? raw.substring(imageMarker.length).trim() : '';
-
     return GestureDetector(
-      onLongPress: () => _messageMenu(r),
-      onSecondaryTap: () => _messageMenu(r),
+      onLongPress: me ? () => _messageMenu(r) : null,
+      onSecondaryTap: me ? () => _messageMenu(r) : null,
       child: Align(
         alignment: me ? Alignment.centerRight : Alignment.centerLeft,
         child: Stack(
@@ -622,20 +538,27 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
               margin: const EdgeInsets.only(bottom: 11),
               padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
               decoration: BoxDecoration(
-                // Both user and adviser messages now share the exact same clean background style
-                gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [bubbleBg1, bubbleBg2]),
+                gradient: me
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [green, bright])
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
                 borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(18),
                     topRight: const Radius.circular(18),
                     bottomLeft: Radius.circular(me ? 18 : 5),
                     bottomRight: Radius.circular(me ? 5 : 18)),
-                border: Border.all(color: primaryGreen.withValues(alpha: .12)),
+                border:
+                    me ? null : Border.all(color: green.withValues(alpha: .07)),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withValues(alpha: .035),
+                      color: me
+                          ? green.withValues(alpha: .15)
+                          : Colors.black.withValues(alpha: .035),
                       blurRadius: 12,
                       offset: const Offset(0, 5)),
                 ],
@@ -644,13 +567,11 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('$name • $role',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w900,
-                            color: muted)),
+                            color: me ? Colors.white70 : muted)),
                     const SizedBox(height: 7),
-                    if (r['reply_to_id'] != null)
-                      _replyQuote(r['reply_to_id'], me),
                     if (isImage)
                       ClipRRect(
                           borderRadius: BorderRadius.circular(14),
@@ -661,13 +582,15 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
                               errorBuilder: (_, __, ___) => Container(
                                   width: 300,
                                   height: 190,
-                                  color: Colors.white,
+                                  color: bg,
                                   child: const Icon(Icons.broken_image_rounded,
-                                      color: primaryGreen, size: 34))))
+                                      color: green, size: 34))))
                     else
                       Text(raw,
-                          style: const TextStyle(
-                              color: dark, height: 1.4, fontSize: 13)),
+                          style: TextStyle(
+                              color: me ? Colors.white : dark,
+                              height: 1.4,
+                              fontSize: 13)),
                   ]),
             ),
             if (me && MediaQuery.sizeOf(context).width >= 700)
@@ -709,244 +632,12 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     );
   }
 
-  DateTime? _ts(dynamic v) => DateTime.tryParse(v?.toString() ?? '');
-
-  Future<void> _loadReads() async {
-    try {
-      final r = await db
-          .from('org_chat_reads')
-          .select('user_id,last_read_at')
-          .eq('org_id', widget.orgId);
-      if (!mounted) return;
-      setState(() {
-        for (final x in List<Map<String, dynamic>>.from(r as List)) {
-          final t = _ts(x['last_read_at']);
-          if (t != null) _reads[x['user_id'].toString()] = t;
-        }
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _markRead() async {
-    final user = db.auth.currentUser;
-    if (user == null || rows.isEmpty) return;
-    final latest = _ts(rows.last['created_at']);
-    if (latest == null) return;
-    if (_lastMarked != null && !latest.isAfter(_lastMarked!)) return;
-    _lastMarked = latest;
-    try {
-      await db.from('org_chat_reads').upsert({
-        'org_id': widget.orgId,
-        'user_id': user.id,
-        'last_read_at': rows.last['created_at'],
-      }, onConflict: 'org_id,user_id');
-    } catch (_) {}
-  }
-
-  void _subscribeReads() {
-    _readsChannel = db.channel('org-chat-reads-${widget.orgId}')
-      ..onPostgresChanges(
-        event: PostgresChangeEvent.all,
-        schema: 'public',
-        table: 'org_chat_reads',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'org_id',
-          value: widget.orgId,
-        ),
-        callback: (payload) {
-          final row = payload.newRecord;
-          final uid = row['user_id']?.toString();
-          final t = _ts(row['last_read_at']);
-          if (!mounted || uid == null || t == null) return;
-          setState(() => _reads[uid] = t);
-        },
-      ).subscribe();
-  }
-
-  Widget _seenLabel(int i) {
-    final me = db.auth.currentUser?.id;
-    final r = rows[i];
-    if (me == null || r['sender_id']?.toString() != me) {
-      return const SizedBox.shrink();
-    }
-    final lastMine =
-        rows.lastIndexWhere((m) => m['sender_id']?.toString() == me);
-    if (i != lastMine) return const SizedBox.shrink();
-    final sent = _ts(r['created_at']);
-    if (sent == null) return const SizedBox.shrink();
-    final n = _reads.entries
-        .where((e) => e.key != me && !e.value.isBefore(sent))
-        .length;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10, right: 4),
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: Text(n > 0 ? 'Seen by $n' : 'Sent',
-            style: const TextStyle(fontSize: 10.5, color: muted)),
-      ),
-    );
-  }
-
-  String _previewText(String raw) =>
-      raw.startsWith(imageMarker) ? 'Photo' : raw;
-
-  Widget _replyQuote(dynamic replyToId, bool me) {
-    final id = replyToId.toString();
-    final i = rows.indexWhere((m) => m['id']?.toString() == id);
-    final original = i == -1 ? null : rows[i];
-    final label = original == null
-        ? 'Message deleted'
-        : (original['sender_name']?.toString() ?? 'Member');
-    final body = original == null
-        ? ''
-        : _previewText(original['message']?.toString() ?? '');
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 7),
-      padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
-      decoration: BoxDecoration(
-        color: primaryGreen.withValues(alpha: .10),
-        border: const Border(left: BorderSide(color: primaryGreen, width: 3)),
-      ),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    fontStyle:
-                        original == null ? FontStyle.italic : FontStyle.normal,
-                    color: dark)),
-            if (body.isNotEmpty)
-              Text(body,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11.5, color: muted)),
-          ]),
-    );
-  }
-
-  Future<void> _initTyping() async {
-    final user = db.auth.currentUser;
-    if (user == null) return;
-    _myTypingName = user.userMetadata?['name']?.toString() ??
-        user.email?.split('@').first ??
-        'Someone';
-    try {
-      final p = await db
-          .from('profiles')
-          .select('name')
-          .eq('id', user.id)
-          .maybeSingle();
-      final n = p?['name']?.toString().trim();
-      if (n != null && n.isNotEmpty) _myTypingName = n;
-    } catch (_) {}
-    if (!mounted) return;
-    _typingChannel = db.channel('org-typing-${widget.orgId}')
-      ..onBroadcast(event: 'typing', callback: _onTypingEvent)
-      ..subscribe();
-    ctrl.addListener(_onComposerChanged);
-  }
-
-  void _onComposerChanged() {
-    if (ctrl.text.trim().isEmpty) return;
-    final now = DateTime.now();
-    if (now.difference(_lastTypingSent).inMilliseconds < 2000) return;
-    _lastTypingSent = now;
-    _sendTyping();
-  }
-
-  Future<void> _sendTyping() async {
-    final user = db.auth.currentUser;
-    if (user == null) return;
-    try {
-      await _typingChannel?.sendBroadcastMessage(
-        event: 'typing',
-        payload: {'user_id': user.id, 'name': _myTypingName},
-      );
-    } catch (_) {}
-  }
-
-  void _onTypingEvent(Map<String, dynamic> payload) {
-    final data = payload['payload'] is Map
-        ? Map<String, dynamic>.from(payload['payload'] as Map)
-        : payload;
-    final uid = data['user_id']?.toString() ?? '';
-    if (uid.isEmpty || uid == db.auth.currentUser?.id || !mounted) return;
-    _typingNames[uid] = data['name']?.toString() ?? 'Someone';
-    _typingTimers[uid]?.cancel();
-    _typingTimers[uid] = Timer(const Duration(seconds: 3), () {
-      _typingTimers.remove(uid);
-      _typingNames.remove(uid);
-      if (mounted) setState(() {});
-    });
-    setState(() {});
-  }
-
-  Widget _typingLabel() {
-    if (_typingNames.isEmpty) return const SizedBox.shrink();
-    final names = _typingNames.values.toList();
-    final text = names.length == 1
-        ? '${names[0]} is typing...'
-        : names.length == 2
-            ? '${names[0]} and ${names[1]} are typing...'
-            : 'Several people are typing...';
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      child: Text(text,
-          style: const TextStyle(
-              fontSize: 11.5, fontStyle: FontStyle.italic, color: muted)),
-    );
-  }
-
-  Widget _replyBar() {
-    final r = _replyingTo;
-    if (r == null) return const SizedBox.shrink();
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-      child: Row(children: [
-        const Icon(Icons.reply_rounded, size: 18, color: primaryGreen),
-        const SizedBox(width: 8),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Replying to ${r['sender_name'] ?? 'Member'}',
-                style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                    color: primaryGreen)),
-            Text(_previewText(r['message']?.toString() ?? ''),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: muted)),
-          ]),
-        ),
-        IconButton(
-            icon: const Icon(Icons.close_rounded, size: 18),
-            onPressed: () => setState(() => _replyingTo = null)),
-      ]),
-    );
-  }
-
-  Widget _composer() => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [_typingLabel(), _replyBar(), _composerBar()],
-      );
-
-  Widget _composerBar() {
+  Widget _composer() {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
       decoration: BoxDecoration(
         color: Colors.white,
-        border:
-            Border(top: BorderSide(color: primaryGreen.withValues(alpha: .10))),
+        border: Border(top: BorderSide(color: green.withValues(alpha: .10))),
         boxShadow: const [
           BoxShadow(
               color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))
@@ -959,7 +650,7 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
           children: [
             IconButton(
               onPressed: sending ? null : _pickAndSendImages,
-              icon: const Icon(Icons.image_rounded, color: primaryGreen),
+              icon: const Icon(Icons.image_rounded, color: green),
               tooltip: 'Send picture',
             ),
             Expanded(
@@ -971,14 +662,13 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
                 decoration: InputDecoration(
                   hintText: 'Write a message...',
                   filled: true,
-                  fillColor: bubbleBg1,
+                  fillColor: bg,
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(18),
                       borderSide: BorderSide.none),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(18),
-                      borderSide:
-                          const BorderSide(color: primaryGreen, width: 1.5)),
+                      borderSide: const BorderSide(color: green, width: 1.5)),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
@@ -986,16 +676,22 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              onPressed: sending ? null : _send,
-              icon: sending
-                  ? const SizedBox(
-                      width: 19,
-                      height: 19,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: primaryGreen))
-                  : const Icon(Icons.send_rounded, color: primaryGreen),
-              tooltip: 'Send message',
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [green, bright]),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                onPressed: sending ? null : _send,
+                icon: sending
+                    ? const SizedBox(
+                        width: 19,
+                        height: 19,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.send_rounded, color: Colors.white),
+                tooltip: 'Send message',
+              ),
             ),
           ],
         ),

@@ -7,7 +7,6 @@ import 'admin_organization_detail_screen.dart';
 import 'admin_profile_screen.dart';
 
 import 'admin_create_organization_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// Layout breakpoints: mobile < 600, tablet 600-1024, desktop > 1024.
 ///
@@ -106,8 +105,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   String _avatarUrl = '';
   String _userName = '';
   RealtimeChannel? _realtimeChannel;
-  DateTime? _proposalSeenAt;
-  bool _proposalSeenLoaded = false;
 
   Timer? _reloadTimer;
   bool _isLoadingNow = false;
@@ -124,7 +121,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void initState() {
     super.initState();
     _load();
-    _loadProposalSeenAt();
     _realtimeChannel = db
         .channel('admin-dashboard-realtime')
         .onPostgresChanges(
@@ -474,66 +470,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ),
       );
-  String get _proposalSeenKey =>
-      'admin_proposal_seen_at_${db.auth.currentUser?.id ?? 'local'}';
-
-  Future<void> _loadProposalSeenAt() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_proposalSeenKey);
-      var seen = raw == null ? null : DateTime.tryParse(raw);
-      if (seen == null) {
-        // First run on this device: start from now so old items don't flood.
-        seen = DateTime.now();
-        await prefs.setString(_proposalSeenKey, seen.toUtc().toIso8601String());
-      }
-      if (!mounted) return;
-      setState(() {
-        _proposalSeenAt = seen;
-        _proposalSeenLoaded = true;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _proposalSeenLoaded = true);
-    }
-  }
-
-  DateTime? _proposalStamp(Map<String, dynamic> r) =>
-      DateTime.tryParse(r['updated_at']?.toString() ?? '') ??
-      DateTime.tryParse(r['created_at']?.toString() ?? '');
-
-  int get _newProposalCount {
-    // Hidden while the admin is already looking at the Home tab.
-    if (!_proposalSeenLoaded || tab == 0) return 0;
-    final seen = _proposalSeenAt;
-    if (seen == null) return 0;
-    return proposals.where((r) {
-      if (r['status']?.toString() != 'forwarded_to_admin') return false;
-      final stamp = _proposalStamp(r);
-      return stamp != null && stamp.isAfter(seen);
-    }).length;
-  }
-
-  void _markProposalsSeen() {
-    final now = DateTime.now();
-    _proposalSeenAt = now;
-    SharedPreferences.getInstance()
-        .then(
-            (p) => p.setString(_proposalSeenKey, now.toUtc().toIso8601String()))
-        .catchError((_) => false);
-  }
-
-  void _selectTab(int i) {
-    // Leaving or entering Home counts as having seen the proposals list.
-    if (tab == 0 || i == 0) _markProposalsSeen();
-    setState(() => tab = i);
-  }
-
-  Widget _badged(int i, Widget icon) {
-    final n = i == 0 ? _newProposalCount : 0;
-    return n > 0
-        ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: icon)
-        : icon;
-  }
 
   /// One navigation destination (icon pill + label). Used by the bottom bar
   /// and the tablet rail. The label scales down instead of clipping.
@@ -544,7 +480,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       button: true,
       selected: selected,
       child: InkWell(
-        onTap: () => _selectTab(i),
+        onTap: () => setState(() => tab = i),
         borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: _xs, vertical: 6),
@@ -560,10 +496,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   color: selected ? emeraldSoft : Colors.transparent,
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: _badged(
-                    i,
-                    Icon(selected ? item.selectedIcon : item.icon,
-                        size: 22, color: selected ? green : muted)),
+                child: Icon(selected ? item.selectedIcon : item.icon,
+                    size: 22, color: selected ? green : muted),
               ),
               const SizedBox(height: _xs),
               FittedBox(
@@ -703,7 +637,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     side: const BorderSide(color: line),
                   ),
                   child: InkWell(
-                    onTap: () => _selectTab(4),
+                    onTap: () => setState(() => tab = 4),
                     child: Padding(
                       padding: const EdgeInsets.all(10),
                       child: Row(children: [
@@ -757,14 +691,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 : BorderSide.none,
           ),
           child: InkWell(
-            onTap: () => _selectTab(i),
+            onTap: () => setState(() => tab = i),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
               child: Row(children: [
-                _badged(
-                    i,
-                    Icon(selected ? item.selectedIcon : item.icon,
-                        size: 20, color: selected ? green : muted)),
+                Icon(selected ? item.selectedIcon : item.icon,
+                    size: 20, color: selected ? green : muted),
                 const SizedBox(width: _md),
                 Expanded(
                   child: Text(item.label,

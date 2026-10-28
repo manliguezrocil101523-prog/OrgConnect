@@ -1058,6 +1058,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _openSettingsInfoPage({
+    required String title,
+    required IconData icon,
+    required String intro,
+    required List<Map<String, String>> sections,
+  }) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _SettingsInfoPage(
+          title: title,
+          icon: icon,
+          intro: intro,
+          sections: sections,
+        ),
+      ),
+    );
+  }
+
   List<Widget> _settingsTiles(BuildContext ctx) => [
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -1149,7 +1168,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
           trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
           onTap: () {
             Navigator.pop(ctx);
-            _snack('Coming soon');
+            _openSettingsInfoPage(
+              title: 'Privacy',
+              icon: Icons.shield_outlined,
+              intro: 'Learn how OrgConnect uses account information and how to keep your account safe.',
+              sections: const [
+                {
+                  'title': 'Information in your account',
+                  'body': 'OrgConnect may display profile details you provide, such as your name, profile photo, student or organization information, and contact details, to support the app’s features.'
+                },
+                {
+                  'title': 'Organization activity',
+                  'body': 'Depending on your role and the organization features you use, events, applications, attendance, comments, reactions, meeting-related information, and other organization activity may be visible to authorized organization officers, advisers, or administrators.'
+                },
+                {
+                  'title': 'Access and permissions',
+                  'body': 'Information visibility depends on the feature, your role, and the app’s access controls. Do not post passwords, verification codes, or other sensitive personal information in public posts or organization chats.'
+                },
+                {
+                  'title': 'Keep your account secure',
+                  'body': 'Use a strong password, keep your sign-in details private, and update your password if you think someone else may have access to your account.'
+                },
+                {
+                  'title': 'Questions or privacy concerns',
+                  'body': 'If you believe information is incorrect or visible to the wrong people, contact your organization adviser or the app administrator and describe the issue. Avoid including your password in any report.'
+                },
+              ],
+            );
           },
         ),
         ListTile(
@@ -1179,7 +1224,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
           trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
           onTap: () {
             Navigator.pop(ctx);
-            _snack('Coming soon');
+            _openSettingsInfoPage(
+              title: 'Help & Support',
+              icon: Icons.help_outline_rounded,
+              intro: 'Find quick guidance for common OrgConnect questions.',
+              sections: const [
+                {
+                  'title': 'Signing in',
+                  'body': 'Check that you entered the correct email address and password. If you cannot sign in, use the Forgot Password option on the login screen and follow the instructions.'
+                },
+                {
+                  'title': 'Profile and account details',
+                  'body': 'Open your profile to review or update the details available to your account. Keep your information accurate so your organization can identify you.'
+                },
+                {
+                  'title': 'Organizations and applications',
+                  'body': 'Browse organizations to learn about them and follow the available application steps. Application status and available actions may depend on your role and the organization’s process.'
+                },
+                {
+                  'title': 'Events, attendance, and announcements',
+                  'body': 'Open an event to review its details. If event information, attendance, or an announcement appears incorrect, contact the relevant organization officer or adviser.'
+                },
+                {
+                  'title': 'Need more help?',
+                  'body': 'For account access, incorrect information, or a technical issue, contact your organization adviser or the app administrator. Include what you were trying to do and the error you saw, but never share your password or verification code.'
+                },
+              ],
+            );
           },
         ),
         ListTile(
@@ -1209,7 +1280,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
           trailing: const Icon(Icons.chevron_right_rounded, color: _kSlate94),
           onTap: () {
             Navigator.pop(ctx);
-            _snack('Coming soon');
+            _openSettingsInfoPage(
+              title: 'About OrgConnect',
+              icon: Icons.info_outline_rounded,
+              intro: 'OrgConnect is a college organization platform designed to help students and organization leaders stay connected and organized.',
+              sections: const [
+                {
+                  'title': 'What OrgConnect does',
+                  'body': 'OrgConnect brings organization information, membership applications, events, announcements, community interaction, and role-based organization tools together in one place.'
+                },
+                {
+                  'title': 'For students',
+                  'body': 'Students can explore organizations, learn about activities, follow event updates, and participate in supported organization features.'
+                },
+                {
+                  'title': 'For organization officers and advisers',
+                  'body': 'Authorized officers and advisers can use the tools available to their roles to help manage organization activities, members, event information, and related records.'
+                },
+                {
+                  'title': 'Built for the college community',
+                  'body': 'The goal of OrgConnect is to support communication, participation, transparency, and collaboration across the college’s student organizations.'
+                },
+                {
+                  'title': 'Version',
+                  'body': 'OrgConnect v1.0.0'
+                },
+              ],
+            );
           },
         ),
       ];
@@ -3378,5 +3475,224 @@ class _BwSectionLabel extends StatelessWidget {
               letterSpacing: 1.6,
               color: _kBwHint)),
     ]);
+  }
+}
+
+
+class _SettingsInfoPage extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String intro;
+  final List<Map<String, String>> sections;
+
+  const _SettingsInfoPage({
+    required this.title,
+    required this.icon,
+    required this.intro,
+    required this.sections,
+  });
+
+  static const Color _green = Color(0xFF16A34A);
+  static const Color _teal = Color(0xFF0F766E);
+  static const Color _ink = Color(0xFF0F172A);
+  static const Color _muted = Color(0xFF64748B);
+  static const Color _line = Color(0xFFE2E8F0);
+  static const Color _canvas = Color(0xFFF5F8FC);
+
+  IconData _sectionIcon(String heading) {
+    final value = heading.toLowerCase();
+    if (value.contains('information') || value.contains('profile')) {
+      return Icons.person_outline_rounded;
+    }
+    if (value.contains('organization') || value.contains('student')) {
+      return Icons.groups_2_outlined;
+    }
+    if (value.contains('access') || value.contains('permission')) {
+      return Icons.admin_panel_settings_outlined;
+    }
+    if (value.contains('secure') || value.contains('password') || value.contains('signing')) {
+      return Icons.lock_outline_rounded;
+    }
+    if (value.contains('question') || value.contains('help') || value.contains('support')) {
+      return Icons.support_agent_rounded;
+    }
+    if (value.contains('event') || value.contains('attendance') || value.contains('announcement')) {
+      return Icons.event_note_rounded;
+    }
+    if (value.contains('version')) return Icons.verified_outlined;
+    if (value.contains('what orgconnect') || value.contains('built for')) {
+      return Icons.hub_outlined;
+    }
+    if (value.contains('officer') || value.contains('adviser')) {
+      return Icons.badge_outlined;
+    }
+    return Icons.check_circle_outline_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _canvas,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leadingWidth: 64,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 14, top: 8, bottom: 8),
+          child: Material(
+            color: const Color(0xFFEAF8F0),
+            shape: const CircleBorder(),
+            child: IconButton(
+              tooltip: 'Back',
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                color: Color(0xFF15803D),
+                size: 21,
+              ),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        backgroundColor: Colors.white,
+        foregroundColor: _ink,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.white,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, thickness: 1, color: _line),
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 30),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [_green, _teal],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: _teal.withValues(alpha: 0.18),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(17),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                        ),
+                        child: Icon(icon, color: Colors.white, size: 29),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.hub_rounded, color: Colors.white, size: 14),
+                            SizedBox(width: 6),
+                            Text('ORGCONNECT', style: TextStyle(color: Colors.white, fontSize: 10, letterSpacing: 1.1, fontWeight: FontWeight.w800)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  Text(
+                    title,
+                    style: const TextStyle(color: Colors.white, fontSize: 25, height: 1.15, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    intro,
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.93), height: 1.55, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 25),
+            Row(
+              children: [
+                Container(width: 4, height: 22, decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(8))),
+                const SizedBox(width: 9),
+                const Expanded(child: Text('Good to know', style: TextStyle(color: _ink, fontSize: 17, fontWeight: FontWeight.w800))),
+                Text('${sections.length} topics', style: const TextStyle(color: _muted, fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 13),
+            ...sections.asMap().entries.map((entry) {
+              final section = entry.value;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(17),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _line),
+                  boxShadow: [
+                    BoxShadow(color: const Color(0xFF0F172A).withValues(alpha: 0.025), blurRadius: 12, offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 43,
+                      height: 43,
+                      decoration: BoxDecoration(color: _green.withValues(alpha: 0.09), borderRadius: BorderRadius.circular(14)),
+                      child: Icon(_sectionIcon(section['title'] ?? ''), color: _teal, size: 22),
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(section['title'] ?? '', style: const TextStyle(color: _ink, fontSize: 14.5, height: 1.35, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 7),
+                          Text(section['body'] ?? '', style: const TextStyle(color: _muted, fontSize: 13, height: 1.6)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+              decoration: BoxDecoration(color: const Color(0xFFEAF7F0), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFD2EEDD))),
+              child: const Row(
+                children: [
+                  Icon(Icons.favorite_rounded, color: _green, size: 19),
+                  SizedBox(width: 10),
+                  Expanded(child: Text('OrgConnect • Helping the college community stay connected', style: TextStyle(color: Color(0xFF166534), fontSize: 12, height: 1.45, fontWeight: FontWeight.w600))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

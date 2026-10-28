@@ -24,7 +24,6 @@ import 'officer_profile_screen.dart';
 import 'officer_org_profile_screen.dart';
 import '../organizations/org_list_screen.dart';
 import '../../core/new_applications_badge.dart';
-import '../../core/chat_unread.dart'; // [Edit 4 Added]
 
 // ---------------------------------------------------------------------------
 // Design tokens (every color of this screen lives here; light-only for now)
@@ -340,14 +339,12 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
     super.initState();
     unawaited(_loadOfficerHome());
     unawaited(NewApplicationsBadge.instance.start(widget.orgId));
-    unawaited(ChatUnread.instance.start(widget.orgId)); // [Edit 5 Added]
   }
 
   @override
   void dispose() {
     _exitTimer?.cancel();
     unawaited(NewApplicationsBadge.instance.stop());
-    ChatUnread.instance.stop(); // [Edit 5 Added]
     super.dispose();
   }
 
@@ -491,10 +488,6 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   void _selectTab(int index) {
     if (_selectedIndex == index) return;
     unawaited(HapticFeedback.selectionClick());
-    unawaited(NewApplicationsBadge.instance.refresh());
-    if (index == 1) {
-      unawaited(AppState.instance.markOrgAnnouncementsRead(widget.orgId));
-    }
     setState(() => _selectedIndex = index);
   }
 
@@ -566,19 +559,11 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
         children: [
           Expanded(child: _buildPages(width)),
           AnimatedBuilder(
-            animation: Listenable.merge([
-              AppState.instance,
-              ChatUnread.instance.count
-            ]), // [Edit 6 Updated]
-            builder: (context, _) => ValueListenableBuilder<int>(
-              valueListenable: NewApplicationsBadge.instance.count,
-              builder: (context, newApps, _) => _OfficerBottomNav(
-                selectedIndex: _selectedIndex,
-                onSelected: _selectTab,
-                communityUnread: _unreadOrganizationUpdatesCount(widget.orgId) +
-                    newApps +
-                    ChatUnread.instance.count.value, // [Edit 7 Updated]
-              ),
+            animation: AppState.instance,
+            builder: (context, _) => _OfficerBottomNav(
+              selectedIndex: _selectedIndex,
+              onSelected: _selectTab,
+              communityUnread: _unreadOrganizationUpdatesCount(widget.orgId),
             ),
           ),
         ],
@@ -591,20 +576,12 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
     return Row(
       children: [
         AnimatedBuilder(
-          animation: Listenable.merge([
-            AppState.instance,
-            ChatUnread.instance.count
-          ]), // [Edit 6 Updated]
-          builder: (context, _) => ValueListenableBuilder<int>(
-            valueListenable: NewApplicationsBadge.instance.count,
-            builder: (context, newApps, _) => _OfficerRail(
-              selectedIndex: _selectedIndex,
-              onSelected: _selectTab,
-              extended: extended,
-              communityUnread: _unreadOrganizationUpdatesCount(widget.orgId) +
-                  newApps +
-                  ChatUnread.instance.count.value, // [Edit 7 Updated]
-            ),
+          animation: AppState.instance,
+          builder: (context, _) => _OfficerRail(
+            selectedIndex: _selectedIndex,
+            onSelected: _selectTab,
+            extended: extended,
+            communityUnread: _unreadOrganizationUpdatesCount(widget.orgId),
           ),
         ),
         const VerticalDivider(
@@ -859,7 +836,6 @@ class _OfficerRail extends StatelessWidget {
 /// Navigation shared by the Organizations tab and the Home quick actions.
 abstract final class _OfficerNav {
   static void applications(BuildContext context) {
-    unawaited(NewApplicationsBadge.instance.markSeen());
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => OfficerApplicationsScreen()),
@@ -953,7 +929,7 @@ class _OfficerHeader extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         gradient: AppHeader.brandGradient,
-        // borderRadius removed so it stays flat at the bottom
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Stack(
         children: [
@@ -1788,53 +1764,50 @@ class _HomeTabState extends State<_HomeTab> {
 
     return HomeLayout.capText(
       context,
-      Column(
-        children: [
-          _OfficerHeader(
-            title: '${_greetingFor(now)}, $displayName',
-            subtitle: subtitle,
-            status: '${_cleanOrgName(widget.orgName)} • $cleanPosition',
-            leading: _HeaderAvatar(avatarUrl: widget.avatarUrl),
-            trailing: _HeaderRefreshButton(
-              busy: widget.refreshing || widget.loading,
-              onPressed: _retry,
-            ),
-          ),
-          Expanded(
-            child: ScrollConfiguration(
-              behavior: const _OfficerScrollBehavior(autoScrollbar: false),
-              child: Scrollbar(
-                controller: _scroll,
-                thumbVisibility: layout.isDesktop,
-                child: RefreshIndicator(
-                  color: _OfficerColors.primary,
-                  backgroundColor: _OfficerColors.surface,
-                  onRefresh: widget.onRefresh,
-                  child: SingleChildScrollView(
-                    controller: _scroll,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: HomeBreakpoints.maxContentWidth,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            layout.homeHPad,
-                            layout.sectionGap,
-                            layout.homeHPad,
-                            40,
-                          ),
-                          child: body,
-                        ),
+      ScrollConfiguration(
+        behavior: const _OfficerScrollBehavior(autoScrollbar: false),
+        child: Scrollbar(
+          controller: _scroll,
+          thumbVisibility: layout.isDesktop,
+          child: RefreshIndicator(
+            color: _OfficerColors.primary,
+            backgroundColor: _OfficerColors.surface,
+            onRefresh: widget.onRefresh,
+            child: ListView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              children: [
+                _OfficerHeader(
+                  title: '${_greetingFor(now)}, $displayName',
+                  subtitle: subtitle,
+                  status: '${_cleanOrgName(widget.orgName)} • $cleanPosition',
+                  leading: _HeaderAvatar(avatarUrl: widget.avatarUrl),
+                  trailing: _HeaderRefreshButton(
+                    busy: widget.refreshing || widget.loading,
+                    onPressed: _retry,
+                  ),
+                ),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: HomeBreakpoints.maxContentWidth,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        layout.homeHPad,
+                        layout.sectionGap,
+                        layout.homeHPad,
+                        40,
                       ),
+                      child: body,
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
       maxScale: 1.3,
     );
@@ -3136,50 +3109,6 @@ class _OfficerEventDetailsSheetState extends State<_OfficerEventDetailsSheet> {
 // ---------------------------------------------------------------------------
 // Organizations tab
 // ---------------------------------------------------------------------------
-class _OfficerAnnouncementsSection extends StatelessWidget {
-  final String orgId;
-  const _OfficerAnnouncementsSection({required this.orgId});
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-        animation: AppState.instance,
-        builder: (context, _) {
-          final items = AppState.instance.notifications
-              .where((n) =>
-                  n.orgId == orgId && AppState.instance.isOrgAnnouncement(n.id))
-              .take(5)
-              .toList();
-          if (items.isEmpty) return const SizedBox.shrink();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _SectionTitle('Announcements'),
-              const SizedBox(height: 12),
-              for (final n in items)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _OfficerColors.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(n.title,
-                          style: const TextStyle(fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 4),
-                      Text(n.message),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 20),
-            ],
-          );
-        },
-      );
-}
 
 class _OfficerOrganizationsTab extends StatefulWidget {
   final String orgId;
@@ -3242,7 +3171,6 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
           position: widget.position,
         ),
         SizedBox(height: layout.sectionGap),
-        _OfficerAnnouncementsSection(orgId: widget.orgId),
         const _SectionTitle('Manage'),
         const SizedBox(height: 12),
         group([
@@ -3302,47 +3230,44 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
 
     return HomeLayout.capText(
       context,
-      Column(
-        children: [
-          _OfficerHeader(
-            title: 'Organization',
-            subtitle: _cleanOrgName(widget.orgName),
-            status: 'OFFICER ORGANIZATION HUB',
-            leading: AnimatedBuilder(
-              animation: AppState.instance,
-              builder: (context, _) => _HeaderLogo(asset: _logo()),
-            ),
-          ),
-          Expanded(
-            child: ScrollConfiguration(
-              behavior: const _OfficerScrollBehavior(autoScrollbar: false),
-              child: Scrollbar(
-                controller: _scroll,
-                thumbVisibility: layout.isDesktop,
-                child: SingleChildScrollView(
-                  controller: _scroll,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: HomeBreakpoints.maxContentWidth,
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          layout.homeHPad,
-                          layout.sectionGap,
-                          layout.homeHPad,
-                          40,
-                        ),
-                        child: body,
-                      ),
+      ScrollConfiguration(
+        behavior: const _OfficerScrollBehavior(autoScrollbar: false),
+        child: Scrollbar(
+          controller: _scroll,
+          thumbVisibility: layout.isDesktop,
+          child: ListView(
+            controller: _scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            children: [
+              _OfficerHeader(
+                title: 'Organization',
+                subtitle: _cleanOrgName(widget.orgName),
+                status: 'OFFICER ORGANIZATION HUB',
+                leading: AnimatedBuilder(
+                  animation: AppState.instance,
+                  builder: (context, _) => _HeaderLogo(asset: _logo()),
+                ),
+              ),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: HomeBreakpoints.maxContentWidth,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      layout.homeHPad,
+                      layout.sectionGap,
+                      layout.homeHPad,
+                      40,
                     ),
+                    child: body,
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
       maxScale: 1.3,
     );
@@ -3444,8 +3369,7 @@ class _HubTile extends StatelessWidget {
   Widget _leading() {
     final orgId = unreadOrgId;
     if (orgId == null) return _IconCircle(icon: icon, size: 44);
-    final count = _unreadOrganizationUpdatesCount(orgId) +
-        ChatUnread.instance.count.value;
+    final count = _unreadOrganizationUpdatesCount(orgId);
     return Badge(
       isLabelVisible: count > 0,
       label: Text(count > 99 ? '99+' : '$count'),
@@ -3472,8 +3396,7 @@ class _HubTile extends StatelessWidget {
                   _leading()
                 else
                   AnimatedBuilder(
-                    animation: Listenable.merge(
-                        [AppState.instance, ChatUnread.instance.count]),
+                    animation: AppState.instance,
                     builder: (context, _) => _leading(),
                   ),
                 const SizedBox(width: 14),
@@ -3842,7 +3765,7 @@ class _OfficerJoinedHeader extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         gradient: AppHeader.brandGradient,
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Stack(
         children: [
