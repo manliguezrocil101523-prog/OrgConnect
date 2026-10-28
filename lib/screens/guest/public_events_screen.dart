@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/analytics_service.dart';
 import '../../core/app_state.dart';
+import '../../core/quiz_preferences_service.dart';
 import '../auth/unified_login_page.dart';
 import '../analytics/event_comments_sheet.dart';
 import '../organizations/org_list_screen.dart';
@@ -2199,6 +2200,8 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
         ..clear()
         ..addAll(result.categories);
     });
+
+    await QuizPreferencesService.instance.saveGuestResult(result.categories);
   }
 
   Map<String, double> _interestProfile() {
@@ -2475,7 +2478,10 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
               ),
               if (_answers != null)
                 IconButton(
-                  onPressed: _startQuiz,
+                  onPressed: () async {
+                    await QuizPreferencesService.instance.clearGuestResult();
+                    _startQuiz();
+                  },
                   icon: const Icon(Icons.replay_rounded, color: _kMuted),
                   tooltip: 'Retake quiz',
                 ),
@@ -2484,13 +2490,27 @@ class _InterestMatchCardState extends State<_InterestMatchCard> {
           const SizedBox(height: 12),
           if (_answers == null)
             LayoutBuilder(builder: (_, constraints) {
-              final intro = const Text(
-                'Your answers create an interest profile and surface organizations whose purpose and activities are closest to what you chose.',
-                style: TextStyle(
-                  color: _kMuted,
-                  fontSize: 12.5,
-                  height: 1.4,
-                ),
+              final intro = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Your answers create an interest profile and surface organizations whose purpose and activities are closest to what you chose.',
+                    style: TextStyle(
+                      color: _kMuted,
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Your answers are saved on this device so we can personalize your dashboard after you log in.',
+                    style: TextStyle(
+                      color: _kMuted,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               );
               final button = FilledButton(
                 onPressed: _startQuiz,

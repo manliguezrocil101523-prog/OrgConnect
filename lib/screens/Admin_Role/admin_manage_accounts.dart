@@ -308,35 +308,14 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                             return;
                           }
 
-                          // Adviser flow (unchanged behavior).
-                          final userId = user['id'].toString();
-                          try {
-                            await supabase.Supabase.instance.client
-                                .from('profiles')
-                                .update({
-                              'role': role,
-                              'assigned_org_id': org.id,
-                            }).eq('id', userId);
-
-                            if (!mounted) return;
-
-                            setState(() {
-                              final idx = dbUsers.indexWhere(
-                                (u) => u['id'] == userId,
-                              );
-                              if (idx != -1) {
-                                dbUsers[idx]['role'] = role;
-                                dbUsers[idx]['assigned_org_id'] = org.id;
-                              }
-                            });
-
-                            _showSnack(
-                              '${_displayName(user)} is now Adviser of ${org.name}',
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            _showSnack('Error: $e');
-                          }
+                          // Adviser flow: goes through the admin-only RPC.
+                          await _changeUserRole(
+                            user,
+                            role,
+                            orgId: org.id,
+                            successMessage:
+                                '${_displayName(user)} is now Adviser of ${org.name}',
+                          );
                         },
                   child: const Text(
                     'Confirm',
@@ -366,6 +345,308 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
   String _displayName(Map<String, dynamic> u) {
     final name = u['name']?.toString().trim() ?? '';
     return name.isNotEmpty ? name : (u['email']?.toString() ?? 'Unknown');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Role changes (all go through the admin-only RPC `admin_set_user_role`)
+  // ---------------------------------------------------------------------------
+
+  static const Map<String, String> _roleLabels = {
+    'student': 'Student',
+    'officer': 'Officer',
+    'adviser': 'Adviser',
+    'admin': 'Admin',
+  };
+
+  bool _isSelf(Map<String, dynamic> u) {
+    final me = supabase.Supabase.instance.client.auth.currentUser?.id;
+    return me != null && u['id']?.toString() == me;
+  }
+
+  String _roleChangeEffect(String newRole) {
+    switch (newRole) {
+      case 'student':
+        return 'They will lose any officer or adviser access and their '
+            'organization assignment. Any organization membership is kept.';
+      case 'adviser':
+        return 'They will lose any officer access and become the Adviser '
+            'of the organization you choose next.';
+      case 'admin':
+        return 'They will get full administrator access, including managing '
+            'every account and organization.';
+      default:
+        return '';
+    }
+  }
+
+  Future<bool> _changeUserRole(
+    Map<String, dynamic> user,
+    String newRole, {
+    String? orgId,
+    String? successMessage,
+  }) async {
+    try {
+      await supabase.Supabase.instance.client.rpc(
+        'admin_set_user_role',
+        params: {
+          'p_user_id': user['id'].toString(),
+          'p_new_role': newRole,
+          'p_org_id': orgId,
+        },
+      );
+      // Reload so the screen always shows what the database now holds.
+      await _fetchUsersFromDatabase();
+      if (!mounted) return true;
+      _showSnack(
+        successMessage ??
+            '${_displayName(user)} is now ${_roleLabels[newRole] ?? newRole}',
+      );
+      return true;
+    } on supabase.PostgrestException catch (e) {
+      if (!mounted) return false;
+      _showSnack('Could not change role: ${e.message}');
+      return false;
+    } catch (e) {
+      if (!mounted) return false;
+      _showSnack('Could not change role: $e');
+      return false;
+    }
+  }
+
+  // Simple confirmation used by the role dropdown (student / admin targets).
+  Future<void> _confirmAndChangeRole(
+    Map<String, dynamic> user,
+    String newRole,
+  ) async {
+    final p = _p;
+    final fromLabel = _roleLabels[_roleOf(user)] ?? _roleOf(user);
+    final toLabel = _roleLabels[newRole] ?? newRole;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: p.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: p.border),
+        ),
+        title: Text(
+          'Change role?',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: p.textMain,
+          ),
+        ),
+        content: Text(
+          'Change ${_displayName(user)} from $fromLabel to $toLabel?\n\n'
+          '${_roleChangeEffect(newRole)}',
+          style: TextStyle(fontSize: 13.5, color: p.textSub, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: p.textSub)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: newRole == 'admin' ? danger : accent,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Change role',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    await _changeUserRole(user, newRole);
+  }
+
+  // Role chooser used for officers (their card shows an organization
+  // selector, so the role change lives behind its own button).
+  Future<void> _showChangeRoleDialog(Map<String, dynamic> user) async {
+    final p = _p;
+    String? selected;
+
+    const options = <String, String>{
+      'student': 'Student',
+      'adviser': 'Adviser',
+      'admin': 'Admin',
+    };
+
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: p.surface,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: p.border),
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Change role',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: p.textMain,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${_displayName(user)} is currently an Officer.',
+                    style: TextStyle(fontSize: 12.5, color: p.textSub),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final e in options.entries)
+                      GestureDetector(
+                        onTap: () => setDialogState(() => selected = e.key),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selected == e.key
+                                ? accent.withValues(alpha: 0.10)
+                                : p.subtle,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: selected == e.key ? accent : p.border,
+                              width: selected == e.key ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                selected == e.key
+                                    ? Icons.check_circle_rounded
+                                    : Icons.circle_outlined,
+                                size: 18,
+                                color:
+                                    selected == e.key ? accentDeep : p.textSub,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                e.value,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
+                                  color: selected == e.key
+                                      ? accentDeep
+                                      : p.textMain,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (selected != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _roleChangeEffect(selected!),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: selected == 'admin' ? danger : p.textSub,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Cancel', style: TextStyle(color: p.textSub)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: selected == 'admin' ? danger : accent,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: selected == null
+                      ? null
+                      : () => Navigator.pop(ctx, selected),
+                  child: Text(
+                    selected == 'adviser' ? 'Next' : 'Change role',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (choice == null || !mounted) return;
+
+    if (choice == 'adviser') {
+      // Adviser needs an organization; the picker finishes the change.
+      await _showOrgPickerDialog(user, role: 'adviser');
+      return;
+    }
+
+    await _changeUserRole(user, choice);
+  }
+
+  Widget _buildChangeRoleButton(_Palette p, Map<String, dynamic> u) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Tooltip(
+        message: 'Change role',
+        child: Material(
+          color: p.subtle,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: p.border),
+          ),
+          child: InkWell(
+            customBorder: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            onTap: () => _showChangeRoleDialog(u),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Icon(
+                Icons.swap_horiz_rounded,
+                color: p.textSub,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _confirmReplacePresident({
@@ -1126,6 +1407,8 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
                   ),
                 ),
               ),
+              if (role == 'officer' && !_isSelf(u))
+                _buildChangeRoleButton(p, u),
               const SizedBox(width: 12),
               _buildActiveSwitch(u, isActive),
             ],
@@ -1404,35 +1687,20 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
             child: Text('Adviser'),
           ),
         ],
-        onChanged: (val) async {
-          if (val == null) return;
-          if (val == 'adviser' || val == 'officer') {
-            await _showOrgPickerDialog(
-              u,
-              role: val,
-            );
-          } else {
-            await supabase.Supabase.instance.client.from('profiles').update({
-              'role': val,
-              'assigned_org_id': null,
-            }).eq('id', u['id'].toString());
-
-            if (!mounted) return;
-
-            setState(() {
-              final realIdx = dbUsers.indexWhere(
-                (d) => d['id'] == u['id'],
-              );
-
-              if (realIdx != -1) {
-                dbUsers[realIdx]['role'] = val;
-                dbUsers[realIdx]['assigned_org_id'] = null;
-              }
-            });
-
-            _showSnack('Role updated to $val');
-          }
-        },
+        // An admin cannot change their own role (the database enforces this too).
+        onChanged: _isSelf(u)
+            ? null
+            : (String? val) async {
+                if (val == null || val == role) return;
+                if (val == 'adviser' || val == 'officer') {
+                  await _showOrgPickerDialog(
+                    u,
+                    role: val,
+                  );
+                } else {
+                  await _confirmAndChangeRole(u, val);
+                }
+              },
       ),
     );
   }

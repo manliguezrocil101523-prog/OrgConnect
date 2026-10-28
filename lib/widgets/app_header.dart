@@ -7,6 +7,7 @@ class AppHeader extends StatelessWidget {
     required this.subtitle,
     required this.status,
     this.icon,
+    this.leadingWidget,
     this.avatarUrl = '',
     this.trailing,
     this.avatarImage,
@@ -19,6 +20,7 @@ class AppHeader extends StatelessWidget {
   final String subtitle;
   final String status;
   final IconData? icon; // if set, shows an icon tile
+  final Widget? leadingWidget;
   final String avatarUrl; // used when icon is null
   final Widget? trailing; // e.g. an Edit button
   final ImageProvider? avatarImage; // overrides avatarUrl (e.g. a picked photo)
@@ -152,6 +154,7 @@ class AppHeader extends StatelessWidget {
   }
 
   Widget _leading() {
+    if (leadingWidget != null) return leadingWidget!;
     if (icon != null) {
       return Container(
         width: leadingSize,

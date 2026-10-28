@@ -6,6 +6,7 @@ import 'package:intl/intl.dart' show DateFormat;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 
 // Shared proposal-screen palette. Kept at file scope so all proposal widgets
 // can use the same constants, including widgets declared outside the state class.
@@ -791,7 +792,6 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
           orgName: widget.orgName,
           orgId: widget.orgId,
           logoAsset: widget.logoAsset,
-          pad: pad,
         ),
         if (_refreshing)
           const LinearProgressIndicator(
@@ -1323,12 +1323,10 @@ class _ActivityHeader extends StatelessWidget {
   final String orgName;
   final String orgId;
   final String logoAsset;
-  final double pad;
 
   const _ActivityHeader({
     required this.orgName,
     required this.orgId,
-    required this.pad,
     this.logoAsset = '',
   });
 
@@ -1356,110 +1354,26 @@ class _ActivityHeader extends StatelessWidget {
               (item) => item?.id == orgId,
               orElse: () => null,
             );
+
     final logo = logoAsset.trim().isNotEmpty
         ? logoAsset.trim()
         : (org?.logoAsset.trim() ?? '');
 
-    return Container(
-      width: double.infinity,
-      clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF064E3B), Color(0xFF0B6B4D), Color(0xFF1A9E6B)],
+    return AppHeader(
+      title: 'Activity Proposals',
+      subtitle: orgName,
+      status: 'OFFICER ORGANIZATION HUB',
+      leadingWidget: Container(
+        width: 56,
+        height: 56,
+        padding: const EdgeInsets.all(2),
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-      ),
-      child: Stack(
-        children: [
-          const Positioned(
-            right: -40,
-            top: -60,
-            child: SizedBox(
-              width: 160,
-              height: 160,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle, color: Color(0x12FFFFFF)),
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-                pad, MediaQuery.paddingOf(context).top + 16, pad, 18),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(
-                          shape: BoxShape.circle, color: Colors.white),
-                      child: ClipOval(child: _logo(logo)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Activity Proposals',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                height: 1.15),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            orgName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Color(0xE6FFFFFF),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 6),
-                          const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                    color: Color(0xFF86EFAC),
-                                    shape: BoxShape.circle),
-                                child: SizedBox(width: 8, height: 8),
-                              ),
-                              SizedBox(width: 7),
-                              Flexible(
-                                child: Text(
-                                  'OFFICER ORGANIZATION HUB',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: .4),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+        child: ClipOval(
+          child: _logo(logo),
+        ),
       ),
     );
   }

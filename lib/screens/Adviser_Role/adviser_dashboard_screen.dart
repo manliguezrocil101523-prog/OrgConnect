@@ -1,3 +1,6 @@
+import 'dart:math' show max;
+import 'dart:ui' show PointerDeviceKind;
+
 import 'adviser_accounts_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -29,10 +32,17 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   static const card = Color(0xFFF5FFF9);
   static const mint = Color(0xFFDDF4E8);
   static const line = Color(0xFFB9E4CF);
+  static const _tabs = [
+    (Icons.home_outlined, Icons.home_rounded, 'Home'),
+    (Icons.assignment_outlined, Icons.assignment_rounded, 'Proposals'),
+    (Icons.apartment_outlined, Icons.apartment_rounded, 'Organization'),
+    (Icons.person_outline, Icons.person_rounded, 'Profile'),
+  ];
   final _db = Supabase.instance.client;
+  final _bodyKey = GlobalKey(); // keeps tab state when the layout switches
   int _tab = 0;
   bool _loading = true;
-  bool _loadedOnce = false; // NEW
+  bool _loadedOnce = false;
   bool _showAllPublishedEvents = false;
   bool _showAllProposals = false;
   List<Map<String, dynamic>> _requests = [], _events = [], _posts = [];
@@ -77,8 +87,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   }
 
   Future<void> _load() async {
-    // Full-screen spinner only on the very first load.
-    // Later calls refresh silently in the background.
     if (mounted && !_loadedOnce) setState(() => _loading = true);
     try {
       final results = await Future.wait([
@@ -110,8 +118,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         _events = List<Map<String, dynamic>>.from(results[1] as List)
           ..sort((a, b) => ('${b['date'] ?? b['created_at'] ?? ''}')
               .compareTo('${a['date'] ?? a['created_at'] ?? ''}'));
-        // Announcements are adviser-authored posts. Proposal workflow notifications
-        // share the notifications table, so exclude them from the Announcements feed.
         _posts =
             List<Map<String, dynamic>>.from(results[2] as List).where((post) {
           final title = post['title']?.toString().toLowerCase() ?? '';
@@ -132,8 +138,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         final profile = results[3] as Map<String, dynamic>?;
         _avatarUrl = profile?['avatar_url']?.toString() ?? '';
         _userName = profile?['name']?.toString().trim() ?? '';
-        _loading = false; // NEW
-        _loadedOnce = true; // NEW
+        _loading = false;
+        _loadedOnce = true;
       });
       if (_proposalSeenAt == null && _requests.isNotEmpty) {
         final stamps = _requests
@@ -150,8 +156,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               latest.toIso8601String());
         }
       }
-      // Keep the shared member store in sync. The Organization member screen
-      // reads AppState.members rather than this dashboard's private list.
       await AppState.instance.fetchMembers();
     } catch (e) {
       if (mounted) {
@@ -191,8 +195,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   }
 
   void _markProposalNotificationsSeen() {
-    // Clear the badge immediately when Proposals is opened. Persist the cursor
-    // in the background so navigation never races the async preferences write.
     final mark = DateTime.now();
     if (mounted) setState(() => _proposalSeenAt = mark);
     SharedPreferences.getInstance().then((prefs) {
@@ -214,7 +216,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   Future<void> _tellOfficerToPrepareFinalLayout(Map<String, dynamic> r) async {
     final proposalTitle = r['title']?.toString() ?? 'Activity Proposal';
     final message =
-        'Admin / CSO has approved “$proposalTitle”. Please prepare the final event post with the activity picture, activity details, venue, date, start time, and end time, then send the final layout to me here for review. Organization members can also share design suggestions in this community chat.';
+        'Admin / CSO has approved "$proposalTitle". Please prepare the final event post with the activity picture, activity details, venue, date, start time, and end time, then send the final layout to me here for review. Organization members can also share design suggestions in this community chat.';
     try {
       await Navigator.push(
         context,
@@ -251,7 +253,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(s),
         backgroundColor: err ? Colors.red : green,
-        behavior: SnackBarBehavior.floating));
+        behavior: SnackBarBehavior.floating,
+        width: MediaQuery.sizeOf(context).width >= 600 ? 440 : null));
   }
 
   DateTime? _parseFlexibleDate(dynamic value) {
@@ -454,7 +457,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     final now = DateTime.now();
     try {
       final imgs = _images(r);
-      // Step 1: claim the proposal so it can never be published twice.
       final claim = await _db
           .from('event_requests')
           .update({
@@ -474,7 +476,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         return;
       }
       claimed = true;
-      // Step 2: create the public event.
       await _db.from('events').insert({
         'title': r['title'],
         'date': _publicDate(r),
@@ -508,7 +509,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       await _load();
     } catch (e) {
       if (claimed && !eventSaved) {
-        // Event was not created, so put the proposal back for another try.
         try {
           await _db.from('event_requests').update({
             'status': 'creative_submitted',
@@ -524,21 +524,64 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     }
   }
 
+  bool _deleting = false;
+
+  Future<void> _deleteEvent(Map<String, dynamic> e) async {
+    if (_deleting) return;
+    final id = e['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+    final title = e['title']?.toString() ?? 'this event';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (x) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+            '"$title" will be removed for everyone, including its comments, reactions and views. This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(x, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(x, true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    _deleting = true;
+    try {
+      final removed = await AppState.instance.removeEvent(id);
+      _snack(
+          removed
+              ? 'Event deleted.'
+              : 'Could not delete this event. It may already be removed or you may not have permission.',
+          !removed);
+      await _load();
+    } finally {
+      _deleting = false;
+    }
+  }
+
   Future<String?> _feedback(String title, String hint) async {
     final c = TextEditingController();
     final result = await showDialog<String>(
       context: context,
       builder: (x) => AlertDialog(
+        scrollable: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(title),
-        content: TextField(
-            controller: c,
-            maxLines: 5,
-            decoration: InputDecoration(
-                labelText: 'Feedback',
-                hintText: hint,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14)))),
+        content: SizedBox(
+          width: 440,
+          child: TextField(
+              controller: c,
+              maxLines: 5,
+              decoration: InputDecoration(
+                  labelText: 'Feedback',
+                  hintText: hint,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14)))),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(x), child: const Text('Cancel')),
@@ -561,18 +604,22 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (x) => AlertDialog(
+        scrollable: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('New Organization Announcement'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-              controller: t,
-              decoration: const InputDecoration(labelText: 'Title')),
-          const SizedBox(height: 10),
-          TextField(
-              controller: m,
-              maxLines: 5,
-              decoration: const InputDecoration(labelText: 'Announcement')),
-        ]),
+        content: SizedBox(
+          width: 440,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: t,
+                decoration: const InputDecoration(labelText: 'Title')),
+            const SizedBox(height: 10),
+            TextField(
+                controller: m,
+                maxLines: 5,
+                decoration: const InputDecoration(labelText: 'Announcement')),
+          ]),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(x, false),
@@ -609,21 +656,52 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: bg,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: green))
-          : IndexedStack(
-              index: _tab,
-              children: [
-                _home(),
-                _proposals(),
-                _org(),
-                const AdviserProfileScreen(),
-              ],
-            ),
-      bottomNavigationBar: _nav(),
-    );
+    return LayoutBuilder(builder: (context, box) {
+      final wide = box.maxWidth >= 840;
+      final body = KeyedSubtree(
+        key: _bodyKey,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(color: green))
+            : IndexedStack(
+                index: _tab,
+                children: [
+                  _home(),
+                  _proposals(),
+                  _org(),
+                  const AdviserProfileScreen(),
+                ],
+              ),
+      );
+      return Scaffold(
+        backgroundColor: bg,
+        body: wide
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _rail(box.maxWidth >= 1200),
+                  Expanded(child: body),
+                ],
+              )
+            : body,
+        bottomNavigationBar: wide ? null : _nav(),
+      );
+    });
+  }
+
+  void _selectTab(int i) {
+    if (i == 1) {
+      _markProposalNotificationsSeen();
+    }
+    setState(() => _tab = i);
+    if (i == 0) _load();
+  }
+
+  Widget _tabIcon(int i, bool selected) {
+    final t = _tabs[i];
+    final icon = Icon(selected ? t.$2 : t.$1, color: selected ? green : null);
+    return i == 1 && _hasUnreadProposalNotice
+        ? Badge(label: const Text('!'), child: icon)
+        : icon;
   }
 
   Widget _nav() => Container(
@@ -640,46 +718,128 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             backgroundColor: Colors.white,
             indicatorColor: green.withValues(alpha: .12),
             selectedIndex: _tab,
-            onDestinationSelected: (i) {
-              if (i == 1) {
-                _markProposalNotificationsSeen();
-              }
-              setState(() => _tab = i);
-              if (i == 0) _load();
-            },
+            onDestinationSelected: _selectTab,
             destinations: [
-              const NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home_rounded, color: green),
-                  label: 'Home'),
-              NavigationDestination(
-                  icon: _hasUnreadProposalNotice
-                      ? Badge(
-                          label: const Text('!'),
-                          child: const Icon(Icons.assignment_outlined))
-                      : const Icon(Icons.assignment_outlined),
-                  selectedIcon: _hasUnreadProposalNotice
-                      ? Badge(
-                          label: const Text('!'),
-                          child: const Icon(Icons.assignment_rounded,
-                              color: green))
-                      : const Icon(Icons.assignment_rounded, color: green),
-                  label: 'Proposals'),
-              const NavigationDestination(
-                  icon: Icon(Icons.apartment_outlined),
-                  selectedIcon: Icon(Icons.apartment_rounded, color: green),
-                  label: 'Organization'),
-              const NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person_rounded, color: green),
-                  label: 'Profile'),
+              for (var i = 0; i < _tabs.length; i++)
+                NavigationDestination(
+                    icon: _tabIcon(i, false),
+                    selectedIcon: _tabIcon(i, true),
+                    label: _tabs[i].$3),
             ],
           ),
         ),
       );
 
+  Widget _rail(bool extended) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: const Border(right: BorderSide(color: line)),
+          boxShadow: [
+            BoxShadow(
+                color: green.withValues(alpha: .06),
+                blurRadius: 16,
+                offset: const Offset(4, 0))
+          ],
+        ),
+        child: NavigationRail(
+          extended: extended,
+          backgroundColor: Colors.white,
+          indicatorColor: green.withValues(alpha: .12),
+          selectedIndex: _tab,
+          labelType: extended
+              ? NavigationRailLabelType.none
+              : NavigationRailLabelType.all,
+          selectedLabelTextStyle:
+              const TextStyle(color: green, fontWeight: FontWeight.w800),
+          onDestinationSelected: _selectTab,
+          destinations: [
+            for (var i = 0; i < _tabs.length; i++)
+              NavigationRailDestination(
+                  icon: _tabIcon(i, false),
+                  selectedIcon: _tabIcon(i, true),
+                  label: Text(_tabs[i].$3)),
+          ],
+        ),
+      );
+
+  Widget _grid(List<Widget> items, double gap,
+          {double minW = 320,
+          int maxCols = 3,
+          bool equal = false,
+          bool trailing = true}) =>
+      LayoutBuilder(builder: (_, box) {
+        final cols = ((box.maxWidth + gap) / (minW + gap))
+            .floor()
+            .clamp(1, maxCols)
+            .toInt();
+        Widget gapped(int i) => Padding(
+              padding: EdgeInsets.only(
+                  bottom: trailing || i + cols < items.length ? gap : 0),
+              child: items[i],
+            );
+        if (cols > 1 && equal) {
+          return Column(children: [
+            for (var i = 0; i < items.length; i += cols)
+              Padding(
+                padding: EdgeInsets.only(
+                    bottom: trailing || i + cols < items.length ? gap : 0),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var j = i; j < i + cols; j++) ...[
+                        if (j > i) SizedBox(width: gap),
+                        Expanded(
+                            child:
+                                j < items.length ? items[j] : const SizedBox()),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+          ]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (var k = 0; k < cols; k++) ...[
+            if (k > 0) SizedBox(width: gap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = k; i < items.length; i += cols) gapped(i)
+                ],
+              ),
+            ),
+          ],
+        ]);
+      });
+
+  Widget _split(List<Widget> main, List<Widget> side) =>
+      LayoutBuilder(builder: (_, box) {
+        if (box.maxWidth < 920) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [...main, const SizedBox(height: 18), ...side],
+          );
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            flex: 3,
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch, children: main),
+          ),
+          const SizedBox(width: 24),
+          Expanded(
+            flex: 2,
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch, children: side),
+          ),
+        ]);
+      });
+
   String get _adviserLabel =>
       '${widget.orgName.replaceAll(RegExp('tiatro', caseSensitive: false), 'teatro').toUpperCase()} ADVISER';
+
   Widget _page(
     String title,
     String subtitle,
@@ -689,7 +849,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     IconData? icon,
   }) =>
       SafeArea(
-        top: false, // AppHeader already handles the status bar space
+        top: false,
         child: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -708,17 +868,21 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 icon: showAvatar ? null : (icon ?? Icons.apartment_rounded),
               ),
               Expanded(
-                child: RefreshIndicator(
-                  color: green,
-                  backgroundColor: card,
-                  onRefresh: _load,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics()),
-                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
-                    children: children,
-                  ),
-                ),
+                child: LayoutBuilder(builder: (context, box) {
+                  final w = box.maxWidth;
+                  final side = w >= 640 ? max(24.0, (w - 1180) / 2) : 16.0;
+                  return RefreshIndicator(
+                    color: green,
+                    backgroundColor: card,
+                    onRefresh: _load,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics()),
+                      padding: EdgeInsets.fromLTRB(side, 18, side, 36),
+                      children: children,
+                    ),
+                  );
+                }),
               ),
             ],
           ),
@@ -745,7 +909,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               _empty(
                   'No published events yet. Approved event creatives will appear here.')
             else
-              ..._events.map(_eventCard),
+              _grid(_events.map(_eventCard).toList(), 14),
           ],
           showAvatar: true);
     }
@@ -772,49 +936,53 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 child: _stat(Icons.campaign_rounded, 'Posts', _posts.length)),
           ]),
           const SizedBox(height: 22),
-          _sectionHeader(
-              'Published Events',
-              'Events that are already posted with their pictures',
-              () => setState(() => _showAllPublishedEvents = true)),
-          const SizedBox(height: 10),
-          if (_events.isEmpty)
-            _empty(
-                'No published events yet. Approved event creatives will appear here.')
-          else
-            ...(_showAllPublishedEvents ? _events : _events.take(5).toList())
-                .map(_eventCard),
-          if (_events.length > 5)
-            Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                    onPressed: () => setState(() =>
-                        _showAllPublishedEvents = !_showAllPublishedEvents),
-                    child: Text(_showAllPublishedEvents
-                        ? 'Show Less'
-                        : 'View All Events'))),
-          const SizedBox(height: 18),
-          _sectionHeader(
-              'Announcements', 'Updates shared with your organization', null),
-          const SizedBox(height: 10),
-          ..._posts.take(3).map(_postCard),
-          if (_posts.isEmpty) _empty('No announcements yet.'),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _postAnnouncement,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Create Announcement'),
-            style: FilledButton.styleFrom(
-              backgroundColor: green,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 54),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18)),
+          _split([
+            _sectionHeader(
+                'Published Events',
+                'Events that are already posted with their pictures',
+                () => setState(() => _showAllPublishedEvents = true)),
+            const SizedBox(height: 10),
+            if (_events.isEmpty)
+              _empty(
+                  'No published events yet. Approved event creatives will appear here.')
+            else
+              _grid(
+                  (_showAllPublishedEvents ? _events : _events.take(5).toList())
+                      .map(_eventCard)
+                      .toList(),
+                  14),
+            if (_events.length > 5)
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                      onPressed: () => setState(() =>
+                          _showAllPublishedEvents = !_showAllPublishedEvents),
+                      child: Text(_showAllPublishedEvents
+                          ? 'Show Less'
+                          : 'View All Events'))),
+          ], [
+            _sectionHeader(
+                'Announcements', 'Updates shared with your organization', null),
+            const SizedBox(height: 10),
+            _grid(_posts.take(3).map(_postCard).toList(), 10,
+                minW: 300, maxCols: 2, equal: true),
+            if (_posts.isEmpty) _empty('No announcements yet.'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _postAnnouncement,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Create Announcement'),
+              style: FilledButton.styleFrom(
+                backgroundColor: green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 54),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
+              ),
             ),
-          ),
+          ]),
         ],
-        showAvatar: true,
-        statusText:
-            '${widget.orgName.replaceAll(RegExp('tiatro', caseSensitive: false), 'teatro').toUpperCase()} ADVISER');
+        showAvatar: true);
   }
 
   Widget _stat(IconData icon, String label, int value) => Container(
@@ -833,26 +1001,43 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 offset: const Offset(0, 8))
           ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
+        child: LayoutBuilder(builder: (_, box) {
+          final iconBox = Container(
               padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: .14),
                   borderRadius: BorderRadius.circular(13)),
-              child: Icon(icon, color: Colors.white, size: 19)),
-          const SizedBox(height: 10),
-          Text('$value',
+              child: Icon(icon, color: Colors.white, size: 19));
+          final number = Text('$value',
               style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white)),
-          const SizedBox(height: 2),
-          Text(label,
+                  color: Colors.white));
+          final text = Text(label,
               style: TextStyle(
                   fontSize: 10.5,
                   color: Colors.white.withValues(alpha: .82),
-                  fontWeight: FontWeight.w800)),
-        ]),
+                  fontWeight: FontWeight.w800));
+          if (box.maxWidth < 200) {
+            return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  iconBox,
+                  const SizedBox(height: 10),
+                  number,
+                  const SizedBox(height: 2),
+                  text,
+                ]);
+          }
+          return Row(children: [
+            iconBox,
+            const SizedBox(width: 14),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [number, const SizedBox(height: 2), text])),
+          ]);
+        }),
       );
 
   Widget _sectionHeader(String title, String subtitle, VoidCallback? action) =>
@@ -880,7 +1065,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     }
     final eventId = e['id']?.toString() ?? '';
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -899,15 +1083,17 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (imgs.isNotEmpty)
-            SizedBox(
-                height: 160,
-                width: double.infinity,
-                child: Image.network(imgs.first,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _imagePlaceholder()))
-          else
-            _imagePlaceholder(),
+          LayoutBuilder(builder: (_, box) {
+            final h = box.maxWidth > 420 ? 210.0 : 160.0;
+            return imgs.isNotEmpty
+                ? SizedBox(
+                    height: h,
+                    width: double.infinity,
+                    child: Image.network(imgs.first,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _imagePlaceholder(h)))
+                : _imagePlaceholder(h);
+          }),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
             child:
@@ -920,11 +1106,13 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 const Icon(Icons.calendar_month_rounded,
                     size: 15, color: green),
                 const SizedBox(width: 6),
-                Text(_eventDateTime(e),
-                    style: const TextStyle(
-                        color: muted,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700))
+                Expanded(
+                  child: Text(_eventDateTime(e),
+                      style: const TextStyle(
+                          color: muted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700)),
+                )
               ]),
               if ((e['description'] ?? '').toString().isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -939,18 +1127,37 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    onPressed: () => showEventComments(context,
-                        eventId: eventId,
-                        eventTitle: e['title']?.toString() ?? 'Event'),
-                    icon: const Icon(Icons.forum_rounded, size: 16),
-                    label: EventCommentCountLabel(
-                        eventId: eventId, style: const TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                        foregroundColor: green,
-                        side: const BorderSide(color: line),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(13))),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => showEventComments(context,
+                            eventId: eventId,
+                            eventTitle: e['title']?.toString() ?? 'Event'),
+                        icon: const Icon(Icons.forum_rounded, size: 16),
+                        label: EventCommentCountLabel(
+                            eventId: eventId,
+                            style: const TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: green,
+                            side: const BorderSide(color: line),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(13))),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _deleteEvent(e),
+                        icon:
+                            const Icon(Icons.delete_outline_rounded, size: 16),
+                        label: const Text('Delete',
+                            style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(13))),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -962,7 +1169,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   }
 
   Widget _postCard(Map<String, dynamic> p) => Container(
-      margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
           gradient: const LinearGradient(
@@ -1033,8 +1239,13 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               style: const TextStyle(color: muted, fontWeight: FontWeight.w700))
         ]),
         const SizedBox(height: 10),
-        ...(_showAllProposals ? _requests : _requests.take(5).toList())
-            .map(_proposalCard),
+        _grid(
+            (_showAllProposals ? _requests : _requests.take(5).toList())
+                .map(_proposalCard)
+                .toList(),
+            16,
+            minW: 420,
+            maxCols: 2),
         if (_requests.length > 5)
           Align(
               alignment: Alignment.centerLeft,
@@ -1057,7 +1268,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     final description = r['description']?.toString().trim() ?? '';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -1077,7 +1287,6 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Keep the important proposal information together at the top.
           Padding(
             padding: const EdgeInsets.fromLTRB(17, 17, 17, 0),
             child: Column(
@@ -1184,17 +1393,25 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             SizedBox(
               width: double.infinity,
               height: 300,
-              child: PageView.builder(
-                itemCount: imgs.length,
-                itemBuilder: (_, i) => Image.network(
-                  imgs[i],
-                  width: double.infinity,
-                  height: 300,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: bg,
-                    child: const Icon(Icons.broken_image_rounded,
-                        color: green, size: 40),
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  dragDevices: {
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.mouse
+                  },
+                ),
+                child: PageView.builder(
+                  itemCount: imgs.length,
+                  itemBuilder: (_, i) => Image.network(
+                    imgs[i],
+                    width: double.infinity,
+                    height: 300,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: bg,
+                      child: const Icon(Icons.broken_image_rounded,
+                          color: green, size: 40),
+                    ),
                   ),
                 ),
               ),
@@ -1217,9 +1434,11 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 14, color: green),
         const SizedBox(width: 5),
-        Text(text,
-            style: const TextStyle(
-                color: dark, fontSize: 10.5, fontWeight: FontWeight.w800))
+        Flexible(
+          child: Text(text,
+              style: const TextStyle(
+                  color: dark, fontSize: 10.5, fontWeight: FontWeight.w800)),
+        )
       ]));
 
   Widget _actions(Map<String, dynamic> r, String s) {
@@ -1355,86 +1574,83 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
 
   Widget _org() =>
       _page('Organization', 'Manage members, impact, profile, and community.', [
-        _feature(
-          Icons.insights_rounded,
-          'Active Members & Impact',
-          'Active members and their impact.',
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OfficerMembersScreen(
-                organizationId: widget.orgId,
-                showOnlyActive: true,
-                readOnly: true,
-                adviserView: true,
-                title: 'Active Members & Impact',
+        _grid([
+          _feature(
+            Icons.insights_rounded,
+            'Active Members & Impact',
+            'Active members and their impact.',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OfficerMembersScreen(
+                  organizationId: widget.orgId,
+                  showOnlyActive: true,
+                  readOnly: true,
+                  adviserView: true,
+                  title: 'Active Members & Impact',
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        _feature(
-          Icons.manage_accounts_rounded,
-          'Manage Member Accounts',
-          'View members and manage their positions.',
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AdviserAccountsScreen(
-                  orgId: widget.orgId, orgName: widget.orgName),
+          _feature(
+            Icons.manage_accounts_rounded,
+            'Manage Member Accounts',
+            'View members and manage their positions.',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AdviserAccountsScreen(
+                    orgId: widget.orgId, orgName: widget.orgName),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        _feature(
-          Icons.badge_rounded,
-          'Organization profile',
-          'Edit the public organization information, officers, and highlights.',
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => OfficerOrgProfileScreen(orgId: widget.orgId)),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _feature(
-          Icons.notes_rounded,
-          'Meeting Minutes',
-          'Review meeting notes submitted by the Secretary or Assistant Secretary.',
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AdviserMeetingMinutesScreen(
-                  orgId: widget.orgId, orgName: widget.orgName),
+          _feature(
+            Icons.badge_rounded,
+            'Organization profile',
+            'Edit the public organization information, officers, and highlights.',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => OfficerOrgProfileScreen(orgId: widget.orgId)),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        _feature(
-          Icons.account_balance_wallet_rounded,
-          'Liquidation & Budget',
-          'View the budget allocated by Admin / CSO, income, expenses, balance, and liquidation history.',
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AdviserLiquidationScreen(
-                  orgId: widget.orgId, orgName: widget.orgName),
+          _feature(
+            Icons.notes_rounded,
+            'Meeting Minutes',
+            'Review meeting notes submitted by the Secretary or Assistant Secretary.',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AdviserMeetingMinutesScreen(
+                    orgId: widget.orgId, orgName: widget.orgName),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        _feature(
-          Icons.forum_rounded,
-          'Community Chat',
-          'Open the organization conversation with members and officers.',
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OrgCommunityChatScreen(
-                  orgId: widget.orgId, orgName: widget.orgName),
+          _feature(
+            Icons.account_balance_wallet_rounded,
+            'Liquidation & Budget',
+            'View the budget allocated by Admin / CSO, income, expenses, balance, and liquidation history.',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AdviserLiquidationScreen(
+                    orgId: widget.orgId, orgName: widget.orgName),
+              ),
             ),
           ),
-        ),
+          _feature(
+            Icons.forum_rounded,
+            'Community Chat',
+            'Open the organization conversation with members and officers.',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OrgCommunityChatScreen(
+                    orgId: widget.orgId, orgName: widget.orgName),
+              ),
+            ),
+          ),
+        ], 10, minW: 340, maxCols: 2, equal: true, trailing: false),
       ]);
 
   Widget _feature(
@@ -1518,8 +1734,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             style: const TextStyle(color: muted, height: 1.4))
       ]));
 
-  Widget _imagePlaceholder() => Container(
-      height: 160,
+  Widget _imagePlaceholder([double height = 160]) => Container(
+      height: height,
       decoration: const BoxDecoration(
           gradient:
               LinearGradient(colors: [Color(0xFF064E3B), Color(0xFF20B77D)])),

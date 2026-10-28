@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/app_state.dart';
+import 'core/quiz_preferences_service.dart';
 
 import 'screens/organizations/org_list_screen.dart';
 import 'screens/auth/sign_up_page.dart';
@@ -64,6 +65,10 @@ class _MyAppState extends State<MyApp> {
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       if (data.event == AuthChangeEvent.passwordRecovery) {
         navigatorKey.currentState?.pushNamed('/reset-password');
+      }
+      if (data.event == AuthChangeEvent.signedOut) {
+        QuizPreferencesService.instance
+            .onSignedOut(); // <--- Add this line here
       }
     });
   }

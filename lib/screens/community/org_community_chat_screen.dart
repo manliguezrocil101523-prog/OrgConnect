@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../widgets/app_header.dart';
 
 class OrgCommunityChatScreen extends StatefulWidget {
   final String orgId, orgName;
@@ -428,94 +429,14 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
       backgroundColor: bg,
       body: Column(
         children: [
-          SizedBox(
-            height: 150,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF075A42), green, bright],
-                      ),
-                    ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                            top: -65,
-                            right: -35,
-                            child:
-                                _orb(180, Colors.white.withValues(alpha: .08))),
-                        Positioned(
-                            bottom: -55,
-                            left: -45,
-                            child:
-                                _orb(145, Colors.black.withValues(alpha: .07))),
-                        SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 38, 24, 16),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                _chatLogo(),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('COMMUNITY CHAT',
-                                          style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w900,
-                                              letterSpacing: 1.4)),
-                                      const SizedBox(height: 5),
-                                      Text(widget.orgName,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 23,
-                                              height: 1.05,
-                                              fontWeight: FontWeight.w900)),
-                                      const SizedBox(height: 8),
-                                      const Text(
-                                          'One shared space for members, officers, and advisers.',
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 12,
-                                              height: 1.3)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  left: 8,
-                  child: IconButton(
-                    tooltip: 'Back',
-                    onPressed: widget.showBackButton
-                        ? () => Navigator.of(context).maybePop()
-                        : null,
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
+          AppHeader(
+            title: widget.orgName,
+            subtitle: 'One shared space for members, officers, and advisers.',
+            status: 'COMMUNITY CHAT',
+            icon: Icons.forum_rounded,
+            onBack: widget.showBackButton
+                ? () => Navigator.of(context).maybePop()
+                : null,
           ),
           Expanded(
             child: loading

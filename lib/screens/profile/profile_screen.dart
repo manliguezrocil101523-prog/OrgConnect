@@ -1727,37 +1727,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           physics: const AlwaysScrollableScrollPhysics(
                             parent: BouncingScrollPhysics(),
                           ),
+                          // Change headerHeight + 20 to headerHeight to eliminate the gap
                           padding: EdgeInsets.fromLTRB(
-                            pad,
-                            headerHeight + 20,
-                            pad,
+                            0,
+                            headerHeight, // <-- Updated from headerHeight + 20
+                            0,
                             36 + mq.padding.bottom,
                           ),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints:
-                                  BoxConstraints(maxWidth: bodyMaxWidth),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _ProfileIdentity(
-                                    name: name,
-                                    studentId: studentId,
-                                    avatar: avatar,
-                                    avatarSize: 104,
-                                    onAvatarTap: () =>
-                                        setState(() => _showZoom = true),
-                                    onEdit: _openEdit,
-                                  ),
-                                  const SizedBox(height: 24),
-                                  details,
-                                  const SizedBox(height: 28),
-                                  _logoutButton(),
-                                  const SizedBox(height: 18),
-                                  _versionText(),
-                                ],
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Gray background container will now touch the header seamlessly
+                              Container(
+                                width: double.infinity,
+                                color: const Color(0xFFD9D9D9),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 20, horizontal: 16),
+                                child: _ProfileIdentity(
+                                  name: name,
+                                  studentId: studentId,
+                                  avatar: avatar,
+                                  avatarSize: 104,
+                                  onAvatarTap: () =>
+                                      setState(() => _showZoom = true),
+                                  onEdit: _openEdit,
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 24),
+
+                              // Rest of your content with margins
+                              Center(
+                                child: ConstrainedBox(
+                                  constraints:
+                                      BoxConstraints(maxWidth: bodyMaxWidth),
+                                  child: Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: pad),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        details,
+                                        const SizedBox(height: 28),
+                                        _logoutButton(),
+                                        const SizedBox(height: 18),
+                                        _versionText(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

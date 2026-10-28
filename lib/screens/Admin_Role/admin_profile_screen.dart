@@ -1153,7 +1153,7 @@ class _IconBox extends StatelessWidget {
   const _IconBox({
     required this.icon,
     required this.color,
-    this.size = 36.0, // Added default value here
+    this.size = 40.0, // Added default value here
   });
 
   @override

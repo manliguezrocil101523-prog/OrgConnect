@@ -1,6 +1,6 @@
 # FLUTTER APP MAP (auto-generated)
 
-## lib/main.dart (158 lines)
+## lib/main.dart (163 lines)
 - classes: MyApp, _MyAppState
 - uses (other project classes): 
 - supabase tables: 
@@ -27,6 +27,15 @@
 - realtime channels: 
 - auth calls: 
 
+## lib/core/quiz_preferences_service.dart (192 lines)
+- classes: QuizPreferencesService
+- uses (other project classes): 
+- supabase tables: 
+- rpc: 
+- storage buckets: 
+- realtime channels: 
+- auth calls: 
+
 ## lib/screens/Admin_Role/admin_create_organization_screen.dart (705 lines)
 - classes: AdminCreateOrganizationScreen, _AdminCreateOrganizationScreenState, _OfficerPickerSheet, _OfficerPickerSheetState
 - uses (other project classes): 
@@ -45,7 +54,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Admin_Role/admin_manage_accounts.dart (1488 lines)
+## lib/screens/Admin_Role/admin_manage_accounts.dart (1940 lines)
 - classes: AdminAccountsScreen, _AdminAccountsScreenState, _Section, _Palette, _RoleStyle, _HoverCard, _HoverCardState
 - uses (other project classes): 
 - supabase tables: 
@@ -81,7 +90,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Adviser_Role/adviser_dashboard_screen.dart (1552 lines)
+## lib/screens/Adviser_Role/adviser_dashboard_screen.dart (1710 lines)
 - classes: AdviserDashboard, _AdviserDashboardState, _StatusNote
 - uses (other project classes): 
 - supabase tables: 
@@ -189,7 +198,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/community/org_community_chat_screen.dart (780 lines)
+## lib/screens/community/org_community_chat_screen.dart (701 lines)
 - classes: OrgCommunityChatScreen, _OrgCommunityChatScreenState
 - uses (other project classes): 
 - supabase tables: 
@@ -198,7 +207,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/guest/public_events_screen.dart (2731 lines)
+## lib/screens/guest/public_events_screen.dart (2806 lines)
 - classes: PublicEventsScreen, _PublicEventsScreenState, _DetailInfoRow, _DetailDescription, _QuizResult, _QuizDialog, _QuizDialogState, _InterestMatchCard, _InterestMatchCardState, _HoverSurface, _HoverSurfaceState
 - uses (other project classes): 
 - supabase tables: 
@@ -216,8 +225,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_applications_screen.dart (1784 lines)
-- classes: OfficerApplicationsScreen, _AppHeroHeader, _AppCard, _SC, _Chip, _DateTimeChip, _GradientButton, _ConfirmDialog, _DeclinedHeader, _EmptyState, _SectionLabel, _AttachmentImage, _AttachmentVideo, _FullScreenImage, _VideoPlayerScreen, _VideoPlayerScreenState
+## lib/screens/Officer_Role/officer_applications_screen.dart (1744 lines)
+- classes: OfficerApplicationsScreen, _FixedAppHeaderDelegate, _AppCard, _SC, _Chip, _DateTimeChip, _GradientButton, _ConfirmDialog, _DeclinedHeader, _EmptyState, _SectionLabel, _AttachmentImage, _AttachmentVideo, _FullScreenImage, _VideoPlayerScreen, _VideoPlayerScreenState
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -225,7 +234,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_events_screen.dart (1719 lines)
+## lib/screens/Officer_Role/officer_events_screen.dart (1633 lines)
 - classes: OfficerEventsScreen, _OfficerEventsScreenState, _ActivityHeader, _StatusNote, _Gallery, _GalleryState, _Skeleton, _SkeletonState, _Notice
 - uses (other project classes): 
 - supabase tables: 
@@ -234,7 +243,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_members_screen.dart (3818 lines)
+## lib/screens/Officer_Role/officer_members_screen.dart (3770 lines)
 - classes: OfficerMembersScreen, _OfficerMembersScreenState, _MemberCard, _EngagementInfoCard, _ImpactSection, _MemberActivitySection, _GradFab, _IconBtn, _Label, _Empty, _DialogHeader, _FieldLabel, _Field, _CancelBtn, _SaveBtn
 - uses (other project classes): 
 - supabase tables: 
@@ -243,7 +252,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_org_profile_screen.dart (1975 lines)
+## lib/screens/Officer_Role/officer_org_profile_screen.dart (1952 lines)
 - classes: OfficerOrgProfileScreen, _OfficerOrgProfileScreenState, _LogoPicker, _ProfilePersonEditorCard, _OfficerPeopleEditor, _MediaEditCard, _MediaEditCardState
 - uses (other project classes): 
 - supabase tables: 
@@ -261,8 +270,8 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Officer_Role/officer_rule_screen.dart (3267 lines)
-- classes: _OfficerColors, _OfficerText, _OfficerDecor, _OfficerScrollBehavior, _OfficerEvent, _EventBuckets, BaseOfficerDashboard, _BaseOfficerDashboardState, _NavDef, _OfficerBottomNav, _OfficerRail, _OfficerNav, _OfficerHeader, _HeaderOrb, _HeaderAvatar, _HeaderLogo, _HeaderRefreshButton, _SurfaceCard, _IconCircle, _SectionTitle, _InfoLine, _Pill, _DateBadge, _ImageFallback, _EventImage, _HomeTab, _HomeTabState, _StatsRow, _StatCard, _NextEventCard, _QuickActionData, _QuickActions, _QuickActionTile, _FilterBar, _EventGrid, _EventCard, _StateCard, _StaleBanner, _EventsSkeleton, _EventsSkeletonState, _OfficerEventDetailsSheet, _OfficerOrganizationsTab, _OfficerOrganizationsTabState, _HubTile, _OfficerJoinedOrganizationsScreen, _OfficerJoinedOrganizationsScreenState, _OfficerJoinedHeader, _OfficerJoinedOrgCard, _OfficerJoinedOrgCardState, _OfficerOrgLogo
+## lib/screens/Officer_Role/officer_rule_screen.dart (4062 lines)
+- classes: _OfficerColors, _OfficerText, _OfficerDecor, _OfficerScrollBehavior, _OfficerEvent, _EventBuckets, BaseOfficerDashboard, _BaseOfficerDashboardState, _NavDef, _OfficerBottomNav, _OfficerRail, _OfficerNav, _OfficerHeader, _HeaderOrb, _HeaderAvatar, _HeaderLogo, _HeaderRefreshButton, _SurfaceCard, _IconCircle, _SectionTitle, _InfoLine, _Pill, _DateBadge, _ImageFallback, _EventImage, _HomeTab, _HomeTabState, _AttentionStrip, _StatsRow, _StatCard, _NextEventCard, _QuickActionData, _QuickActions, _QuickActionTile, _FilterBar, _EventGrid, _EventCard, _StateCard, _StaleBanner, _EventsSkeleton, _EventsSkeletonState, _OfficerEventDetailsSheet, _OfficerEventDetailsSheetState, _OfficerOrganizationsTab, _OfficerOrganizationsTabState, _OfficerOrgSummaryCard, _HubTile, _JoinedOrganizationsSkeleton, _SkeletonBlock, _OfficerJoinedOrganizationsScreen, _OfficerJoinedOrganizationsScreenState, _OfficerJoinedHeader, _OfficerJoinedOrgCard, _OfficerJoinedOrgCardState, _OfficerOrgLogo
 - uses (other project classes): 
 - supabase tables: 
 - rpc: 
@@ -288,7 +297,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/organizations/org_profile_screen.dart (2108 lines)
+## lib/screens/organizations/org_profile_screen.dart (2107 lines)
 - classes: _C, _DragScrollBehavior, _Pad, _CardGrid, _TabScroll, _TabScrollState, OrgDetailScreen, _OrgDetailScreenState, _GuestApplyPlaceholder, _Hero, _Logo, _FallbackLogo, _Pill, _OrgDashboard, _EventVisualCard, _MediaTile, _MediaViewer, _MediaViewerState, _ZoomableImage, _ZoomableImageState, _AboutTab, _SectionIntro, _TitleRow, _StoryCard, _MissionVisionCard, _PeopleSectionLabel, _AboutPeopleGallery, _SquarePersonCard, _ConnectCard, _ApplyTab, _LazyOrgForm, _LazyOrgFormState, _SoftEmpty
 - uses (other project classes): 
 - supabase tables: 
@@ -297,7 +306,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/profile/profile_screen.dart (3362 lines)
+## lib/screens/profile/profile_screen.dart (3382 lines)
 - classes: _OrgBrief, ProfileScreen, _ProfileScreenState, _ProfileHeader, _ProfileIdentity, _Card, _SectionTitle, _Tag, _Handle, _EmptyCard, _OrgLogo, _FieldDef, _InfoRow, _ImpactCard, _AvatarZoomOverlay, _EditProfilePage, _EditProfilePageState, _EditForm, _BwFormField, _BlackButton, _BwSectionLabel
 - uses (other project classes): 
 - supabase tables: 
@@ -441,7 +450,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Student_Role/home/new_home_tab.dart (1004 lines)
+## lib/screens/Student_Role/home/new_home_tab.dart (1007 lines)
 - classes: NewHomeTab, _NewHomeTabState, _Centered, _Hero, _Logo, _BellButton, _AvatarButton, _SearchBar, _QA, _QuickActions, _QuickCard, _Badge, _TemporaryNotice
 - uses (other project classes): 
 - supabase tables: 
@@ -477,7 +486,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/widgets/app_header.dart (229 lines)
+## lib/widgets/app_header.dart (232 lines)
 - classes: AppHeader
 - uses (other project classes): 
 - supabase tables: 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Notification;
 
 import '../../../core/analytics_service.dart';
 import '../../../core/app_state.dart';
+import '../../../core/quiz_preferences_service.dart';
 import 'home_data.dart';
 import 'home_tokens.dart';
 import 'home_recommended_section.dart';
@@ -47,6 +48,8 @@ class _NewHomeTabState extends State<NewHomeTab> {
   void initState() {
     super.initState();
     AppState.instance.fetchOrganizations();
+    QuizPreferencesService.instance
+        .syncForCurrentUser(); // <--- Add this line here
     AnalyticsService.instance
         .logUsage('open_student_dashboard', route: 'student/home');
   }

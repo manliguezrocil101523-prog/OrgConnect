@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 
 class OfficerMembersScreen extends StatefulWidget {
   final String? organizationId;
@@ -612,64 +613,15 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
         ),
       );
 
-  Widget _membersHeader(BuildContext context) => SizedBox(
-        height: 160,
-        width: double.infinity,
-        child: Container(
-          decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [Color(0xFF16A34A), Color(0xFF0F766E)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight)),
-          child: Stack(children: [
-            Positioned(top: -30, right: -20, child: _orb(160, 0.07)),
-            Positioned(bottom: 10, left: -40, child: _orb(120, 0.05)),
-            SafeArea(
-                child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
-              child:
-                  Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white, size: 20)),
-                const SizedBox(width: 4),
-                Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .18),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: .30),
-                            width: 1.5)),
-                    child: const Icon(Icons.groups_rounded,
-                        color: Colors.white, size: 26)),
-                const SizedBox(width: 14),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                      Text(widget.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 4),
-                      const Text('Members and impact',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700)),
-                    ])),
-              ]),
-            )),
-          ]),
-        ),
-      );
+  Widget _membersHeader(BuildContext context) {
+    return AppHeader(
+      title: widget.title,
+      subtitle: 'Members and impact',
+      status: widget.showOnlyActive ? 'ACTIVE MEMBERS' : 'ORGANIZATION MEMBERS',
+      icon: Icons.groups_rounded,
+      onBack: () => Navigator.pop(context),
+    );
+  }
 
   Widget _attendanceFullHeader(
           BuildContext context, String title, IconData icon) =>

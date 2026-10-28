@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, HapticFeedback;
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -325,6 +327,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   bool _refreshing = false;
   String? _eventsError;
   DateTime? _lastUpdated;
+  int? _pendingApplicationsCount;
 
   String _avatarUrl = '';
   String _userName = '';
@@ -343,10 +346,31 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   }
 
   Future<void> _loadOfficerHome() async {
+    // This optional count is intentionally fire-and-forget so it cannot delay
+    // the event refresh or turn an otherwise successful refresh into a failure.
+    unawaited(_loadPendingApplications());
     await Future.wait([
       _loadPublishedEvents(),
       _loadOfficerProfile(),
     ]);
+    if (!mounted) return;
+  }
+
+  Future<void> _loadPendingApplications() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('applications')
+          .select('id')
+          .eq('org_id', widget.orgId)
+          .eq('status', 'pending');
+      if (!mounted) return;
+      setState(() => _pendingApplicationsCount = (rows as List).length);
+    } catch (e) {
+      debugPrint('Officer pending applications count unavailable: $e');
+      if (!mounted) return;
+      // Unknown is distinct from zero; do not show a misleading badge.
+      setState(() => _pendingApplicationsCount = null);
+    }
   }
 
   Future<void> _loadOfficerProfile() async {
@@ -358,6 +382,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
           .select('name,avatar_url')
           .eq('id', userId)
           .maybeSingle();
+      if (!mounted) return;
       final membership = await Supabase.instance.client
           .from('members')
           .select('position')
@@ -395,6 +420,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
           .select('*')
           .eq('org_id', widget.orgId)
           .order('date', ascending: true);
+      if (!mounted) return;
 
       final parsed = (response as List)
           .map((row) => _OfficerEvent.fromRow(
@@ -458,6 +484,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
 
   void _selectTab(int index) {
     if (_selectedIndex == index) return;
+    unawaited(HapticFeedback.selectionClick());
     setState(() => _selectedIndex = index);
   }
 
@@ -487,6 +514,7 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
             refreshing: _refreshing,
             error: _eventsError,
             lastUpdated: _lastUpdated,
+            pendingApplicationsCount: _pendingApplicationsCount,
             onRefresh: _loadOfficerHome,
             onRequestEvent: _openEvents,
             userName: _userName,
@@ -498,11 +526,14 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
             orgName: widget.orgName,
             position: _position,
           ),
-          OfficerEventsScreen(
-            orgId: widget.orgId,
-            orgName: widget.orgName,
-            logoAsset: _currentOrganizationLogo(),
-            embedded: true,
+          AnimatedBuilder(
+            animation: AppState.instance,
+            builder: (context, _) => OfficerEventsScreen(
+              orgId: widget.orgId,
+              orgName: widget.orgName,
+              logoAsset: _currentOrganizationLogo(),
+              embedded: true,
+            ),
           ),
           OfficerProfileScreen(
             initialName: _userName,
@@ -524,9 +555,13 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
       return Column(
         children: [
           Expanded(child: _buildPages(width)),
-          _OfficerBottomNav(
-            selectedIndex: _selectedIndex,
-            onSelected: _selectTab,
+          AnimatedBuilder(
+            animation: AppState.instance,
+            builder: (context, _) => _OfficerBottomNav(
+              selectedIndex: _selectedIndex,
+              onSelected: _selectTab,
+              communityUnread: _unreadOrganizationUpdatesCount(widget.orgId),
+            ),
           ),
         ],
       );
@@ -537,10 +572,14 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
         extended ? _OfficerRail.extendedWidth : _OfficerRail.compactWidth;
     return Row(
       children: [
-        _OfficerRail(
-          selectedIndex: _selectedIndex,
-          onSelected: _selectTab,
-          extended: extended,
+        AnimatedBuilder(
+          animation: AppState.instance,
+          builder: (context, _) => _OfficerRail(
+            selectedIndex: _selectedIndex,
+            onSelected: _selectTab,
+            extended: extended,
+            communityUnread: _unreadOrganizationUpdatesCount(widget.orgId),
+          ),
         ),
         const VerticalDivider(
           width: 1,
@@ -590,10 +629,12 @@ class _OfficerBottomNav extends StatelessWidget {
   const _OfficerBottomNav({
     required this.selectedIndex,
     required this.onSelected,
+    required this.communityUnread,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final int communityUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -608,46 +649,78 @@ class _OfficerBottomNav extends StatelessWidget {
           builder: (inner) => MediaQuery.removePadding(
             context: inner,
             removeTop: true,
-            child: NavigationBarTheme(
-              data: NavigationBarThemeData(
-                backgroundColor: _OfficerColors.surface,
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                indicatorColor: _OfficerColors.mint,
-                labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                  final selected = states.contains(WidgetState.selected);
-                  return TextStyle(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    color: selected
-                        ? _OfficerColors.primaryStrong
-                        : _OfficerColors.mutedText,
-                  );
-                }),
-                iconTheme: WidgetStateProperty.resolveWith((states) {
-                  final selected = states.contains(WidgetState.selected);
-                  return IconThemeData(
-                    size: 24,
-                    color: selected
-                        ? _OfficerColors.primary
-                        : _OfficerColors.mutedText,
-                  );
-                }),
-              ),
-              child: NavigationBar(
-                height: 68,
-                selectedIndex: selectedIndex,
-                onDestinationSelected: onSelected,
-                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-                destinations: [
-                  for (final item in _kNavItems)
-                    NavigationDestination(
-                      icon: Icon(item.icon),
-                      selectedIcon: Icon(item.selectedIcon),
-                      label: item.label,
-                    ),
-                ],
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+
+                final iconSize = (width * 0.065).clamp(22.0, 30.0).toDouble();
+
+                final fontSize = (width * 0.028).clamp(10.0, 13.0).toDouble();
+
+                final barHeight = (width * 0.18).clamp(56.0, 72.0).toDouble();
+
+                return NavigationBarTheme(
+                  data: NavigationBarThemeData(
+                    backgroundColor: _OfficerColors.surface,
+                    surfaceTintColor: Colors.transparent,
+                    elevation: 0,
+
+                    // Remove the background behind the selected icon.
+                    indicatorColor: Colors.transparent,
+
+                    labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                      final selected = states.contains(WidgetState.selected);
+
+                      return TextStyle(
+                        fontSize: fontSize,
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600,
+                        color: selected
+                            ? _OfficerColors.primaryStrong
+                            : _OfficerColors.mutedText,
+                      );
+                    }),
+
+                    iconTheme: WidgetStateProperty.resolveWith((states) {
+                      final selected = states.contains(WidgetState.selected);
+
+                      return IconThemeData(
+                        size: iconSize,
+                        color: selected
+                            ? const Color(0xFF0F8A61)
+                            : _OfficerColors.mutedText,
+                      );
+                    }),
+                  ),
+                  child: NavigationBar(
+                    height: barHeight,
+                    selectedIndex: selectedIndex,
+                    onDestinationSelected: onSelected,
+                    labelBehavior:
+                        NavigationDestinationLabelBehavior.alwaysShow,
+                    destinations: [
+                      for (var i = 0; i < _kNavItems.length; i++)
+                        NavigationDestination(
+                          icon: i == 1
+                              ? Badge(
+                                  isLabelVisible: communityUnread > 0,
+                                  label: Text('$communityUnread'),
+                                  child: Icon(_kNavItems[i].icon),
+                                )
+                              : Icon(_kNavItems[i].icon),
+                          selectedIcon: i == 1
+                              ? Badge(
+                                  isLabelVisible: communityUnread > 0,
+                                  label: Text('$communityUnread'),
+                                  child: Icon(_kNavItems[i].selectedIcon),
+                                )
+                              : Icon(_kNavItems[i].selectedIcon),
+                          label: _kNavItems[i].label,
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -662,6 +735,7 @@ class _OfficerRail extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     required this.extended,
+    required this.communityUnread,
   });
 
   static const double compactWidth = 88;
@@ -670,6 +744,7 @@ class _OfficerRail extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final bool extended;
+  final int communityUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -698,9 +773,9 @@ class _OfficerRail extends StatelessWidget {
                           ? NavigationRailLabelType.none
                           : NavigationRailLabelType.all,
                       groupAlignment: -1,
-                      indicatorColor: _OfficerColors.mint,
+                      indicatorColor: Colors.transparent,
                       selectedIconTheme: const IconThemeData(
-                        color: _OfficerColors.primary,
+                        color: Color(0xFF0F8A61),
                         size: 24,
                       ),
                       unselectedIconTheme: const IconThemeData(
@@ -719,12 +794,24 @@ class _OfficerRail extends StatelessWidget {
                       ),
                       leading: const SizedBox(height: 8),
                       destinations: [
-                        for (final item in _kNavItems)
+                        for (var i = 0; i < _kNavItems.length; i++)
                           NavigationRailDestination(
-                            icon: Icon(item.icon),
-                            selectedIcon: Icon(item.selectedIcon),
+                            icon: i == 1
+                                ? Badge(
+                                    isLabelVisible: communityUnread > 0,
+                                    label: Text('$communityUnread'),
+                                    child: Icon(_kNavItems[i].icon),
+                                  )
+                                : Icon(_kNavItems[i].icon),
+                            selectedIcon: i == 1
+                                ? Badge(
+                                    isLabelVisible: communityUnread > 0,
+                                    label: Text('$communityUnread'),
+                                    child: Icon(_kNavItems[i].selectedIcon),
+                                  )
+                                : Icon(_kNavItems[i].selectedIcon),
                             label: Text(
-                              item.label,
+                              _kNavItems[i].label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -1035,9 +1122,9 @@ class _HeaderRefreshButton extends StatelessWidget {
       onPressed: busy ? null : onPressed,
       style: IconButton.styleFrom(
         minimumSize: const Size(48, 48),
-        backgroundColor: _OfficerColors.headerChip,
+        backgroundColor: Colors.transparent,
         foregroundColor: _OfficerColors.onHeader,
-        disabledBackgroundColor: _OfficerColors.headerChip,
+        disabledBackgroundColor: Colors.transparent,
         disabledForegroundColor: _OfficerColors.onHeaderSoft,
       ),
       icon: busy
@@ -1304,7 +1391,9 @@ class _EventImage extends StatelessWidget {
               imageUrl: url,
               fit: BoxFit.cover,
               memCacheWidth: memCacheWidth,
-              fadeInDuration: const Duration(milliseconds: 250),
+              fadeInDuration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
               placeholder: (_, __) => const _ImageFallback(showIcon: false),
               errorWidget: (_, __, ___) => const _ImageFallback(),
             ),
@@ -1325,6 +1414,7 @@ class _HomeTab extends StatefulWidget {
     required this.refreshing,
     required this.error,
     required this.lastUpdated,
+    required this.pendingApplicationsCount,
     required this.onRefresh,
     required this.onRequestEvent,
     required this.userName,
@@ -1339,6 +1429,7 @@ class _HomeTab extends StatefulWidget {
   final bool refreshing;
   final String? error;
   final DateTime? lastUpdated;
+  final int? pendingApplicationsCount;
   final Future<void> Function() onRefresh;
   final VoidCallback onRequestEvent;
   final String userName;
@@ -1351,17 +1442,30 @@ class _HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<_HomeTab> {
   final ScrollController _scroll = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   _EventFilter _filter = _EventFilter.upcoming;
+  String _search = '';
+  bool _latestFirst = false;
 
   @override
   void dispose() {
     _scroll.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   void _setFilter(_EventFilter filter) {
     if (filter == _filter) return;
+    unawaited(HapticFeedback.selectionClick());
     setState(() => _filter = filter);
+  }
+
+  void _clearSearch() {
+    if (_searchController.text.isNotEmpty) {
+      _searchController.clear(); // onChanged updates _search.
+    } else if (_search.isNotEmpty) {
+      setState(() => _search = '');
+    }
   }
 
   void _retry() => unawaited(widget.onRefresh());
@@ -1371,6 +1475,7 @@ class _HomeTabState extends State<_HomeTab> {
     required List<_OfficerEvent> shown,
     required bool hasLoaded,
     required DateTime now,
+    required bool hasSearchQuery,
   }) {
     final columns = HomeLayout.gridColumns(
       layout.homeInnerWidth,
@@ -1410,13 +1515,23 @@ class _HomeTabState extends State<_HomeTab> {
         onAction: widget.onRequestEvent,
       );
     }
+    if (shown.isEmpty && hasSearchQuery) {
+      return _StateCard(
+        icon: Icons.search_off_rounded,
+        title: 'No events match',
+        message:
+            'Try another title, venue, or description, or clear your search.',
+        actionLabel: 'Clear search',
+        onAction: _clearSearch,
+      );
+    }
     if (shown.isEmpty) {
       return switch (_filter) {
         _EventFilter.upcoming => const _StateCard(
             icon: Icons.event_available_rounded,
             title: 'No upcoming events',
             message:
-                'Nothing is scheduled right now. Request an event or check the Past tab.',
+                'Nothing is scheduled right now. Request an event or check the Past filter.',
           ),
         _EventFilter.past => const _StateCard(
             icon: Icons.history_rounded,
@@ -1430,13 +1545,24 @@ class _HomeTabState extends State<_HomeTab> {
           ),
       };
     }
-    return _EventGrid(
-      events: shown,
-      today: now,
-      columns: columns,
-      width: layout.homeInnerWidth,
-      gap: layout.cardGap,
-      onOpen: (event) => _OfficerEventDetailsSheet.show(context, event),
+
+    final animationDisabled = MediaQuery.disableAnimationsOf(context);
+    return AnimatedSwitcher(
+      duration:
+          animationDisabled ? Duration.zero : const Duration(milliseconds: 200),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeOutCubic,
+      child: KeyedSubtree(
+        key: ValueKey<String>('${_filter.name}|$_search|$_latestFirst'),
+        child: _EventGrid(
+          events: shown,
+          today: now,
+          columns: columns,
+          width: layout.homeInnerWidth,
+          gap: layout.cardGap,
+          onOpen: (event) => _OfficerEventDetailsSheet.show(context, event),
+        ),
+      ),
     );
   }
 
@@ -1445,33 +1571,47 @@ class _HomeTabState extends State<_HomeTab> {
     final layout = HomeLayout.of(context);
     final now = DateTime.now();
     final buckets = _EventBuckets.from(widget.events, now);
-    final shown = buckets.forFilter(_filter);
+    final baseShown = buckets.forFilter(_filter);
     final hasLoaded = widget.lastUpdated != null;
     final error = widget.error;
     final updated = widget.lastUpdated;
     final next = buckets.upcoming.isEmpty ? null : buckets.upcoming.first;
     final nextDays = next?.daysFrom(now);
+    final canSearch = hasLoaded && widget.events.length >= 6;
+    final query = canSearch ? _search.trim().toLowerCase() : '';
+    var shown = baseShown.where((event) {
+      if (query.isEmpty) return true;
+      return event.title.toLowerCase().contains(query) ||
+          event.venue.toLowerCase().contains(query) ||
+          event.description.toLowerCase().contains(query);
+    }).toList(growable: false);
+    if (_latestFirst) shown = shown.reversed.toList(growable: false);
 
     final displayName = _firstNameOf(widget.userName);
     final cleanPosition =
         widget.position.trim().isEmpty ? 'Officer' : widget.position.trim();
+    final subtitle = widget.loading && !hasLoaded
+        ? 'Your organization at a glance'
+        : (nextDays == 0
+            ? 'Event today'
+            : nextDays != null
+                ? 'Next event: ${_relativeDayLabel(nextDays)}'
+                : (buckets.past.isNotEmpty
+                    ? 'No upcoming events scheduled'
+                    : 'No events scheduled yet'));
 
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _StatsRow(
-          posted: hasLoaded ? widget.events.length : null,
-          upcoming: hasLoaded ? buckets.upcoming.length : null,
-          past: hasLoaded ? buckets.past.length : null,
-          filter: _filter,
-          compact: layout.isSmallMobile,
-          gap: layout.cardGap,
-          onSelect: _setFilter,
-        ),
         if (hasLoaded && error != null) ...[
-          const SizedBox(height: 16),
           _StaleBanner(message: error, onRetry: _retry),
+          SizedBox(height: layout.sectionGap),
         ],
+        _AttentionStrip(
+          orgId: widget.orgId,
+          orgName: widget.orgName,
+          pendingApplicationsCount: widget.pendingApplicationsCount,
+        ),
         if (next != null && nextDays != null) ...[
           SizedBox(height: layout.sectionGap),
           _NextEventCard(
@@ -1483,54 +1623,138 @@ class _HomeTabState extends State<_HomeTab> {
         SizedBox(height: layout.sectionGap),
         const _SectionTitle('Quick actions'),
         const SizedBox(height: 12),
-        _QuickActions(
-          width: layout.homeInnerWidth,
-          gap: layout.cardGap,
-          actions: [
-            _QuickActionData(
-              icon: Icons.event_available_rounded,
-              label: 'Request event',
-              onTap: widget.onRequestEvent,
-            ),
-            _QuickActionData(
-              icon: Icons.assignment_rounded,
-              label: 'Applications',
-              onTap: () => _OfficerNav.applications(context),
-            ),
-            _QuickActionData(
-              icon: Icons.groups_rounded,
-              label: 'Members',
-              onTap: () => _OfficerNav.members(context, widget.orgId),
-            ),
-            _QuickActionData(
-              icon: Icons.forum_rounded,
-              label: 'Community chat',
-              onTap: () => _OfficerNav.community(
-                context,
-                widget.orgId,
-                widget.orgName,
+        AnimatedBuilder(
+          animation: AppState.instance,
+          builder: (context, _) => _QuickActions(
+            width: layout.homeInnerWidth,
+            gap: layout.cardGap,
+            actions: [
+              _QuickActionData(
+                icon: Icons.event_available_rounded,
+                label: 'Request event',
+                onTap: widget.onRequestEvent,
               ),
-            ),
-          ],
+              _QuickActionData(
+                icon: Icons.assignment_rounded,
+                label: 'Applications',
+                onTap: () => _OfficerNav.applications(context),
+              ),
+              _QuickActionData(
+                icon: Icons.groups_rounded,
+                label: 'Members',
+                onTap: () => _OfficerNav.members(context, widget.orgId),
+              ),
+              _QuickActionData(
+                icon: Icons.forum_rounded,
+                label: 'Community chat',
+                badgeCount: _unreadOrganizationUpdatesCount(widget.orgId),
+                onTap: () => _OfficerNav.community(
+                  context,
+                  widget.orgId,
+                  widget.orgName,
+                ),
+              ),
+            ],
+          ),
         ),
         SizedBox(height: layout.sectionGap),
         const _SectionTitle('Posted events'),
+        const SizedBox(height: 2),
         if (updated != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              'Updated ${DateFormat('h:mm a').format(updated)}',
-              style: _OfficerText.caption,
-            ),
-          ),
+          Text(
+            'Updated ${DateFormat('h:mm a').format(updated)}',
+            style: _OfficerText.caption,
+          )
+        else
+          const Text('Your published event list', style: _OfficerText.caption),
         const SizedBox(height: 12),
-        _FilterBar(filter: _filter, onChanged: _setFilter),
+        _StatsRow(
+          posted: hasLoaded ? widget.events.length : null,
+          upcoming: hasLoaded ? buckets.upcoming.length : null,
+          past: hasLoaded ? buckets.past.length : null,
+          filter: _filter,
+          compact: layout.isSmallMobile,
+          gap: layout.cardGap,
+          onSelect: _setFilter,
+        ),
+        const SizedBox(height: 12),
+        _FilterBar(
+          filter: _filter,
+          posted: hasLoaded ? widget.events.length : null,
+          upcoming: hasLoaded ? buckets.upcoming.length : null,
+          past: hasLoaded ? buckets.past.length : null,
+          onChanged: _setFilter,
+        ),
+        if (canSearch) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _search = value),
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: 'Search title, venue, or description',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _search.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: _clearSearch,
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                    filled: true,
+                    fillColor: _OfficerColors.surface,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                          const BorderSide(color: _OfficerColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                          const BorderSide(color: _OfficerColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                        color: _OfficerColors.primaryStrong,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message:
+                    _latestFirst ? 'Show soonest first' : 'Show latest first',
+                child: OutlinedButton.icon(
+                  onPressed: () => setState(() => _latestFirst = !_latestFirst),
+                  icon: Icon(
+                    _latestFirst ? Icons.south_rounded : Icons.north_rounded,
+                  ),
+                  label: Text(_latestFirst ? 'Latest' : 'Soonest'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _OfficerColors.primaryStrong,
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    side: const BorderSide(color: _OfficerColors.border),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         _buildEventsArea(
           layout: layout,
           shown: shown,
           hasLoaded: hasLoaded,
           now: now,
+          hasSearchQuery: query.isNotEmpty,
         ),
       ],
     );
@@ -1553,7 +1777,7 @@ class _HomeTabState extends State<_HomeTab> {
               children: [
                 _OfficerHeader(
                   title: '${_greetingFor(now)}, $displayName',
-                  subtitle: 'Your organization’s posted events at a glance',
+                  subtitle: subtitle,
                   status: '${_cleanOrgName(widget.orgName)} • $cleanPosition',
                   leading: _HeaderAvatar(avatarUrl: widget.avatarUrl),
                   trailing: _HeaderRefreshButton(
@@ -1583,6 +1807,96 @@ class _HomeTabState extends State<_HomeTab> {
         ),
       ),
       maxScale: 1.3,
+    );
+  }
+}
+
+class _AttentionStrip extends StatelessWidget {
+  const _AttentionStrip({
+    required this.orgId,
+    required this.orgName,
+    required this.pendingApplicationsCount,
+  });
+
+  final String orgId;
+  final String orgName;
+  final int? pendingApplicationsCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        final updates = _unreadOrganizationUpdatesCount(orgId);
+        final pending = pendingApplicationsCount;
+        if (updates == 0 && (pending == null || pending == 0)) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: _SurfaceCard(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.notifications_active_outlined,
+                        size: 18,
+                        color: _OfficerColors.primaryStrong,
+                      ),
+                      SizedBox(width: 8),
+                      Text('Needs your attention',
+                          style: _OfficerText.cardTitle),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (updates > 0)
+                        OutlinedButton.icon(
+                          onPressed: () => _OfficerNav.community(
+                            context,
+                            orgId,
+                            orgName,
+                          ),
+                          icon: const Icon(Icons.forum_outlined, size: 18),
+                          label: Text(
+                            '$updates new community update${updates == 1 ? '' : 's'}',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _OfficerColors.primaryStrong,
+                            minimumSize: const Size(48, 48),
+                            side:
+                                const BorderSide(color: _OfficerColors.border),
+                          ),
+                        ),
+                      if (pending != null && pending > 0)
+                        OutlinedButton.icon(
+                          onPressed: () => _OfficerNav.applications(context),
+                          icon: const Icon(Icons.assignment_outlined, size: 18),
+                          label: Text(
+                            '$pending pending application${pending == 1 ? '' : 's'}',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _OfficerColors.primaryStrong,
+                            minimumSize: const Size(48, 48),
+                            side:
+                                const BorderSide(color: _OfficerColors.border),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1734,6 +2048,7 @@ class _NextEventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final relative = _relativeDayLabel(daysUntil);
+    final isToday = daysUntil == 0;
     return Semantics(
       button: true,
       onTap: onTap,
@@ -1741,70 +2056,81 @@ class _NextEventCard extends StatelessWidget {
       excludeSemantics: true,
       child: _SurfaceCard(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _DateBadge(date: event.date),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        const Text(
-                          'NEXT EVENT',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
-                            color: _OfficerColors.mutedText,
+        highlight: isToday,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: isToday ? _OfficerColors.mint : _OfficerColors.surface,
+            borderRadius: _OfficerDecor.cardRadius,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _DateBadge(date: event.date),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text(
+                            'NEXT EVENT',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
+                              color: _OfficerColors.mutedText,
+                            ),
                           ),
-                        ),
-                        _Pill(
-                          label: relative,
-                          background: _OfficerColors.mint,
-                          foreground: _OfficerColors.primaryStrong,
+                          _Pill(
+                            label: relative,
+                            background: isToday
+                                ? _OfficerColors.primaryStrong
+                                : _OfficerColors.mint,
+                            foreground: isToday
+                                ? _OfficerColors.onHeader
+                                : _OfficerColors.primaryStrong,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        event.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: _OfficerText.cardTitle,
+                      ),
+                      const SizedBox(height: 6),
+                      _InfoLine(
+                        icon: Icons.schedule_rounded,
+                        text: event.whenLabel,
+                        maxLines: 2,
+                      ),
+                      if (event.venue.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _InfoLine(
+                          icon: Icons.place_outlined,
+                          text: event.venue,
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      event.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: _OfficerText.cardTitle,
-                    ),
-                    const SizedBox(height: 6),
-                    _InfoLine(
-                      icon: Icons.schedule_rounded,
-                      text: event.whenLabel,
-                      maxLines: 2,
-                    ),
-                    if (event.venue.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      _InfoLine(
-                        icon: Icons.place_outlined,
-                        text: event.venue,
-                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              const Padding(
-                padding: EdgeInsets.only(top: 2),
-                child: Icon(
-                  Icons.chevron_right_rounded,
-                  color: _OfficerColors.muted,
+                const SizedBox(width: 4),
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: _OfficerColors.muted,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1817,11 +2143,13 @@ class _QuickActionData {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.badgeCount,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final int? badgeCount;
 }
 
 class _QuickActions extends StatelessWidget {
@@ -1837,12 +2165,14 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final columns = HomeLayout.gridColumns(
+    final suggestedColumns = HomeLayout.gridColumns(
       width,
       minItemWidth: 136,
       gap: gap,
       maxColumns: actions.length,
     );
+    // Four tiles are always either 2 x 2 or a single row; never 3 + 1.
+    final columns = suggestedColumns >= 4 && width >= 590 ? 4 : 2;
     final itemWidth = HomeLayout.gridItemWidth(width, columns, gap: gap);
     return Wrap(
       spacing: gap,
@@ -1851,7 +2181,7 @@ class _QuickActions extends StatelessWidget {
         for (final action in actions)
           SizedBox(
             width: itemWidth,
-            child: _QuickActionTile(data: action, stacked: itemWidth < 150),
+            child: _QuickActionTile(data: action, stacked: columns == 2),
           ),
       ],
     );
@@ -1863,6 +2193,16 @@ class _QuickActionTile extends StatelessWidget {
 
   final _QuickActionData data;
   final bool stacked;
+
+  Widget _actionIcon() {
+    final count = data.badgeCount ?? 0;
+    final icon = _IconCircle(icon: data.icon, size: 36);
+    return Badge(
+      isLabelVisible: count > 0,
+      label: Text(count > 99 ? '99+' : '$count'),
+      child: icon,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1893,14 +2233,14 @@ class _QuickActionTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _IconCircle(icon: data.icon, size: 36),
+                      _actionIcon(),
                       const SizedBox(height: 8),
                       label,
                     ],
                   )
                 : Row(
                     children: [
-                      _IconCircle(icon: data.icon, size: 36),
+                      _actionIcon(),
                       const SizedBox(width: 10),
                       Expanded(child: label),
                     ],
@@ -1913,40 +2253,49 @@ class _QuickActionTile extends StatelessWidget {
 }
 
 class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.filter, required this.onChanged});
+  const _FilterBar({
+    required this.filter,
+    required this.posted,
+    required this.upcoming,
+    required this.past,
+    required this.onChanged,
+  });
 
   final _EventFilter filter;
+  final int? posted;
+  final int? upcoming;
+  final int? past;
   final ValueChanged<_EventFilter> onChanged;
-
-  static const Map<_EventFilter, String> _labels = <_EventFilter, String>{
-    _EventFilter.upcoming: 'Upcoming',
-    _EventFilter.past: 'Past',
-    _EventFilter.all: 'All',
-  };
 
   @override
   Widget build(BuildContext context) {
+    final entries = <(_EventFilter, String, int?)>[
+      (_EventFilter.upcoming, 'Upcoming', upcoming),
+      (_EventFilter.past, 'Past', past),
+      (_EventFilter.all, 'All', posted),
+    ];
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final entry in _labels.entries)
+        for (final entry in entries)
           ChoiceChip(
-            label: Text(entry.value),
-            selected: filter == entry.key,
-            onSelected: (_) => onChanged(entry.key),
+            label:
+                Text('${entry.$2} ${entry.$3 == null ? '–' : '(${entry.$3})'}'),
+            selected: filter == entry.$1,
+            onSelected: (_) => onChanged(entry.$1),
             showCheckmark: false,
             selectedColor: _OfficerColors.primaryStrong,
             backgroundColor: _OfficerColors.surface,
             side: BorderSide(
-              color: filter == entry.key
+              color: filter == entry.$1
                   ? _OfficerColors.primaryStrong
                   : _OfficerColors.border,
             ),
             labelStyle: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: filter == entry.key
+              color: filter == entry.$1
                   ? _OfficerColors.onHeader
                   : _OfficerColors.ink,
             ),
@@ -2007,86 +2356,164 @@ class _EventCard extends StatelessWidget {
   final bool isPast;
   final VoidCallback onTap;
 
+  String _statusLabel(DateTime today) {
+    final days = event.daysFrom(today);
+    if (days == null) return 'Date to be announced';
+    if (days < 0) return 'Past';
+    if (days == 0) return 'Today';
+    if (days == 1) return 'Tomorrow';
+    return 'In $days days';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final days = event.daysFrom(today);
+    final isToday = days == 0;
+    final status = _statusLabel(today);
+    final imageUrl = event.images.isEmpty ? '' : event.images.first;
+
     return _SurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _EventImage(
-                    url: event.images.isEmpty ? '' : event.images.first,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          Semantics(
+            button: true,
+            onTap: onTap,
+            label: 'Open details for ${event.title}',
+            excludeSemantics: true,
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                onTap: onTap,
+                hoverColor: _OfficerColors.hover,
+                focusColor: _OfficerColors.focus,
+                splashColor: _OfficerColors.splash,
+                highlightColor: _OfficerColors.pressed,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
                       children: [
-                        Text(
-                          event.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: _OfficerText.cardTitle,
-                        ),
-                        const SizedBox(height: 8),
-                        _InfoLine(
-                          icon: Icons.schedule_rounded,
-                          text: event.whenLabel,
-                          maxLines: 2,
-                        ),
-                        if (event.venue.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          _InfoLine(
-                            icon: Icons.place_outlined,
-                            text: event.venue,
+                        if (isPast)
+                          ColorFiltered(
+                            colorFilter: const ColorFilter.matrix(<double>[
+                              0.2126,
+                              0.7152,
+                              0.0722,
+                              0,
+                              0,
+                              0.2126,
+                              0.7152,
+                              0.0722,
+                              0,
+                              0,
+                              0.2126,
+                              0.7152,
+                              0.0722,
+                              0,
+                              0,
+                              0,
+                              0,
+                              0,
+                              1,
+                              0,
+                            ]),
+                            child: _EventImage(url: imageUrl),
+                          )
+                        else
+                          _EventImage(url: imageUrl),
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.16),
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.08),
+                                  ],
+                                  stops: const [0, 0.52, 1],
+                                ),
+                              ),
+                            ),
                           ),
-                        ],
-                        if (event.description.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            event.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: _OfficerText.meta,
+                        ),
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: _DateBadge(
+                            date: event.date,
+                            past: isPast,
+                            onImage: true,
                           ),
-                        ],
+                        ),
+                        Positioned(
+                          right: 12,
+                          top: 12,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 150),
+                            child: _Pill(
+                              label: status,
+                              background: isPast
+                                  ? _OfficerColors.slateSoft
+                                  : (isToday
+                                      ? _OfficerColors.primaryStrong
+                                      : Colors.white),
+                              foreground: isPast
+                                  ? _OfficerColors.slate
+                                  : (isToday
+                                      ? _OfficerColors.onHeader
+                                      : _OfficerColors.primaryStrong),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-              Positioned(
-                left: 12,
-                top: 12,
-                child: _DateBadge(
-                  date: event.date,
-                  past: isPast,
-                  onImage: true,
-                ),
-              ),
-              Positioned.fill(
-                child: Semantics(
-                  button: true,
-                  label: 'Open details for ${event.title}',
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: InkWell(
-                      onTap: onTap,
-                      hoverColor: _OfficerColors.hover,
-                      focusColor: _OfficerColors.focus,
-                      splashColor: _OfficerColors.splash,
-                      highlightColor: _OfficerColors.pressed,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            event.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: _OfficerText.cardTitle,
+                          ),
+                          const SizedBox(height: 8),
+                          _InfoLine(
+                            icon: Icons.schedule_rounded,
+                            text: event.whenLabel,
+                            maxLines: 2,
+                          ),
+                          if (event.venue.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            _InfoLine(
+                              icon: Icons.place_outlined,
+                              text: event.venue,
+                            ),
+                          ],
+                          if (event.description.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              event.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: _OfficerText.meta,
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
           if (event.id.isNotEmpty)
             Align(
@@ -2349,7 +2776,7 @@ class _EventsSkeletonState extends State<_EventsSkeleton>
 // Event details sheet
 // ---------------------------------------------------------------------------
 
-class _OfficerEventDetailsSheet extends StatelessWidget {
+class _OfficerEventDetailsSheet extends StatefulWidget {
   const _OfficerEventDetailsSheet({required this.event});
 
   final _OfficerEvent event;
@@ -2370,9 +2797,89 @@ class _OfficerEventDetailsSheet extends StatelessWidget {
   }
 
   @override
+  State<_OfficerEventDetailsSheet> createState() =>
+      _OfficerEventDetailsSheetState();
+}
+
+class _OfficerEventDetailsSheetState extends State<_OfficerEventDetailsSheet> {
+  int _currentPhoto = 0;
+
+  Future<void> _copyDetails() async {
+    final event = widget.event;
+    final lines = <String>[
+      event.title,
+      'Date: ${event.dateLabel}',
+      if (event.timeLabel.isNotEmpty) 'Time: ${event.timeLabel}',
+      if (event.venue.isNotEmpty) 'Venue: ${event.venue}',
+      if (event.description.isNotEmpty) 'Description: ${event.description}',
+    ];
+    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Event details copied')),
+    );
+  }
+
+  void _openPhoto(String url) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Center(
+                child: InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.contain,
+                    memCacheWidth: 1800,
+                    placeholder: (context, _) =>
+                        MediaQuery.disableAnimationsOf(context)
+                            ? const _ImageFallback(showIcon: false)
+                            : const Center(
+                                child: CircularProgressIndicator(
+                                  color: _OfficerColors.onHeader,
+                                ),
+                              ),
+                    errorWidget: (_, __, ___) => const _ImageFallback(),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: MediaQuery.paddingOf(dialogContext).top + 8,
+              right: 8,
+              child: Semantics(
+                button: true,
+                label: 'Close photo viewer',
+                child: IconButton(
+                  tooltip: 'Close photo viewer',
+                  onPressed: () => Navigator.of(dialogContext).maybePop(),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    backgroundColor: const Color(0x55000000),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final event = widget.event;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final days = event.daysFrom(DateTime.now());
+    final animationDisabled = MediaQuery.disableAnimationsOf(context);
 
     return HomeLayout.capText(
       context,
@@ -2436,8 +2943,12 @@ class _OfficerEventDetailsSheet extends StatelessWidget {
                   child: days >= 0
                       ? _Pill(
                           label: _relativeDayLabel(days),
-                          background: _OfficerColors.mint,
-                          foreground: _OfficerColors.primaryStrong,
+                          background: days == 0
+                              ? _OfficerColors.primaryStrong
+                              : _OfficerColors.mint,
+                          foreground: days == 0
+                              ? _OfficerColors.onHeader
+                              : _OfficerColors.primaryStrong,
                         )
                       : const _Pill(
                           label: 'Past',
@@ -2478,15 +2989,88 @@ class _OfficerEventDetailsSheet extends StatelessWidget {
                 const SizedBox(height: 20),
                 const _SectionTitle('Photos'),
                 const SizedBox(height: 12),
-                for (final url in event.images)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: _EventImage(url: url, memCacheWidth: 1200),
+                SizedBox(
+                  height: 220,
+                  child: PageView.builder(
+                    itemCount: event.images.length,
+                    onPageChanged: (index) =>
+                        setState(() => _currentPhoto = index),
+                    itemBuilder: (context, index) {
+                      final url = event.images[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Semantics(
+                          button: true,
+                          label: 'View photo ${index + 1} full screen',
+                          child: GestureDetector(
+                            onTap: () => _openPhoto(url),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: CachedNetworkImage(
+                                imageUrl: url,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 1200,
+                                placeholder: (_, __) =>
+                                    const _ImageFallback(showIcon: false),
+                                errorWidget: (_, __, ___) =>
+                                    const _ImageFallback(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                if (event.images.length > 1) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (var i = 0; i < event.images.length; i++)
+                        AnimatedContainer(
+                          duration: animationDisabled
+                              ? Duration.zero
+                              : const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: _currentPhoto == i ? 18 : 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: _currentPhoto == i
+                                ? _OfficerColors.primaryStrong
+                                : _OfficerColors.border,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: Text(
+                      'Swipe to browse photos · Tap to zoom',
+                      style: _OfficerText.caption,
+                      textAlign: TextAlign.center,
                     ),
                   ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Center(
+                    child:
+                        Text('Tap photo to zoom', style: _OfficerText.caption),
+                  ),
+                ],
               ],
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: _copyDetails,
+                icon: const Icon(Icons.copy_all_rounded, size: 18),
+                label: const Text('Copy details'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _OfficerColors.primaryStrong,
+                  minimumSize: const Size(double.infinity, 48),
+                  side: const BorderSide(color: _OfficerColors.border),
+                ),
+              ),
               if (event.id.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 FilledButton.icon(
@@ -2578,6 +3162,12 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _OfficerOrgSummaryCard(
+          orgId: widget.orgId,
+          orgName: widget.orgName,
+          position: widget.position,
+        ),
+        SizedBox(height: layout.sectionGap),
         const _SectionTitle('Manage'),
         const SizedBox(height: 12),
         group([
@@ -2608,6 +3198,7 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
             icon: Icons.forum_rounded,
             title: 'Community chat',
             subtitle: 'Talk with members and officers of your organization.',
+            unreadOrgId: widget.orgId,
             onTap: () => _OfficerNav.community(
               context,
               widget.orgId,
@@ -2650,7 +3241,10 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
                 title: 'Organization',
                 subtitle: _cleanOrgName(widget.orgName),
                 status: 'OFFICER ORGANIZATION HUB',
-                leading: _HeaderLogo(asset: _logo()),
+                leading: AnimatedBuilder(
+                  animation: AppState.instance,
+                  builder: (context, _) => _HeaderLogo(asset: _logo()),
+                ),
               ),
               Center(
                 child: ConstrainedBox(
@@ -2677,18 +3271,108 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
   }
 }
 
+class _OfficerOrgSummaryCard extends StatelessWidget {
+  const _OfficerOrgSummaryCard({
+    required this.orgId,
+    required this.orgName,
+    required this.position,
+  });
+
+  final String orgId;
+  final String orgName;
+  final String position;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        Organization? organization;
+        for (final item in AppState.instance.organizations) {
+          if (item.id == orgId) {
+            organization = item;
+            break;
+          }
+        }
+        final description = organization?.shortDesc.trim() ?? '';
+        return _SurfaceCard(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _OfficerOrgLogo(
+                  asset: organization?.logoAsset ?? '',
+                  size: 64,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _cleanOrgName(orgName),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: _OfficerText.cardTitle,
+                      ),
+                      if (description.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: _OfficerText.meta,
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: _Pill(
+                          label: position.trim().isEmpty
+                              ? 'Officer'
+                              : position.trim(),
+                          background: _OfficerColors.mint,
+                          foreground: _OfficerColors.primaryStrong,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _HubTile extends StatelessWidget {
   const _HubTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.unreadOrgId,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final String? unreadOrgId;
+
+  Widget _leading() {
+    final orgId = unreadOrgId;
+    if (orgId == null) return _IconCircle(icon: icon, size: 44);
+    final count = _unreadOrganizationUpdatesCount(orgId);
+    return Badge(
+      isLabelVisible: count > 0,
+      label: Text(count > 99 ? '99+' : '$count'),
+      child: _IconCircle(icon: icon, size: 44),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2705,7 +3389,13 @@ class _HubTile extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                _IconCircle(icon: icon, size: 44),
+                if (unreadOrgId == null)
+                  _leading()
+                else
+                  AnimatedBuilder(
+                    animation: AppState.instance,
+                    builder: (context, _) => _leading(),
+                  ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -2758,6 +3448,65 @@ double _joinedSidePadding(double width) {
   return (extra > 0 ? extra : 0) + 18;
 }
 
+class _JoinedOrganizationsSkeleton extends StatelessWidget {
+  const _JoinedOrganizationsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(18),
+      itemCount: 3,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) => const _SurfaceCard(
+        child: Padding(
+          padding: EdgeInsets.all(14),
+          child: Row(
+            children: [
+              _SkeletonBlock(width: 62, height: 62, radius: 18),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SkeletonBlock(width: 190, height: 14, radius: 7),
+                    SizedBox(height: 10),
+                    _SkeletonBlock(width: 135, height: 11, radius: 6),
+                    SizedBox(height: 10),
+                    _SkeletonBlock(width: 110, height: 11, radius: 6),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonBlock extends StatelessWidget {
+  const _SkeletonBlock({
+    required this.width,
+    required this.height,
+    this.radius = 8,
+  });
+
+  final double width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: _OfficerColors.skeleton,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+}
+
 class _OfficerJoinedOrganizationsScreen extends StatefulWidget {
   final String currentOrgId;
   final String currentOrgName;
@@ -2805,6 +3554,7 @@ class _OfficerJoinedOrganizationsScreenState
             .from('members')
             .select('org_id, org_name, position')
             .eq('profile_id', userId);
+        if (!mounted) return;
 
         for (final raw in (rows as List)) {
           final row = Map<String, dynamic>.from(raw as Map);
@@ -2847,6 +3597,7 @@ class _OfficerJoinedOrganizationsScreenState
           .eq('profile_id', userId)
           .eq('org_id', orgId)
           .limit(1);
+      if (!mounted) return orgId == widget.currentOrgId ? 'Officer' : 'Member';
       if ((rows as List).isNotEmpty) {
         final p = rows.first['position']?.toString().trim();
         if (p != null && p.isNotEmpty) return p;
@@ -2900,58 +3651,91 @@ class _OfficerJoinedOrganizationsScreenState
                 const _OfficerJoinedHeader(),
                 Expanded(
                   child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: _OfficerColors.primary,
-                          ),
-                        )
+                      ? const _JoinedOrganizationsSkeleton()
                       : ScrollConfiguration(
                           behavior: const _OfficerScrollBehavior(),
                           child: LayoutBuilder(
                             builder: (context, constraints) {
                               final side =
                                   _joinedSidePadding(constraints.maxWidth);
-                              if (joined.isEmpty) {
-                                return ListView(
-                                  padding:
-                                      EdgeInsets.fromLTRB(side, 18, side, 36),
-                                  children: const [
-                                    SizedBox(height: 64),
-                                    Center(
-                                      child: _IconCircle(
-                                        icon: Icons.groups_outlined,
-                                        size: 64,
-                                        neutral: true,
+                              return RefreshIndicator(
+                                color: _OfficerColors.primary,
+                                backgroundColor: _OfficerColors.surface,
+                                onRefresh: _loadJoinedOrganizations,
+                                child: joined.isEmpty
+                                    ? ListView(
+                                        physics:
+                                            const AlwaysScrollableScrollPhysics(),
+                                        padding: EdgeInsets.fromLTRB(
+                                            side, 18, side, 36),
+                                        children: [
+                                          const SizedBox(height: 64),
+                                          const Center(
+                                            child: _IconCircle(
+                                              icon: Icons.groups_outlined,
+                                              size: 64,
+                                              neutral: true,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          const Text(
+                                            'No organizations joined yet',
+                                            textAlign: TextAlign.center,
+                                            style: _OfficerText.cardTitle,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          const Text(
+                                            'Browse organizations to discover more campus communities.',
+                                            textAlign: TextAlign.center,
+                                            style: _OfficerText.bodyMuted,
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Center(
+                                            child: FilledButton.icon(
+                                              onPressed: () => _OfficerNav
+                                                  .browseOrganizations(context),
+                                              icon: const Icon(
+                                                  Icons.explore_rounded),
+                                              label: const Text(
+                                                  'Browse organizations'),
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: _OfficerColors
+                                                    .primaryStrong,
+                                                foregroundColor:
+                                                    _OfficerColors.onHeader,
+                                                minimumSize: const Size(48, 48),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : ListView.separated(
+                                        physics:
+                                            const AlwaysScrollableScrollPhysics(),
+                                        padding: EdgeInsets.fromLTRB(
+                                            side, 18, side, 36),
+                                        itemCount: joined.length,
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(height: 12),
+                                        itemBuilder: (context, i) {
+                                          final org = joined[i];
+                                          final isCurrent =
+                                              org.id == widget.currentOrgId;
+                                          return _OfficerJoinedOrgCard(
+                                            org: org,
+                                            isCurrentOrganization: isCurrent,
+                                            onCommunity: isCurrent
+                                                ? () => _OfficerNav.community(
+                                                      context,
+                                                      widget.currentOrgId,
+                                                      widget.currentOrgName,
+                                                    )
+                                                : () => _openCommunity(
+                                                    context, org),
+                                            fetchPosition: _fetchPosition,
+                                          );
+                                        },
                                       ),
-                                    ),
-                                    SizedBox(height: 12),
-                                    Text(
-                                      'No organizations joined yet',
-                                      textAlign: TextAlign.center,
-                                      style: _OfficerText.cardTitle,
-                                    ),
-                                  ],
-                                );
-                              }
-                              return ListView.separated(
-                                padding:
-                                    EdgeInsets.fromLTRB(side, 18, side, 36),
-                                itemCount: joined.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
-                                itemBuilder: (_, i) {
-                                  final org = joined[i];
-                                  final isCurrent =
-                                      org.id == widget.currentOrgId;
-                                  return _OfficerJoinedOrgCard(
-                                    org: org,
-                                    isCurrentOrganization: isCurrent,
-                                    onCommunity: isCurrent
-                                        ? null
-                                        : () => _openCommunity(context, org),
-                                    fetchPosition: _fetchPosition,
-                                  );
-                                },
                               );
                             },
                           ),
@@ -3079,102 +3863,104 @@ class _OfficerJoinedOrgCardState extends State<_OfficerJoinedOrgCard> {
 
   @override
   Widget build(BuildContext context) {
-    final updates = AppState.instance.notifications
-        .where((n) =>
-            n.orgId == widget.org.id &&
-            !n.read &&
-            !_isWorkflowOrganizationNotification(n) &&
-            !_isStudentPersonalNotification(n))
-        .length;
+    final updates = _unreadOrganizationUpdatesCount(widget.org.id);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: _OfficerColors.surface,
+    return Material(
+      color: _OfficerColors.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: _OfficerDecor.cardRadius,
-        border: Border.all(
+        side: BorderSide(
           color: widget.isCurrentOrganization
               ? _OfficerColors.currentBorder
               : _OfficerColors.border,
           width: widget.isCurrentOrganization ? 1.4 : 1,
         ),
-        boxShadow: _OfficerDecor.softShadow,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            _OfficerOrgLogo(asset: widget.org.logoAsset, size: 62),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.org.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _OfficerColors.ink,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
+      child: InkWell(
+        onTap: widget.onCommunity,
+        borderRadius: _OfficerDecor.cardRadius,
+        hoverColor: _OfficerColors.hover,
+        focusColor: _OfficerColors.focus,
+        splashColor: _OfficerColors.splash,
+        highlightColor: _OfficerColors.pressed,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              _OfficerOrgLogo(asset: widget.org.logoAsset, size: 62),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.org.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _OfficerColors.ink,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
-                      ),
-                      if (widget.isCurrentOrganization) ...[
-                        const SizedBox(width: 8),
-                        const _Pill(
-                          label: 'CURRENT',
-                          background: _OfficerColors.mint,
-                          foreground: _OfficerColors.primaryStrong,
+                        if (widget.isCurrentOrganization) ...[
+                          const SizedBox(width: 8),
+                          const _Pill(
+                            label: 'CURRENT',
+                            background: _OfficerColors.mint,
+                            foreground: _OfficerColors.primaryStrong,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.isCurrentOrganization
+                          ? '${_position == 'Member' ? 'Officer' : _position} • Your officer organization'
+                          : (_position == 'Member'
+                              ? (widget.org.shortDesc.isEmpty
+                                  ? 'Your member community'
+                                  : widget.org.shortDesc)
+                              : _position),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _OfficerText.meta,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.campaign_rounded,
+                          size: 16,
+                          color: _OfficerColors.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            updates == 0
+                                ? 'No new updates'
+                                : '$updates new update${updates == 1 ? '' : 's'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _OfficerColors.primaryStrong,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.isCurrentOrganization
-                        ? '${_position == 'Member' ? 'Officer' : _position} • Your officer organization'
-                        : (_position == 'Member'
-                            ? (widget.org.shortDesc.isEmpty
-                                ? 'Your member community'
-                                : widget.org.shortDesc)
-                            : _position),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: _OfficerText.meta,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.campaign_rounded,
-                        size: 16,
-                        color: _OfficerColors.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          updates == 0
-                              ? 'No new updates'
-                              : '$updates new update${updates == 1 ? '' : 's'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _OfficerColors.primaryStrong,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3231,6 +4017,15 @@ class _OfficerOrgLogo extends StatelessWidget {
     );
   }
 }
+
+int _unreadOrganizationUpdatesCount(String orgId) => AppState
+    .instance.notifications
+    .where((n) =>
+        n.orgId == orgId &&
+        !n.read &&
+        !_isWorkflowOrganizationNotification(n) &&
+        !_isStudentPersonalNotification(n))
+    .length;
 
 bool _isStudentPersonalNotification(app_models.Notification n) {
   final title = n.title.trim().toLowerCase();

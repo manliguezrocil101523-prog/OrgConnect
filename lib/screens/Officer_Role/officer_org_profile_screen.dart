@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Notification;
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class OfficerOrgProfileScreen extends StatefulWidget {
@@ -526,8 +527,9 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   int _roleRank(String role) {
     final r = role.toLowerCase();
     final assistant = (r.contains('assistant') || r.contains('asst')) ? 1 : 0;
-    if (r.contains('vice') || RegExp(r'\bvp\b').hasMatch(r))
+    if (r.contains('vice') || RegExp(r'\bvp\b').hasMatch(r)) {
       return 20 + assistant;
+    }
     if (r.contains('president') ||
         r.contains('chairperson') ||
         r.contains('chairman')) {
@@ -716,90 +718,23 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
           children: [
             // Fixed organization header. The form below is the only scrollable
             // area, so the scrollbar starts exactly at Basic Info.
-            Container(
-              width: double.infinity,
-              height: MediaQuery.of(context).size.height * 0.20,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF064E3B),
-                    Color(0xFF0F7A57),
-                    Color(0xFF22C55E),
-                  ],
-                ),
+
+            AppHeader(
+              title: _nameCtrl.text.trim().isEmpty
+                  ? 'Your Organization'
+                  : _nameCtrl.text.trim(),
+              subtitle: 'Organization profile',
+              status: 'EDITING ORGANIZATION',
+              leadingWidget: _LogoPicker(
+                pickedFile: _pickedImageBytes,
+                logoUrl: _logoUrl,
+                logoAsset: _logoAsset,
+                onTap: _pickLogo,
+                primary: _primary,
               ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    top: 10,
-                    left: 8,
-                    child: IconButton(
-                      tooltip: 'Back',
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    top: 42,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 8, 22, 14),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _LogoPicker(
-                            pickedFile: _pickedImageBytes,
-                            logoUrl: _logoUrl,
-                            logoAsset: _logoAsset,
-                            onTap: _pickLogo,
-                            primary: _primary,
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'ORGANIZATION PROFILE',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Color(0xFFD9F7E7),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.6,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _nameCtrl.text.isEmpty
-                                      ? 'Your Organization'
-                                      : _nameCtrl.text,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 23,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              onBack: () => Navigator.of(context).pop(),
             ),
+
             Expanded(
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),

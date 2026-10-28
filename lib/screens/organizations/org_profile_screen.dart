@@ -139,10 +139,9 @@ class _CardGrid extends StatelessWidget {
   final List<Widget> children;
   final double gap;
 
-  const _CardGrid({
-    required this.children,
-    this.gap = 16.0, // Added default value here
-  });
+  const _CardGrid(
+      {required this.children, this.gap = 16.0 // Added default value here
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -1739,6 +1738,15 @@ class _AboutPeopleGallery extends StatelessWidget {
       }
     }
 
+    // Adviser saved for THIS organization (Edit Adviser in the officer org profile).
+    OrgOfficerProfile? savedAdviser;
+    for (final p in org.officerProfiles) {
+      if (p.role.trim().toLowerCase() == 'adviser') {
+        savedAdviser = p;
+        break;
+      }
+    }
+
     final officers = org.officers.map((raw) {
       final name = _officerName(raw);
       OrgOfficerProfile? savedProfile;
@@ -1748,9 +1756,6 @@ class _AboutPeopleGallery extends StatelessWidget {
           break;
         }
       }
-      // The live profile is the source of truth for photos. The JSON
-      // officer_profiles value is a fallback only: it can contain an older
-      // URL if an officer updates their picture from their own profile.
       final liveProfile = _findByName(name);
       final liveAvatar = liveProfile?['avatar_url']?.toString().trim() ?? '';
       final savedAvatar = savedProfile?.avatarUrl.trim() ?? '';
@@ -1761,18 +1766,30 @@ class _AboutPeopleGallery extends StatelessWidget {
       };
     }).toList();
 
-    if (adviserProfile == null && org.adviser.isEmpty && officers.isEmpty) {
+    if (adviserProfile == null &&
+        savedAdviser == null &&
+        org.adviser.isEmpty &&
+        officers.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final profileName = adviserProfile?['name']?.toString().trim() ?? '';
-    final adviserName = profileName.isNotEmpty ? profileName : org.adviser;
-    final adviserAvatar = adviserProfile?['avatar_url']?.toString() ?? '';
+    final savedName = savedAdviser?.name.trim() ?? '';
+    final accountName = adviserProfile?['name']?.toString().trim() ?? '';
+    final adviserName = savedName.isNotEmpty
+        ? savedName
+        : (org.adviser.trim().isNotEmpty ? org.adviser.trim() : accountName);
+    // The org's saved adviser photo wins (even if it was removed on purpose).
+    // The account photo is only a fallback when the org has no saved entry.
+    final adviserAvatar = savedAdviser != null
+        ? (savedAdviser?.avatarUrl.trim() ?? '')
+        : (adviserProfile?['avatar_url']?.toString() ?? '');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (adviserProfile != null || org.adviser.isNotEmpty) ...[
+        if (adviserProfile != null ||
+            savedAdviser != null ||
+            org.adviser.isNotEmpty) ...[
           const _Pad(
             child: Text('Adviser',
                 style: TextStyle(
@@ -1807,7 +1824,6 @@ class _AboutPeopleGallery extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
-                // Few officers are centered; many officers scroll sideways.
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                       minWidth: math.max(0.0, constraints.maxWidth - 36)),

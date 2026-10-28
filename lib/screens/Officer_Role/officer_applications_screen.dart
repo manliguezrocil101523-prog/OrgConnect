@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Notification;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../core/app_state.dart';
+import '../../widgets/app_header.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -100,22 +101,18 @@ class OfficerApplicationsScreen extends StatelessWidget {
                 physics: const BouncingScrollPhysics(),
                 slivers: [
                   // ── Header ──────────────────────────────────────────────────────
-                  SliverAppBar(
+
+                  SliverPersistentHeader(
                     pinned: true,
-                    expandedHeight: MediaQuery.of(context).size.height * 0.18,
-                    backgroundColor: _primary,
-                    elevation: 0,
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white, size: 20),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    centerTitle: true,
-                    flexibleSpace: FlexibleSpaceBar(
-                      background: _AppHeroHeader(
-                        primary: _primary,
-                        secondary: _secondary,
+                    delegate: _FixedAppHeaderDelegate(
+                      height: AppHeader.contentHeight +
+                          MediaQuery.paddingOf(context).top,
+                      child: AppHeader(
                         title: _filterTitle(),
+                        subtitle: 'Review and manage applications',
+                        status: 'OFFICER APPLICATIONS',
+                        icon: Icons.assignment_rounded,
+                        onBack: () => Navigator.pop(context),
                       ),
                     ),
                   ),
@@ -1032,73 +1029,36 @@ class OfficerApplicationsScreen extends StatelessWidget {
       ]);
 }
 
-// =============================================================================
-// _AppHeroHeader
-// =============================================================================
-class _AppHeroHeader extends StatelessWidget {
-  final Color primary, secondary;
-  final String title;
-  const _AppHeroHeader(
-      {required this.primary, required this.secondary, required this.title});
+class _FixedAppHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final double height;
+  final Widget child;
+
+  const _FixedAppHeaderDelegate({
+    required this.height,
+    required this.child,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-            colors: [primary, secondary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
-      ),
-      child: Stack(children: [
-        Positioned(top: -30, right: -20, child: _orb(160, 0.07)),
-        Positioned(bottom: 10, left: -40, child: _orb(120, 0.05)),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 52, left: 24, right: 24),
-            child: Row(children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.30), width: 1.5),
-                ),
-                child: const Icon(Icons.assignment_rounded,
-                    color: Colors.white, size: 26),
-              ),
-              const SizedBox(width: 16),
-              Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(title,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 3),
-                    Text('Review and manage applications',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.72),
-                            fontSize: 12.5)),
-                  ]),
-            ]),
-          ),
-        ),
-      ]),
-    );
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return child;
   }
 
-  Widget _orb(double size, double opacity) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: opacity)),
-      );
+  @override
+  bool shouldRebuild(
+    covariant _FixedAppHeaderDelegate oldDelegate,
+  ) {
+    return height != oldDelegate.height || child != oldDelegate.child;
+  }
 }
 
 // =============================================================================
