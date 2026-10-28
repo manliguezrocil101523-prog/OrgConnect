@@ -23,6 +23,7 @@ import 'officer_members_screen.dart';
 import 'officer_profile_screen.dart';
 import 'officer_org_profile_screen.dart';
 import '../organizations/org_list_screen.dart';
+import '../../core/new_applications_badge.dart';
 
 // ---------------------------------------------------------------------------
 // Design tokens (every color of this screen lives here; light-only for now)
@@ -337,11 +338,13 @@ class _BaseOfficerDashboardState extends State<BaseOfficerDashboard> {
   void initState() {
     super.initState();
     unawaited(_loadOfficerHome());
+    unawaited(NewApplicationsBadge.instance.start(widget.orgId));
   }
 
   @override
   void dispose() {
     _exitTimer?.cancel();
+    unawaited(NewApplicationsBadge.instance.stop());
     super.dispose();
   }
 

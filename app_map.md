@@ -54,7 +54,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Admin_Role/admin_manage_accounts.dart (1940 lines)
+## lib/screens/Admin_Role/admin_manage_accounts.dart (1982 lines)
 - classes: AdminAccountsScreen, _AdminAccountsScreenState, _Section, _Palette, _RoleStyle, _HoverCard, _HoverCardState
 - uses (other project classes): 
 - supabase tables: 
@@ -90,7 +90,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/Adviser_Role/adviser_dashboard_screen.dart (1710 lines)
+## lib/screens/Adviser_Role/adviser_dashboard_screen.dart (2075 lines)
 - classes: AdviserDashboard, _AdviserDashboardState, _StatusNote
 - uses (other project classes): 
 - supabase tables: 
@@ -207,7 +207,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/guest/public_events_screen.dart (2806 lines)
+## lib/screens/guest/public_events_screen.dart (2866 lines)
 - classes: PublicEventsScreen, _PublicEventsScreenState, _DetailInfoRow, _DetailDescription, _QuizResult, _QuizDialog, _QuizDialogState, _InterestMatchCard, _InterestMatchCardState, _HoverSurface, _HoverSurfaceState
 - uses (other project classes): 
 - supabase tables: 
@@ -297,7 +297,7 @@
 - realtime channels: 
 - auth calls: 
 
-## lib/screens/organizations/org_profile_screen.dart (2107 lines)
+## lib/screens/organizations/org_profile_screen.dart (2124 lines)
 - classes: _C, _DragScrollBehavior, _Pad, _CardGrid, _TabScroll, _TabScrollState, OrgDetailScreen, _OrgDetailScreenState, _GuestApplyPlaceholder, _Hero, _Logo, _FallbackLogo, _Pill, _OrgDashboard, _EventVisualCard, _MediaTile, _MediaViewer, _MediaViewerState, _ZoomableImage, _ZoomableImageState, _AboutTab, _SectionIntro, _TitleRow, _StoryCard, _MissionVisionCard, _PeopleSectionLabel, _AboutPeopleGallery, _SquarePersonCard, _ConnectCard, _ApplyTab, _LazyOrgForm, _LazyOrgFormState, _SoftEmpty
 - uses (other project classes): 
 - supabase tables: 

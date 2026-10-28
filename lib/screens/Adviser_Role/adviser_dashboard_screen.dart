@@ -25,13 +25,13 @@ class AdviserDashboard extends StatefulWidget {
 }
 
 class _AdviserDashboardState extends State<AdviserDashboard> {
-  static const green = Color(0xFF128058);
-  static const dark = Color(0xFF073B2A);
-  static const muted = Color(0xFF4D6F62);
-  static const bg = Color(0xFFE6F7EE);
-  static const card = Color(0xFFF5FFF9);
-  static const mint = Color(0xFFDDF4E8);
-  static const line = Color(0xFFB9E4CF);
+  static const green = Color(0xFF0D6343);
+  static const dark = Color(0xFF163B2E);
+  static const muted = Color(0xFF60776D);
+  static const bg = Color(0xFFF3F7F4);
+  static const card = Color(0xFFFFFFFF);
+  static const mint = Color(0xFFEAF4EE);
+  static const line = Color(0xFFD8E7DD);
   static const _tabs = [
     (Icons.home_outlined, Icons.home_rounded, 'Home'),
     (Icons.assignment_outlined, Icons.assignment_rounded, 'Proposals'),
@@ -43,6 +43,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   int _tab = 0;
   bool _loading = true;
   bool _loadedOnce = false;
+  bool _loadInProgress = false;
+  bool _reloadPending = false;
   bool _showAllPublishedEvents = false;
   bool _showAllProposals = false;
   List<Map<String, dynamic>> _requests = [], _events = [], _posts = [];
@@ -87,9 +89,28 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   }
 
   Future<void> _load() async {
-    if (mounted && !_loadedOnce) setState(() => _loading = true);
+    // Realtime events can arrive in quick succession. Serialize requests and
+    // run one follow-up refresh rather than allowing stale requests to race.
+    if (_loadInProgress) {
+      _reloadPending = true;
+      return;
+    }
+    _loadInProgress = true;
+    if (mounted && !_loadedOnce) {
+      setState(() => _loading = true);
+    }
+
     try {
-      final results = await Future.wait([
+      final userId = _db.auth.currentUser?.id;
+      final profileRequest = userId == null
+          ? Future<Map<String, dynamic>?>.value(null)
+          : _db
+              .from('profiles')
+              .select('name,avatar_url')
+              .eq('id', userId)
+              .maybeSingle();
+
+      final results = await Future.wait<dynamic>([
         _db
             .from('event_requests')
             .select('*')
@@ -106,12 +127,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             .eq('org_id', widget.orgId)
             .isFilter('student_id', null)
             .order('created_at', ascending: false),
-        _db
-            .from('profiles')
-            .select('name,avatar_url')
-            .eq('id', _db.auth.currentUser?.id ?? '')
-            .maybeSingle(),
+        profileRequest,
       ]);
+
       if (!mounted) return;
       setState(() {
         _requests = List<Map<String, dynamic>>.from(results[0] as List);
@@ -135,43 +153,69 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               combined.contains('sent back to officers');
           return !isProposalNotice;
         }).toList();
+
         final profile = results[3] as Map<String, dynamic>?;
-        _avatarUrl = profile?['avatar_url']?.toString() ?? '';
+        _avatarUrl = profile?['avatar_url']?.toString().trim() ?? '';
         _userName = profile?['name']?.toString().trim() ?? '';
         _loading = false;
         _loadedOnce = true;
       });
+
       if (_proposalSeenAt == null && _requests.isNotEmpty) {
         final stamps = _requests
             .map(_proposalTimestamp)
             .whereType<DateTime>()
-            .where((d) => !d.isAfter(DateTime.now()))
+            .where((date) => !date.isAfter(DateTime.now()))
             .toList();
         if (stamps.isNotEmpty) {
           stamps.sort();
           final latest = stamps.last;
-          _proposalSeenAt = latest;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('adviser_proposal_seen_at_${widget.orgId}',
-              latest.toIso8601String());
+          if (mounted) {
+            setState(() => _proposalSeenAt = latest);
+          } else {
+            _proposalSeenAt = latest;
+          }
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(
+              'adviser_proposal_seen_at_${widget.orgId}',
+              latest.toIso8601String(),
+            );
+          } catch (_) {
+            // The dashboard still works if local seen-state persistence fails.
+          }
         }
       }
+
       await AppState.instance.fetchMembers();
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
         _snack('Unable to load adviser dashboard: $e', true);
       }
+    } finally {
+      _loadInProgress = false;
+      if (mounted && _reloadPending) {
+        _reloadPending = false;
+        await _load();
+      }
     }
   }
 
   Future<void> _loadProposalSeenAt() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('adviser_proposal_seen_at_${widget.orgId}');
-    if (!mounted) return;
-    setState(() {
-      _proposalSeenAt = raw == null ? null : DateTime.tryParse(raw);
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('adviser_proposal_seen_at_${widget.orgId}');
+      if (!mounted) return;
+      final stored = raw == null ? null : DateTime.tryParse(raw);
+      setState(() {
+        if (stored != null || _proposalSeenAt == null) {
+          _proposalSeenAt = stored;
+        }
+      });
+    } catch (_) {
+      // A missing local preference should not block the dashboard.
+    }
   }
 
   DateTime? _proposalTimestamp(Map<String, dynamic> r) {
@@ -179,20 +223,24 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         DateTime.tryParse(r['updated_at']?.toString() ?? '');
   }
 
-  bool get _hasUnreadProposalNotice {
+  int get _unreadProposalCount {
     final seen = _proposalSeenAt;
-    if (seen == null) return false;
+    if (seen == null) return 0;
     final now = DateTime.now();
-    return _requests.any((r) {
+    return _requests.where((r) {
       final status = r['status']?.toString();
-      if (status != 'admin_approved' && status != 'creative_submitted') {
+      if (status != 'pending' &&
+          status != 'admin_approved' &&
+          status != 'creative_submitted') {
         return false;
       }
       final stamp = _proposalTimestamp(r);
       if (stamp == null || stamp.isAfter(now)) return false;
       return stamp.isAfter(seen);
-    });
+    }).length;
   }
+
+  bool get _hasUnreadProposalNotice => _unreadProposalCount > 0;
 
   void _markProposalNotificationsSeen() {
     final mark = DateTime.now();
@@ -202,7 +250,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         'adviser_proposal_seen_at_${widget.orgId}',
         mark.toIso8601String(),
       );
-    });
+    }).catchError((_) => false);
   }
 
   String _visibleFeedback(dynamic value) {
@@ -310,12 +358,12 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   }
 
   List<String> _images(Map<String, dynamic> r) {
-    final x = r['image_urls'];
-    final y = r['creative_urls'];
+    final primary = r['image_urls'];
+    final creative = r['creative_urls'];
     return [
-      ...(x is List ? x.whereType<String>() : <String>[]),
-      ...(y is List ? y.whereType<String>() : <String>[])
-    ];
+      ...(primary is List ? primary.whereType<String>() : <String>[]),
+      ...(creative is List ? creative.whereType<String>() : <String>[]),
+    ].map((url) => url.trim()).where((url) => url.isNotEmpty).toList();
   }
 
   String _publicDescription(Map<String, dynamic> r) {
@@ -418,7 +466,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   Future<void> _requestRevision(Map<String, dynamic> r) async {
     final f = await _feedback(
         'Request Revision', 'Tell the officers what needs improvement.');
-    if (f == null) return;
+    if (!mounted || f == null) return;
     try {
       final now = DateTime.now();
       await _db.from('event_requests').update({
@@ -450,8 +498,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   bool _publishing = false;
 
   Future<void> _publish(Map<String, dynamic> r) async {
-    if (_publishing) return;
-    _publishing = true;
+    if (_publishing || !mounted) return;
+    setState(() => _publishing = true);
     var claimed = false;
     var eventSaved = false;
     final now = DateTime.now();
@@ -520,14 +568,18 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       }
       _snack('Could not publish event: $e', true);
     } finally {
-      _publishing = false;
+      if (mounted) {
+        setState(() => _publishing = false);
+      } else {
+        _publishing = false;
+      }
     }
   }
 
   bool _deleting = false;
 
   Future<void> _deleteEvent(Map<String, dynamic> e) async {
-    if (_deleting) return;
+    if (_deleting || !mounted) return;
     final id = e['id']?.toString() ?? '';
     if (id.isEmpty) return;
     final title = e['title']?.toString() ?? 'this event';
@@ -548,8 +600,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         ],
       ),
     );
-    if (ok != true) return;
-    _deleting = true;
+    if (!mounted || ok != true) return;
+    setState(() => _deleting = true);
     try {
       final removed = await AppState.instance.removeEvent(id);
       _snack(
@@ -559,7 +611,11 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
           !removed);
       await _load();
     } finally {
-      _deleting = false;
+      if (mounted) {
+        setState(() => _deleting = false);
+      } else {
+        _deleting = false;
+      }
     }
   }
 
@@ -661,7 +717,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       final body = KeyedSubtree(
         key: _bodyKey,
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: green))
+            ? _loadingView()
             : IndexedStack(
                 index: _tab,
                 children: [
@@ -688,7 +744,55 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     });
   }
 
+  Widget _loadingView() => Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF2F7F3), Color(0xFFFFFFFF)],
+          ),
+        ),
+        child: Column(
+          children: [
+            AppHeader(
+              title: 'Adviser Dashboard',
+              subtitle: 'Preparing your organization overview',
+              status: _adviserLabel,
+              avatarUrl: _avatarUrl,
+              icon: Icons.apartment_rounded,
+            ),
+            const Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: green,
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Loading your organization…',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
   void _selectTab(int i) {
+    if (!mounted || i < 0 || i >= _tabs.length) return;
     if (i == 1) {
       _markProposalNotificationsSeen();
     }
@@ -699,24 +803,25 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   Widget _tabIcon(int i, bool selected) {
     final t = _tabs[i];
     final icon = Icon(selected ? t.$2 : t.$1, color: selected ? green : null);
-    return i == 1 && _hasUnreadProposalNotice
-        ? Badge(label: const Text('!'), child: icon)
+    final n = i == 1 ? _unreadProposalCount : 0;
+    return n > 0
+        ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: icon)
         : icon;
   }
 
   Widget _nav() => Container(
         decoration: BoxDecoration(color: Colors.white, boxShadow: [
           BoxShadow(
-              color: green.withValues(alpha: .10),
-              blurRadius: 20,
-              offset: const Offset(0, -5))
+              color: Colors.black.withValues(alpha: .055),
+              blurRadius: 16,
+              offset: const Offset(0, -3))
         ]),
         child: SafeArea(
           top: false,
           child: NavigationBar(
-            height: 74,
+            height: 76,
             backgroundColor: Colors.white,
-            indicatorColor: green.withValues(alpha: .12),
+            indicatorColor: green.withValues(alpha: .10),
             selectedIndex: _tab,
             onDestinationSelected: _selectTab,
             destinations: [
@@ -855,7 +960,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFFE6F7EE), Color(0xFFDDF4E8), Color(0xFFF5FFF9)],
+              colors: [Color(0xFFF0F6F2), Color(0xFFF6F9F7), Color(0xFFFFFFFF)],
             ),
           ),
           child: Column(
@@ -907,7 +1012,12 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             const SizedBox(height: 6),
             if (_events.isEmpty)
               _empty(
-                  'No published events yet. Approved event creatives will appear here.')
+                'Approved event creatives will appear here once they are published.',
+                title: 'No published events yet',
+                icon: Icons.event_available_rounded,
+                actionLabel: 'Review proposals',
+                onAction: () => _selectTab(1),
+              )
             else
               _grid(_events.map(_eventCard).toList(), 14),
           ],
@@ -924,16 +1034,11 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
         'Good day, $displayName 👋',
         'Your organization at a glance',
         [
-          Row(children: [
-            Expanded(
-                child: _stat(Icons.assignment_rounded, 'Proposals',
-                    _requests.where((r) => r['status'] != 'published').length)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: _stat(Icons.event_rounded, 'Events', _events.length)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: _stat(Icons.campaign_rounded, 'Posts', _posts.length)),
+          _statsRow([
+            _stat(Icons.assignment_rounded, 'Proposals',
+                _requests.where((r) => r['status'] != 'published').length),
+            _stat(Icons.event_rounded, 'Events', _events.length),
+            _stat(Icons.campaign_rounded, 'Posts', _posts.length),
           ]),
           const SizedBox(height: 22),
           _split([
@@ -944,7 +1049,12 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             const SizedBox(height: 10),
             if (_events.isEmpty)
               _empty(
-                  'No published events yet. Approved event creatives will appear here.')
+                'Approved event creatives will appear here once they are published.',
+                title: 'No published events yet',
+                icon: Icons.event_available_rounded,
+                actionLabel: 'Review proposals',
+                onAction: () => _selectTab(1),
+              )
             else
               _grid(
                   (_showAllPublishedEvents ? _events : _events.take(5).toList())
@@ -966,7 +1076,12 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             const SizedBox(height: 10),
             _grid(_posts.take(3).map(_postCard).toList(), 10,
                 minW: 300, maxCols: 2, equal: true),
-            if (_posts.isEmpty) _empty('No announcements yet.'),
+            if (_posts.isEmpty)
+              _empty(
+                'Share important updates, reminders, and news with your organization.',
+                title: 'No announcements yet',
+                icon: Icons.campaign_outlined,
+              ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: _postAnnouncement,
@@ -977,7 +1092,11 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 54),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18)),
+                    borderRadius: BorderRadius.circular(16)),
+                elevation: 1,
+                shadowColor: green.withValues(alpha: .16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
               ),
             ),
           ]),
@@ -986,80 +1105,153 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   }
 
   Widget _stat(IconData icon, String label, int value) => Container(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
+        constraints: const BoxConstraints(minHeight: 116),
+        padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0F8F62), Color(0xFF20B77D)]),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withValues(alpha: .18)),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: line),
           boxShadow: [
             BoxShadow(
-                color: green.withValues(alpha: .14),
-                blurRadius: 18,
-                offset: const Offset(0, 8))
+              color: Colors.black.withValues(alpha: .035),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
           ],
         ),
         child: LayoutBuilder(builder: (_, box) {
           final iconBox = Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .14),
-                  borderRadius: BorderRadius.circular(13)),
-              child: Icon(icon, color: Colors.white, size: 19));
-          final number = Text('$value',
-              style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white));
-          final text = Text(label,
-              style: TextStyle(
-                  fontSize: 10.5,
-                  color: Colors.white.withValues(alpha: .82),
-                  fontWeight: FontWeight.w800));
-          if (box.maxWidth < 200) {
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: green, size: 19),
+          );
+          final number = Text(
+            '$value',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 23,
+              height: 1.1,
+              fontWeight: FontWeight.w800,
+              color: dark,
+            ),
+          );
+          final text = Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: muted,
+              fontWeight: FontWeight.w600,
+            ),
+          );
+          if (box.maxWidth < 170) {
             return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  iconBox,
-                  const SizedBox(height: 10),
-                  number,
-                  const SizedBox(height: 2),
-                  text,
-                ]);
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                iconBox,
+                const SizedBox(height: 10),
+                number,
+                const SizedBox(height: 4),
+                text,
+              ],
+            );
           }
-          return Row(children: [
-            iconBox,
-            const SizedBox(width: 14),
-            Expanded(
+          return Row(
+            children: [
+              iconBox,
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [number, const SizedBox(height: 2), text])),
-          ]);
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [number, const SizedBox(height: 4), text],
+                ),
+              ),
+            ],
+          );
         }),
       );
 
+  Widget _statsRow(List<Widget> items) => LayoutBuilder(
+        builder: (_, constraints) {
+          if (constraints.maxWidth < 360) {
+            final itemWidth = (constraints.maxWidth - 10) / 2;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final item in items)
+                  SizedBox(width: itemWidth, child: item),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              for (var i = 0; i < items.length; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(child: items[i]),
+              ],
+            ],
+          );
+        },
+      );
+
   Widget _sectionHeader(String title, String subtitle, VoidCallback? action) =>
-      Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 19, fontWeight: FontWeight.w900, color: dark)),
-          const SizedBox(height: 3),
-          Text(subtitle, style: const TextStyle(fontSize: 11.5, color: muted))
-        ])),
-        if (action != null)
-          TextButton(onPressed: action, child: const Text('View all'))
-      ]);
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    height: 1.2,
+                    fontWeight: FontWeight.w800,
+                    color: dark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (action != null)
+            TextButton(
+              onPressed: action,
+              style: TextButton.styleFrom(
+                foregroundColor: green,
+                minimumSize: const Size(48, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: const Text('View all'),
+            ),
+        ],
+      );
 
   Widget _eventCard(Map<String, dynamic> e) {
     final imgs = (e['image_urls'] is List ? e['image_urls'] : <dynamic>[])
         .whereType<String>()
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
         .toList();
-    final url = e['image_url']?.toString();
+    final url = e['image_url']?.toString().trim();
     if (url != null && url.isNotEmpty && !imgs.contains(url)) {
       imgs.insert(0, url);
     }
@@ -1067,17 +1259,15 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFF3FBF6), Color(0xFFE2F4E8)]),
-        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: line),
         boxShadow: [
           BoxShadow(
-              color: green.withValues(alpha: .08),
-              blurRadius: 16,
-              offset: const Offset(0, 6))
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -1146,11 +1336,20 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                                 borderRadius: BorderRadius.circular(13))),
                       ),
                       OutlinedButton.icon(
-                        onPressed: () => _deleteEvent(e),
-                        icon:
-                            const Icon(Icons.delete_outline_rounded, size: 16),
-                        label: const Text('Delete',
-                            style: TextStyle(fontSize: 12)),
+                        onPressed: _deleting ? null : () => _deleteEvent(e),
+                        icon: _deleting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.delete_outline_rounded,
+                                size: 16),
+                        label: Text(
+                          _deleting ? 'Deleting…' : 'Delete',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                         style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.red,
                             side: const BorderSide(color: Colors.red),
@@ -1171,17 +1370,15 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   Widget _postCard(Map<String, dynamic> p) => Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFF3FBF6), Color(0xFFE2F4E8)]),
-          borderRadius: BorderRadius.circular(20),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: line),
           boxShadow: [
             BoxShadow(
-                color: green.withValues(alpha: .06),
-                blurRadius: 12,
-                offset: const Offset(0, 5))
+              color: Colors.black.withValues(alpha: .035),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
           ]),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
@@ -1206,28 +1403,26 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
 
   Widget _proposals() => _page('Proposal Center',
           'Review proposals clearly and take action when they are ready.', [
-        Row(children: [
-          Expanded(
-              child: _stat(
-                  Icons.pending_actions_rounded,
-                  'Waiting',
-                  _requests
-                      .where((r) =>
-                          r['status'] == 'pending' ||
-                          r['status'] == 'creative_submitted')
-                      .length)),
-          const SizedBox(width: 10),
-          Expanded(
-              child: _stat(
-                  Icons.hourglass_top_rounded,
-                  'In Review',
-                  _requests
-                      .where((r) => r['status'] == 'forwarded_to_admin')
-                      .length)),
-          const SizedBox(width: 10),
-          Expanded(
-              child: _stat(Icons.verified_rounded, 'Published',
-                  _requests.where((r) => r['status'] == 'published').length)),
+        _statsRow([
+          _stat(
+            Icons.pending_actions_rounded,
+            'Waiting',
+            _requests
+                .where((r) =>
+                    r['status'] == 'pending' ||
+                    r['status'] == 'creative_submitted')
+                .length,
+          ),
+          _stat(
+            Icons.hourglass_top_rounded,
+            'In Review',
+            _requests.where((r) => r['status'] == 'forwarded_to_admin').length,
+          ),
+          _stat(
+            Icons.verified_rounded,
+            'Published',
+            _requests.where((r) => r['status'] == 'published').length,
+          ),
         ]),
         const SizedBox(height: 22),
         Row(children: [
@@ -1255,7 +1450,13 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                   child: Text(
                       _showAllProposals ? 'Show Less' : 'View All Proposals'))),
         if (_requests.isEmpty)
-          _empty('No proposals have been submitted by officers yet.'),
+          _empty(
+            'When officers submit activity requests, they will appear here for your review.',
+            title: 'No proposals submitted',
+            icon: Icons.assignment_outlined,
+            actionLabel: 'Refresh proposals',
+            onAction: _load,
+          ),
       ]);
 
   Widget _proposalCard(Map<String, dynamic> r) {
@@ -1270,18 +1471,15 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)],
-        ),
-        borderRadius: BorderRadius.circular(23),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: line),
         boxShadow: [
           BoxShadow(
-              color: green.withValues(alpha: .08),
-              blurRadius: 16,
-              offset: const Offset(0, 6)),
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -1390,32 +1588,39 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
           ),
           if (imgs.isNotEmpty) ...[
             const SizedBox(height: 15),
-            SizedBox(
-              width: double.infinity,
-              height: 300,
-              child: ScrollConfiguration(
-                behavior: ScrollConfiguration.of(context).copyWith(
-                  dragDevices: {
-                    PointerDeviceKind.touch,
-                    PointerDeviceKind.mouse
-                  },
-                ),
-                child: PageView.builder(
-                  itemCount: imgs.length,
-                  itemBuilder: (_, i) => Image.network(
-                    imgs[i],
-                    width: double.infinity,
-                    height: 300,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: bg,
-                      child: const Icon(Icons.broken_image_rounded,
-                          color: green, size: 40),
+            LayoutBuilder(builder: (context, constraints) {
+              final imageHeight = constraints.maxWidth < 420 ? 220.0 : 280.0;
+              return SizedBox(
+                width: double.infinity,
+                height: imageHeight,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                    },
+                  ),
+                  child: PageView.builder(
+                    itemCount: imgs.length,
+                    itemBuilder: (_, i) => Image.network(
+                      imgs[i],
+                      width: double.infinity,
+                      height: imageHeight,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: bg,
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.broken_image_rounded,
+                          color: green,
+                          size: 40,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
+              );
+            }),
           ],
           Padding(
               padding: const EdgeInsets.fromLTRB(17, 14, 17, 17),
@@ -1448,13 +1653,29 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             child: OutlinedButton.icon(
                 onPressed: () => _requestRevision(r),
                 icon: const Icon(Icons.edit_note_rounded),
-                label: const Text('Ask Revision'))),
+                label: const Text('Ask Revision'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: green,
+                  side: const BorderSide(color: line),
+                  minimumSize: const Size(48, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                ))),
         const SizedBox(width: 8),
         Expanded(
             child: FilledButton.icon(
                 onPressed: () => _forward(r),
                 icon: const Icon(Icons.forward_rounded),
-                label: const Text('Forward')))
+                label: const Text('Forward'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: green,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(48, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                )))
       ]);
     }
     if (s == 'admin_approved') {
@@ -1490,13 +1711,35 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
             child: OutlinedButton.icon(
                 onPressed: () => _requestRevision(r),
                 icon: const Icon(Icons.rate_review_outlined),
-                label: const Text('Return to Officer'))),
+                label: const Text('Return to Officer'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: green,
+                  side: const BorderSide(color: line),
+                  minimumSize: const Size(48, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                ))),
         const SizedBox(width: 8),
         Expanded(
             child: FilledButton.icon(
-                onPressed: () => _publish(r),
-                icon: const Icon(Icons.publish_rounded),
-                label: const Text('Approve & Publish')))
+                onPressed: _publishing ? null : () => _publish(r),
+                icon: _publishing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.publish_rounded),
+                label: Text(_publishing ? 'Publishing…' : 'Approve & Publish'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: green,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(48, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                )))
       ]);
     }
     if (s == 'revision_requested') {
@@ -1519,7 +1762,14 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
               onPressed: onTap,
               icon: Icon(icon, size: 17),
               label: Text(text),
-              style: FilledButton.styleFrom(backgroundColor: green)));
+              style: FilledButton.styleFrom(
+                backgroundColor: green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(48, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              )));
 
   Widget _feedbackBox(String title, String text) => Container(
       margin: const EdgeInsets.only(top: 10),
@@ -1656,83 +1906,145 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   Widget _feature(
           IconData icon, String title, String subtitle, VoidCallback onTap) =>
       Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: Container(
             padding: const EdgeInsets.all(17),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF0F8F62), Color(0xFF20B77D)]),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: .18)),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: line),
               boxShadow: [
                 BoxShadow(
-                    color: green.withValues(alpha: .13),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8))
+                  color: Colors.black.withValues(alpha: .035),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
-            child: Row(children: [
-              Container(
-                  padding: const EdgeInsets.all(11),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(14)),
-                  child: Icon(icon, color: Colors.white, size: 22)),
-              const SizedBox(width: 13),
-              Expanded(
+                    color: mint,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: green, size: 22),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(title,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15)),
-                    const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: .82),
-                            fontSize: 11.5,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600)),
-                  ])),
-              const Icon(Icons.arrow_forward_ios_rounded,
-                  size: 15, color: Colors.white70),
-            ]),
+                          color: dark,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: muted,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right_rounded, size: 21, color: muted),
+              ],
+            ),
           ),
         ),
       );
 
-  Widget _empty(String text) => Container(
-      padding: const EdgeInsets.all(25),
-      decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
-          borderRadius: BorderRadius.circular(22),
+  Widget _empty(
+    String message, {
+    String title = 'Nothing here yet',
+    IconData icon = Icons.inbox_outlined,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .92),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: line),
           boxShadow: [
             BoxShadow(
-                color: green.withValues(alpha: .06),
-                blurRadius: 15,
-                offset: const Offset(0, 6))
-          ]),
-      child: Column(children: [
-        Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: green.withValues(alpha: .09), shape: BoxShape.circle),
-            child: const Icon(Icons.eco_rounded, color: green, size: 25)),
-        const SizedBox(height: 10),
-        Text(text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: muted, height: 1.4))
-      ]));
+              color: Colors.black.withValues(alpha: .025),
+              blurRadius: 9,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: mint,
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: Icon(icon, color: green, size: 25),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: dark,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: muted,
+                  fontSize: 12.5,
+                  height: 1.5,
+                ),
+              ),
+            ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 17),
+                label: Text(actionLabel),
+                style: TextButton.styleFrom(
+                  foregroundColor: green,
+                  minimumSize: const Size(48, 44),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
 
   Widget _imagePlaceholder([double height = 160]) => Container(
       height: height,

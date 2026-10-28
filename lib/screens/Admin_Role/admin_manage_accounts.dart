@@ -201,7 +201,9 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
 
                     String subtitle;
                     if (!isOfficerFlow) {
-                      subtitle = 'ID: ${org.id}';
+                      subtitle = org.id == currentOrgId
+                          ? 'Current organization'
+                          : 'ID: ${org.id}';
                     } else {
                       final president = _presidentOf(org.id);
                       if (president == null) {
@@ -305,6 +307,14 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
 
                           if (isOfficerFlow) {
                             await _assignPresident(user, org);
+                            return;
+                          }
+
+                          if (_roleOf(user) == 'adviser' &&
+                              user['assigned_org_id']?.toString() == org.id) {
+                            _showSnack(
+                              '${_displayName(user)} is already Adviser of ${org.name}',
+                            );
                             return;
                           }
 
@@ -640,6 +650,37 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
               child: Icon(
                 Icons.swap_horiz_rounded,
                 color: p.textSub,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChangeAdviserOrgButton(_Palette p, Map<String, dynamic> u) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Tooltip(
+        message: 'Change organization',
+        child: Material(
+          color: accent.withValues(alpha: 0.10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: accent.withValues(alpha: 0.45)),
+          ),
+          child: InkWell(
+            customBorder: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            onTap: () => _showOrgPickerDialog(u, role: 'adviser'),
+            child: const SizedBox(
+              width: 40,
+              height: 40,
+              child: Icon(
+                Icons.apartment_rounded,
+                color: accentDeep,
                 size: 20,
               ),
             ),
@@ -1409,6 +1450,7 @@ class _AdminAccountsScreenState extends State<AdminAccountsScreen> {
               ),
               if (role == 'officer' && !_isSelf(u))
                 _buildChangeRoleButton(p, u),
+              if (role == 'adviser') _buildChangeAdviserOrgButton(p, u),
               const SizedBox(width: 12),
               _buildActiveSwitch(u, isActive),
             ],

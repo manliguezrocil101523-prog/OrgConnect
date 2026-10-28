@@ -86,9 +86,13 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
   final GlobalKey _eventsKey = GlobalKey();
   RealtimeChannel? _eventsChannel;
 
+  // State variable for the back-to-top button visibility
+  bool _showBackToTop = false;
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_scrollListener);
     _load();
     _eventsChannel = Supabase.instance.client.channel('public-events-screen')
       ..onPostgresChanges(
@@ -102,8 +106,17 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       ..subscribe();
   }
 
+  void _scrollListener() {
+    if (_scrollController.offset >= 400 && !_showBackToTop) {
+      setState(() => _showBackToTop = true);
+    } else if (_scrollController.offset < 400 && _showBackToTop) {
+      setState(() => _showBackToTop = false);
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_scrollListener);
     final channel = _eventsChannel;
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel);
@@ -211,6 +224,14 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     );
   }
 
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
   Future<void> _openComments(Event e) async {
     await AnalyticsService.instance.logEventView(e.id);
     if (!mounted) return;
@@ -279,156 +300,205 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     return Scaffold(
       backgroundColor: _kBg,
       body: SafeArea(
-        child: LayoutBuilder(builder: (context, constraints) {
-          final mediaSize = MediaQuery.sizeOf(context);
-          final w = constraints.maxWidth.isFinite
-              ? constraints.maxWidth
-              : mediaSize.width;
-          final g = _gutter(w);
-          final isMobile = w < 600;
-          final ts = MediaQuery.textScalerOf(context)
-              .scale(1.0)
-              .clamp(1.0, 1.4)
-              .toDouble();
-          final allUpcoming = _upcomingEvents;
-          final upcoming = _filterUpcoming(allUpcoming);
-          final hasFilters = _hasActiveFilters;
-          final visible = (_showAllEvents || hasFilters)
-              ? upcoming
-              : upcoming.take(5).toList();
-          final history = _filterPast(_pastEvents);
+        child: Stack(
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              final mediaSize = MediaQuery.sizeOf(context);
+              final w = constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : mediaSize.width;
+              final g = _gutter(w);
+              final isMobile = w < 600;
+              final ts = MediaQuery.textScalerOf(context)
+                  .scale(1.0)
+                  .clamp(1.0, 1.4)
+                  .toDouble();
+              final allUpcoming = _upcomingEvents;
+              final upcoming = _filterUpcoming(allUpcoming);
+              final hasFilters = _hasActiveFilters;
+              final visible = (_showAllEvents || hasFilters)
+                  ? upcoming
+                  : upcoming.take(5).toList();
+              final history = _filterPast(_pastEvents);
 
-          SliverToBoxAdapter pad(Widget child,
-                  [double top = 0, double bottom = 0]) =>
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(g, top, g, bottom),
-                  child: child,
-                ),
-              );
+              SliverToBoxAdapter pad(Widget child,
+                      [double top = 0, double bottom = 0]) =>
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(g, top, g, bottom),
+                      child: child,
+                    ),
+                  );
 
-          return RefreshIndicator(
-            color: _kGreen,
-            onRefresh: _load,
-            child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(context).copyWith(
-                dragDevices: const <PointerDeviceKind>{
-                  PointerDeviceKind.touch,
-                  PointerDeviceKind.mouse,
-                  PointerDeviceKind.trackpad,
-                  PointerDeviceKind.stylus,
-                },
-              ),
-              child: Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: w >= 600,
-                trackVisibility: w >= 600,
-                interactive: true,
-                thickness: 7,
-                radius: const Radius.circular(10),
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    pad(_hero(w), 14),
-                    pad(const _InterestMatchCard(), 14),
-                    pad(_sectionHeader(upcoming.length)),
-                    if (!_loading && _events.isNotEmpty)
-                      pad(
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 640),
-                            child: _filterBar(
-                              shown: upcoming.length,
-                              total: allUpcoming.length,
-                            ),
-                          ),
-                        ),
-                        0,
-                        14,
-                      ),
-                    if (_loading)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: CircularProgressIndicator(color: _kGreen),
-                        ),
-                      )
-                    else if (upcoming.isEmpty && !_showAllEvents)
-                      pad(
-                        allUpcoming.isEmpty ? _emptyState() : _noResultsState(),
-                        0,
-                        20,
-                      )
-                    else ...[
-                      ..._eventSlivers(
-                        visible,
-                        g: g,
-                        mobile: isMobile,
-                        ts: ts,
-                        w: w,
-                        featuredFirst:
-                            _sort == _EventSort.newest && !hasFilters,
-                      ),
-                      if (!_showAllEvents && !hasFilters && upcoming.length > 5)
-                        pad(
-                          Center(
-                            child: OutlinedButton.icon(
-                              onPressed: () =>
-                                  setState(() => _showAllEvents = true),
-                              icon:
-                                  const Icon(Icons.grid_view_rounded, size: 18),
-                              label: Text('View all ${upcoming.length} events'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _kGreenDark,
-                                side: const BorderSide(color: _kGreen),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 18,
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+              return RefreshIndicator(
+                color: _kGreen,
+                onRefresh: _load,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: const <PointerDeviceKind>{
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                      PointerDeviceKind.stylus,
+                    },
+                  ),
+                  child: Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: w >= 600,
+                    trackVisibility: w >= 600,
+                    interactive: true,
+                    thickness: 7,
+                    radius: const Radius.circular(10),
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        pad(_hero(w), 14),
+                        pad(const _InterestMatchCard(), 14),
+                        pad(_sectionHeader(upcoming.length)),
+                        if (!_loading && _events.isNotEmpty)
+                          pad(
+                            Center(
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 640),
+                                child: _filterBar(
+                                  shown: upcoming.length,
+                                  total: allUpcoming.length,
                                 ),
                               ),
                             ),
+                            0,
+                            14,
                           ),
-                          4,
-                          24,
-                        ),
-                      if (_showAllEvents) ...[
-                        pad(
-                          const Text(
-                            'Event history',
-                            style: TextStyle(
-                              color: _kInk,
-                              fontSize: 21,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -.3,
+                        if (_loading)
+                          const SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: CircularProgressIndicator(color: _kGreen),
                             ),
-                          ),
-                          8,
-                          12,
-                        ),
-                        if (history.isEmpty)
-                          pad(_emptyHistoryState(), 0, 12)
-                        else
+                          )
+                        else if (upcoming.isEmpty && !_showAllEvents)
+                          pad(
+                            allUpcoming.isEmpty
+                                ? _emptyState()
+                                : _noResultsState(),
+                            0,
+                            20,
+                          )
+                        else ...[
                           ..._eventSlivers(
-                            history,
+                            visible,
                             g: g,
                             mobile: isMobile,
                             ts: ts,
                             w: w,
-                            featuredFirst: false,
+                            featuredFirst:
+                                _sort == _EventSort.newest && !hasFilters,
                           ),
+                          if (!_showAllEvents &&
+                              !hasFilters &&
+                              upcoming.length > 5)
+                            pad(
+                              Center(
+                                child: OutlinedButton.icon(
+                                  onPressed: () =>
+                                      setState(() => _showAllEvents = true),
+                                  icon: const Icon(Icons.grid_view_rounded,
+                                      size: 18),
+                                  label: Text(
+                                      'View all ${upcoming.length} events'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _kGreenDark,
+                                    side: const BorderSide(color: _kGreen),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              4,
+                              24,
+                            ),
+                          if (_showAllEvents) ...[
+                            pad(
+                              const Text(
+                                'Event history',
+                                style: TextStyle(
+                                  color: _kInk,
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -.3,
+                                ),
+                              ),
+                              8,
+                              12,
+                            ),
+                            if (history.isEmpty)
+                              pad(_emptyHistoryState(), 0, 12)
+                            else
+                              ..._eventSlivers(
+                                history,
+                                g: g,
+                                mobile: isMobile,
+                                ts: ts,
+                                w: w,
+                                featuredFirst: false,
+                              ),
+                          ],
+                        ],
+                        const SliverToBoxAdapter(child: SizedBox(height: 20)),
                       ],
-                    ],
-                    const SliverToBoxAdapter(child: SizedBox(height: 20)),
-                  ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+
+            // Back-to-Top Floating Button matching your green arrow design[cite: 1]
+            if (_showBackToTop)
+              Positioned(
+                right: 20,
+                bottom: 20,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 200),
+                  builder: (context, value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Opacity(
+                        opacity: value,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Material(
+                    color: _kGreen,
+                    shape: const CircleBorder(),
+                    elevation: 6,
+                    shadowColor: _kGreenDark.withValues(alpha: 0.3),
+                    child: InkWell(
+                      onTap: _scrollToTop,
+                      customBorder: const CircleBorder(),
+                      child: const SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          Icons.arrow_upward_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          );
-        }),
+          ],
+        ),
       ),
     );
   }
@@ -764,8 +834,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       ];
     }
 
-    // Tablet uses two columns; desktop uses three. The grid's main-axis extent
-    // is calculated once per viewport and then scaled consistently for text.
     final crossAxisCount = w < 900 ? 2 : 3;
     final contentWidth = math.max(0.0, w - (g * 2));
     final cardWidth =
@@ -812,7 +880,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       fit: StackFit.expand,
       children: [
         _ph(),
-        // Blurred copy fills the card so there are no empty bars.
         if (showFull)
           ClipRect(
             child: ImageFiltered(
@@ -883,7 +950,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
         ],
       );
 
-  /// Compact horizontal card used on phones.
   Widget _tile(Event e, double thumb) {
     return _surface(
       onTap: () => _showDetails(e),
@@ -929,7 +995,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     );
   }
 
-  /// Short featured card retained for mobile screens.
   Widget _featured(
     Event e, {
     required double imageCacheWidth,
@@ -1007,7 +1072,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     );
   }
 
-  /// Vertical event card for tablet and desktop grids.
   Widget _verticalEventCard(
     Event e, {
     required bool isFeatured,
@@ -1098,15 +1162,14 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     );
   }
 
-  Widget _emptyHistoryState() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 2),
+  Widget _emptyHistoryState() => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16, horizontal: 2),
         child: Text(
           'No past events to show yet.',
-          style: const TextStyle(color: _kMuted, fontSize: 13),
+          style: TextStyle(color: _kMuted, fontSize: 13),
         ),
       );
 
-  /// Full event details with a cover image, full description, and comments.
   void _showDetails(Event e) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     if (screenWidth < _kDialogBreakpoint) {
@@ -1158,7 +1221,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
     );
   }
 
-  // Shared event-detail body for the mobile sheet and desktop dialog.
   Widget _detailsContent(
     BuildContext ctx,
     Event e, {
@@ -1347,17 +1409,17 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.forum_outlined,
                         size: 18,
                         color: Colors.white,
                       ),
-                      const SizedBox(width: 8),
-                      const Flexible(
+                      SizedBox(width: 8),
+                      Flexible(
                         child: Text(
                           'View comments',
                           maxLines: 1,
@@ -1370,8 +1432,8 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      const Icon(
+                      SizedBox(width: 8),
+                      Icon(
                         Icons.arrow_forward_rounded,
                         size: 18,
                         color: Colors.white,
@@ -1398,7 +1460,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
       children: [
         _ph(),
         if (imageUrl != null && imageUrl.isNotEmpty) ...[
-          // Blurred copy fills the box so there are no empty bars.
           ClipRect(
             child: ImageFiltered(
               imageFilter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
@@ -1412,7 +1473,6 @@ class _PublicEventsScreenState extends State<PublicEventsScreen> {
               ),
             ),
           ),
-          // Sharp copy shown in full, nothing cropped.
           Image.network(
             imageUrl,
             fit: BoxFit.contain,

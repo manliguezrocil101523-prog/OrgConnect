@@ -1747,15 +1747,19 @@ class AppState extends ChangeNotifier {
     final student = currentStudent;
     try {
       String schoolStudentId = student?.studentId ?? '';
+      String officerOrgId = '';
       if (userId != null && userId.isNotEmpty) {
         try {
           final profile = await client
               .from('profiles')
-              .select('id,student_id')
+              .select('id,student_id,role,assigned_org_id')
               .eq('id', userId)
               .maybeSingle();
           final dbStudentId = profile?['student_id']?.toString() ?? '';
           if (dbStudentId.isNotEmpty) schoolStudentId = dbStudentId;
+          if (profile?['role']?.toString() == 'officer') {
+            officerOrgId = profile?['assigned_org_id']?.toString().trim() ?? '';
+          }
         } catch (_) {}
       }
 
@@ -1801,6 +1805,8 @@ class AppState extends ChangeNotifier {
           } catch (_) {}
         }
       }
+
+      if (officerOrgId.isNotEmpty) memberOrgIds.add(officerOrgId);
 
       final applicationOrgIds = <String>{};
       final applicationOrgNames = <String>{};
@@ -1854,12 +1860,16 @@ class AppState extends ChangeNotifier {
           final rawTitle = item['title']?.toString() ?? '';
           final rawMessage = item['message']?.toString() ?? '';
 
-          if (student != null &&
+          if ((student != null || officerOrgId.isNotEmpty) &&
               orgId != null &&
               _isStudentHiddenWorkflowNotification(rawTitle, rawMessage)) {
             continue;
           }
-
+          if (officerOrgId.isNotEmpty &&
+              isOrgAnnouncement &&
+              '$rawTitle $rawMessage'.toLowerCase().contains('proposal')) {
+            continue;
+          }
           var title = rawTitle;
           var message = rawMessage;
 
@@ -2018,7 +2028,13 @@ class AppState extends ChangeNotifier {
     final idx = notifications.indexWhere((n) => n.id == id);
     if (idx != -1 && !notifications[idx].read) {
       notifications[idx] = notifications[idx].copyWith(read: true);
-      await updateNotification(notifications[idx]);
+      try {
+        await supabase.Supabase.instance.client
+            .from('notifications')
+            .update({'read': true}).eq('id', id);
+      } catch (e) {
+        debugPrint('Error marking notification read: $e');
+      }
       notifyListeners();
     }
   }
