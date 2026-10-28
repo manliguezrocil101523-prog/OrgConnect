@@ -25,7 +25,6 @@ class HomeRecommendedSection extends StatefulWidget {
   State<HomeRecommendedSection> createState() => _HomeRecommendedSectionState();
 }
 
-/// Manages recommendation counts and saved-organization updates.
 class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
   /// Last fetched member counts, kept for the app session. NewHomeTab's
   /// ListView disposes this State when the section scrolls far off-screen,
@@ -78,26 +77,13 @@ class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
       return;
     }
 
-    setState(() {});
-  }
-
-  void _scheduleCountRefreshIfNeeded() {
     final currentKey = _organizationIdsKey();
-
-    if (currentKey == _lastCountOrgKey) {
-      return;
+    if (currentKey != _lastCountOrgKey) {
+      _lastCountOrgKey = currentKey;
+      _fetchMemberCounts(currentKey);
     }
 
-    // Set the key before the asynchronous request to avoid rebuild loops.
-    _lastCountOrgKey = currentKey;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-
-      _fetchMemberCounts(currentKey);
-    });
+    setState(() {});
   }
 
   Future<void> _fetchMemberCounts(String requestedKey) async {
@@ -137,8 +123,6 @@ class _HomeRecommendedSectionState extends State<HomeRecommendedSection> {
 
   @override
   Widget build(BuildContext context) {
-    _scheduleCountRefreshIfNeeded();
-
     final organizations = OrgRecommender.recommend(
       memberCounts: _counts,
     );

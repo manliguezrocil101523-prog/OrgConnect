@@ -1741,6 +1741,9 @@ class AppState extends ChangeNotifier {
         (t == 'new event' && m.contains('approved and published'));
   }
 
+  final Set<String> _announcementIds = <String>{};
+  Set<String> _locallyReadAnnouncementIds = <String>{};
+
   Future<void> fetchNotifications() async {
     final client = supabase.Supabase.instance.client;
     final userId = client.auth.currentUser?.id;
@@ -1844,6 +1847,8 @@ class AppState extends ChangeNotifier {
       }
 
       notifications.clear();
+      _announcementIds.clear();
+      _locallyReadAnnouncementIds = await _loadReadAnnouncementIds(userId);
       final seenStudentOrgNotificationKinds = <String>{};
       for (final item in response) {
         try {
@@ -1901,6 +1906,8 @@ class AppState extends ChangeNotifier {
               continue;
             }
           }
+          final itemId = item['id']?.toString() ?? '';
+          if (isOrgAnnouncement) _announcementIds.add(itemId);
 
           notifications.add(Notification(
             id: item['id']?.toString() ?? _genId(),
@@ -1909,7 +1916,9 @@ class AppState extends ChangeNotifier {
             date: DateTime.tryParse(
                     (item['date'] ?? item['created_at'])?.toString() ?? '') ??
                 DateTime.now(),
-            read: item['read'] == true,
+            read: isOrgAnnouncement
+                ? _locallyReadAnnouncementIds.contains(itemId)
+                : item['read'] == true,
             orgId: orgId,
             studentId: (belongsToCurrentStudent || isOrgAnnouncement)
                 ? userId
@@ -2007,36 +2016,80 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> removeNotification(String id) async {
+  Future<Set<String>> _loadReadAnnouncementIds(String? uid) async {
     try {
-      await supabase.Supabase.instance.client
-          .from('notifications')
-          .delete()
-          .eq('id', id);
-
-      final before = notifications.length;
-      notifications.removeWhere((n) => n.id == id);
-      final removed = notifications.length < before;
-      if (removed) notifyListeners();
-      return removed;
-    } catch (e) {
-      return false;
+      final prefs = await SharedPreferences.getInstance();
+      return (prefs.getStringList('read_announcements_${uid ?? 'local'}') ??
+              const <String>[])
+          .toSet();
+    } catch (_) {
+      return <String>{};
     }
   }
 
   Future<void> markNotificationRead(String id) async {
     final idx = notifications.indexWhere((n) => n.id == id);
-    if (idx != -1 && !notifications[idx].read) {
-      notifications[idx] = notifications[idx].copyWith(read: true);
+    if (idx == -1 || notifications[idx].read) return;
+    notifications[idx] = notifications[idx].copyWith(read: true);
+    notifyListeners();
+    final client = supabase.Supabase.instance.client;
+    try {
+      if (_announcementIds.contains(id)) {
+        // Shared announcement: remember it per user on this device and never
+        // write to the shared row.
+        _locallyReadAnnouncementIds.add(id);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(
+          'read_announcements_${client.auth.currentUser?.id ?? 'local'}',
+          _locallyReadAnnouncementIds.toList(),
+        );
+      } else {
+        await client.from('notifications').update({'read': true}).eq('id', id);
+      }
+    } catch (e) {
+      debugPrint('Error marking notification read: $e');
+    }
+  }
+
+  bool isOrgAnnouncement(String id) => _announcementIds.contains(id);
+
+  //HERE
+  /// Marks all unread announcements for a specific organization as read.
+  Future<void> markOrgAnnouncementsRead(String orgId) async {
+    bool hasChanges = false;
+    final client = supabase.Supabase.instance.client;
+    final prefs = await SharedPreferences.getInstance();
+    final userId = client.auth.currentUser?.id ?? 'local';
+
+    for (int i = 0; i < notifications.length; i++) {
+      final n = notifications[i];
+      if (n.orgId == orgId && isOrgAnnouncement(n.id) && !n.read) {
+        notifications[i] = n.copyWith(read: true);
+        hasChanges = true;
+        _locallyReadAnnouncementIds.add(n.id);
+      }
+    }
+
+    if (hasChanges) {
       try {
-        await supabase.Supabase.instance.client
-            .from('notifications')
-            .update({'read': true}).eq('id', id);
+        await prefs.setStringList(
+          'read_announcements_$userId',
+          _locallyReadAnnouncementIds.toList(),
+        );
       } catch (e) {
-        debugPrint('Error marking notification read: $e');
+        debugPrint('Error saving read announcements: $e');
       }
       notifyListeners();
     }
+  }
+
+  int unreadOrgAnnouncementCount() {
+    return notifications.where((n) {
+      if (!_announcementIds.contains(n.id) || n.read) return false;
+      final text = '${n.title} ${n.message}'.toLowerCase();
+      return !text.contains('proposal') &&
+          !_isStudentHiddenWorkflowNotification(n.title, n.message);
+    }).length;
   }
 
   void setRole(UserRole? role) {

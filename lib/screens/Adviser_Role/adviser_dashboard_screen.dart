@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../../core/app_state.dart';
+import '../../core/chat_unread.dart';
 import '../Officer_Role/officer_members_screen.dart';
 import '../Officer_Role/officer_org_profile_screen.dart';
 import 'adviser_profile_screen.dart';
@@ -64,6 +65,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     });
     _loadProposalSeenAt();
     _load();
+    ChatUnread.instance.start(widget.orgId);
     _proposalChannel = _db.channel(
         'adviser-proposals-${widget.orgId}-${_db.auth.currentUser?.id ?? 'local'}')
       ..onPostgresChanges(
@@ -85,6 +87,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
     if (channel != null) {
       _db.removeChannel(channel);
     }
+    ChatUnread.instance.stop();
     super.dispose();
   }
 
@@ -803,6 +806,14 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   Widget _tabIcon(int i, bool selected) {
     final t = _tabs[i];
     final icon = Icon(selected ? t.$2 : t.$1, color: selected ? green : null);
+    if (i == 2) {
+      return ValueListenableBuilder<int>(
+        valueListenable: ChatUnread.instance.count,
+        builder: (_, n, __) => n > 0
+            ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: icon)
+            : icon,
+      );
+    }
     final n = i == 1 ? _unreadProposalCount : 0;
     return n > 0
         ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: icon)
@@ -1899,12 +1910,14 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                     orgId: widget.orgId, orgName: widget.orgName),
               ),
             ),
+            chatBadge: true,
           ),
         ], 10, minW: 340, maxCols: 2, equal: true, trailing: false),
       ]);
 
   Widget _feature(
-          IconData icon, String title, String subtitle, VoidCallback onTap) =>
+          IconData icon, String title, String subtitle, VoidCallback onTap,
+          {bool chatBadge = false}) =>
       Material(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -1935,7 +1948,14 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
                     color: mint,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(icon, color: green, size: 22),
+                  child: chatBadge
+                      ? ValueListenableBuilder<int>(
+                          valueListenable: ChatUnread.instance.count,
+                          builder: (_, n, __) => Badge(
+                              isLabelVisible: n > 0,
+                              label: Text(n > 99 ? '99+' : '$n'),
+                              child: Icon(icon, color: green, size: 22)))
+                      : Icon(icon, color: green, size: 22),
                 ),
                 const SizedBox(width: 13),
                 Expanded(
