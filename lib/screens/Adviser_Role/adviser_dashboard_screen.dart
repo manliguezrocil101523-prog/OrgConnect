@@ -1246,7 +1246,8 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       );
 
   Widget _eventCard(Map<String, dynamic> e) {
-    final imgs = (e['image_urls'] is List ? e['image_urls'] : <dynamic>[])
+    final rawImageUrls = e['image_urls'];
+    final imgs = (rawImageUrls is List ? rawImageUrls : <dynamic>[])
         .whereType<String>()
         .map((url) => url.trim())
         .where((url) => url.isNotEmpty)

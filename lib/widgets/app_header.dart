@@ -14,165 +14,211 @@ class AppHeader extends StatelessWidget {
     this.onAvatarTap,
     this.avatarEditing = false,
     this.onBack,
+    this.squareBottom = false,
   });
 
   final String title;
   final String subtitle;
   final String status;
-  final IconData? icon; // if set, shows an icon tile
+  final IconData? icon;
   final Widget? leadingWidget;
-  final String avatarUrl; // used when icon is null
-  final Widget? trailing; // e.g. an Edit button
-  final ImageProvider? avatarImage; // overrides avatarUrl (e.g. a picked photo)
-  final VoidCallback? onAvatarTap; // makes the avatar tappable
-  final bool avatarEditing; // shows the little camera badge
-  final VoidCallback? onBack; // shows a back arrow when set
+  final String avatarUrl;
+  final Widget? trailing;
+  final ImageProvider? avatarImage;
+  final VoidCallback? onAvatarTap;
+  final bool avatarEditing;
+  final VoidCallback? onBack;
 
-  // ONE height for every page (excluding status bar)
+  /// When true, the bottom corners are square.
+  /// The default preserves the existing rounded header for other screens.
+  final bool squareBottom;
+
   static const double contentHeight = 140;
   static const double leadingSize = 64;
-  // Shared brand gradient: use this everywhere so all screens match
+
   static const LinearGradient brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF064E3B), Color(0xFF0B6B4D), Color(0xFF1A9E6B)],
+    colors: [
+      Color(0xFF064E3B),
+      Color(0xFF0B6B4D),
+      Color(0xFF1A9E6B),
+    ],
   );
 
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.of(context).padding.top;
 
-    return Container(
-      width: double.infinity,
-      height: contentHeight + topInset,
-      clipBehavior:
-          Clip.antiAlias, // clips the white shapes to the rounded corners
-      decoration: const BoxDecoration(
-        gradient: brandGradient,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(right: -45, top: -70, child: _orb(170)),
-          Positioned(right: 45, bottom: -70, child: _orb(125)),
-          Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                  onBack != null ? 56 : 20, topInset, 20, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _leading(),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            height: 1.15,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: .86),
-                            fontSize: 13,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 400;
+        final horizontalPadding = compact ? 12.0 : 20.0;
+        final leadingGap = compact ? 8.0 : 14.0;
+
+        return Container(
+          width: double.infinity,
+          height: contentHeight + topInset,
+          clipBehavior: Clip.hardEdge,
+          decoration: BoxDecoration(
+            gradient: brandGradient,
+            borderRadius: squareBottom
+                ? BorderRadius.zero
+                : const BorderRadius.only(
+                    bottomLeft: Radius.circular(30),
+                    bottomRight: Radius.circular(30),
+                  ),
+          ),
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                right: -45,
+                top: -70,
+                child: _orb(170),
+              ),
+              Positioned(
+                right: 45,
+                bottom: -70,
+                child: _orb(125),
+              ),
+              Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    onBack != null
+                        ? (compact ? 48 : 56)
+                        : horizontalPadding,
+                    topInset,
+                    horizontalPadding,
+                    0,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _leading(compact: compact),
+                      SizedBox(width: leadingGap),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              width: 9,
-                              height: 9,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF86EFAC),
-                                shape: BoxShape.circle,
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 21 : 26,
+                                fontWeight: FontWeight.w900,
+                                height: 1.15,
+                                letterSpacing: -0.5,
                               ),
                             ),
-                            const SizedBox(width: 7),
-                            Flexible(
-                              child: Text(
-                                status,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: .6,
-                                ),
+                            SizedBox(height: compact ? 4 : 6),
+                            Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: .86),
+                                fontSize: compact ? 11 : 13,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
                               ),
+                            ),
+                            SizedBox(height: compact ? 6 : 10),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 9,
+                                  height: 9,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF86EFAC),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 7),
+                                Flexible(
+                                  child: Text(
+                                    status,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: compact ? 9 : 11,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: compact ? .3 : .6,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
+                      ),
+                      if (trailing != null) ...[
+                        SizedBox(width: compact ? 6 : 8),
+                        trailing!,
                       ],
+                    ],
+                  ),
+                ),
+              ),
+              if (onBack != null)
+                Positioned(
+                  left: 6,
+                  top: topInset + 6,
+                  child: IconButton(
+                    tooltip: 'Back',
+                    onPressed: onBack,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white,
+                      size: 20,
                     ),
                   ),
-                  if (trailing != null) ...[
-                    const SizedBox(width: 8),
-                    trailing!,
-                  ],
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
-          if (onBack != null)
-            Positioned(
-              left: 6,
-              top: topInset + 6,
-              child: IconButton(
-                tooltip: 'Back',
-                onPressed: onBack,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white, size: 20),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _leading() {
+  Widget _leading({required bool compact}) {
     if (leadingWidget != null) return leadingWidget!;
+
     if (icon != null) {
       return Container(
-        width: leadingSize,
-        height: leadingSize,
+        width: compact ? 48 : leadingSize,
+        height: compact ? 48 : leadingSize,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: .14),
           borderRadius: BorderRadius.circular(22),
         ),
-        child: Icon(icon, color: Colors.white, size: 32),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: compact ? 26 : 32,
+        ),
       );
     }
 
     final ImageProvider? image =
         avatarImage ?? (avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null);
 
+    final size = compact ? 48.0 : leadingSize;
+
     final avatar = Container(
-      width: leadingSize,
-      height: leadingSize,
+      width: size,
+      height: size,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -180,14 +226,19 @@ class AppHeader extends StatelessWidget {
       ),
       child: Container(
         padding: const EdgeInsets.all(3),
-        decoration:
-            const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+        ),
         child: CircleAvatar(
           backgroundColor: const Color(0xFFE0F5E8),
           backgroundImage: image,
           child: image == null
-              ? const Icon(Icons.person_rounded,
-                  color: Color(0xFF128058), size: 31)
+              ? Icon(
+                  Icons.person_rounded,
+                  color: const Color(0xFF128058),
+                  size: compact ? 25 : 31,
+                )
               : null,
         ),
       ),
@@ -206,14 +257,17 @@ class AppHeader extends StatelessWidget {
               right: -2,
               bottom: -2,
               child: Container(
-                width: 24,
-                height: 24,
+                width: compact ? 20 : 24,
+                height: compact ? 20 : 24,
                 decoration: const BoxDecoration(
                   color: Color(0xFF16A34A),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.camera_alt_rounded,
-                    color: Colors.white, size: 13),
+                child: Icon(
+                  Icons.camera_alt_rounded,
+                  color: Colors.white,
+                  size: compact ? 11 : 13,
+                ),
               ),
             ),
         ],

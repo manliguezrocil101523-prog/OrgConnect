@@ -16,6 +16,9 @@ import 'admin_create_organization_screen.dart';
 ///   desktop -> full sidebar with brand and profile card
 enum _Screen { mobile, tablet, desktop }
 
+/// Date filter for the Home "Upcoming Events" list.
+enum _EventRange { all, today, week, month }
+
 class _NavItem {
   const _NavItem(this.icon, this.selectedIcon, this.label);
   final IconData icon;
@@ -59,6 +62,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   /// (Home: events | proposals).
   static const double _sideBySideMin = 860;
 
+  /// Index of the profile page inside the IndexedStack. It is no longer in the
+  /// navigation; it opens from the avatar (top right / sidebar card).
+  static const int _profileTab = 4;
+
   static const List<_NavItem> _items = [
     _NavItem(Icons.dashboard_outlined, Icons.dashboard_rounded, 'Home'),
     _NavItem(Icons.insights_outlined, Icons.insights_rounded, 'Analytics'),
@@ -66,7 +73,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         Icons.apartment_outlined, Icons.apartment_rounded, 'Organizations'),
     _NavItem(Icons.manage_accounts_outlined, Icons.manage_accounts_rounded,
         'Accounts'),
-    _NavItem(Icons.person_outline, Icons.person_rounded, 'Profile'),
   ];
 
   static const List<String> _months = [
@@ -85,7 +91,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   ];
 
   // ---------------------------------------------------------------------------
-  // State (unchanged)
+  // State
   // ---------------------------------------------------------------------------
   final db = Supabase.instance.client;
   int tab = 0;
@@ -109,6 +115,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Timer? _reloadTimer;
   bool _isLoadingNow = false;
   bool _reloadQueued = false;
+
+  // Upcoming-events filter state (UI only, no data logic).
+  final TextEditingController _eventSearchCtrl = TextEditingController();
+  String _eventQuery = '';
+  String _eventOrg = ''; // '' = all organizations
+  _EventRange _eventRange = _EventRange.all;
+
+  // One scroll controller per scrolling page (each feeds its own
+  // "back to top" button).
+  final ScrollController _homeScroll = ScrollController();
+  final ScrollController _analyticsScroll = ScrollController();
+  final ScrollController _orgsScroll = ScrollController();
 
   void _scheduleReload() {
     if (!mounted) return;
@@ -159,6 +177,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void dispose() {
     _reloadTimer?.cancel();
+    _eventSearchCtrl.dispose();
+    _homeScroll.dispose();
+    _analyticsScroll.dispose();
+    _orgsScroll.dispose();
     final channel = _realtimeChannel;
     if (channel != null) db.removeChannel(channel);
     super.dispose();
@@ -278,14 +300,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final profile = results[4] as Map<String, dynamic>?;
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
-      final futureEvents = eventRows
-          .where((x) {
-            final date = DateTime.tryParse(x['date']?.toString() ?? '');
-            return date == null ||
-                !DateTime(date.year, date.month, date.day).isBefore(today);
-          })
-          .take(6)
-          .toList();
+      // All upcoming events (no cap). Events without a parseable date are
+      // kept, exactly like before.
+      final futureEvents = eventRows.where((x) {
+        final date = DateTime.tryParse(x['date']?.toString() ?? '');
+        return date == null ||
+            !DateTime(date.year, date.month, date.day).isBefore(today);
+      }).toList();
 
       if (!mounted) return;
       setState(() {
@@ -405,7 +426,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 _analytics(s),
                 _organizations(s),
                 const AdminAccountsScreen(),
-                const AdminProfileScreen(),
+                const AdminProfileScreen(), // index 4 = _profileTab
               ],
             );
 
@@ -471,8 +492,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
       );
 
-  /// One navigation destination (icon pill + label). Used by the bottom bar
-  /// and the tablet rail. The label scales down instead of clipping.
+  /// One navigation destination (icon + label). Used by the bottom bar and
+  /// the tablet rail. Selection is shown only by color (icon + label), with
+  /// no background pill. The label scales down instead of clipping.
   Widget _navButton(int i) {
     final item = _items[i];
     final selected = tab == i;
@@ -488,16 +510,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
+              SizedBox(
                 width: 56,
                 height: 30,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? emeraldSoft : Colors.transparent,
-                  borderRadius: BorderRadius.circular(15),
+                child: Center(
+                  child: Icon(selected ? item.selectedIcon : item.icon,
+                      size: 22, color: selected ? green : muted),
                 ),
-                child: Icon(selected ? item.selectedIcon : item.icon,
-                    size: 22, color: selected ? green : muted),
               ),
               const SizedBox(height: _xs),
               FittedBox(
@@ -637,7 +656,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     side: const BorderSide(color: line),
                   ),
                   child: InkWell(
-                    onTap: () => setState(() => tab = 4),
+                    onTap: () => setState(() => tab = _profileTab),
                     child: Padding(
                       padding: const EdgeInsets.all(10),
                       child: Row(children: [
@@ -673,6 +692,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
       );
 
+  /// Sidebar destination. Selection is color only (icon + label), no
+  /// background or border.
   Widget _sidebarItem(int i) {
     final item = _items[i];
     final selected = tab == i;
@@ -682,13 +703,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         button: true,
         selected: selected,
         child: Material(
-          color: selected ? emeraldSoft : Colors.transparent,
+          color: Colors.transparent,
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            side: selected
-                ? const BorderSide(color: emeraldBorder)
-                : BorderSide.none,
           ),
           child: InkWell(
             onTap: () => setState(() => tab = i),
@@ -812,7 +830,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 message: 'Open profile',
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: () => setState(() => tab = 4),
+                  onTap: () => setState(() => tab = _profileTab),
                   child: _avatar(40),
                 ),
               ),
@@ -884,12 +902,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // ---------------------------------------------------------------------------
   // Page scaffolding
   // ---------------------------------------------------------------------------
+  /// [scrollController] drives the page's ListView and the floating
+  /// "back to top" button. [topButtonBottomOffset] lifts that button when
+  /// another floating element (the create-organization FAB) shares the corner.
   Widget _pageBackground({
     required _Screen s,
     required Future<void> Function() onRefresh,
     required Widget header,
     required List<Widget> children,
+    required ScrollController scrollController,
     double bottomPadding = 32,
+    double topButtonBottomOffset = 0,
   }) {
     final hPad = _hPad(s);
     return Container(
@@ -899,34 +922,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
         children: [
           header, // stays fixed at the top
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: onRefresh,
-              color: green,
-              backgroundColor: Colors.white,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics()),
-                padding: EdgeInsets.zero,
-                children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints:
-                          const BoxConstraints(maxWidth: _maxContentWidth),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                              hPad, _xl, hPad, bottomPadding),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: children,
+            child: Stack(
+              children: [
+                RefreshIndicator(
+                  onRefresh: onRefresh,
+                  color: green,
+                  backgroundColor: Colors.white,
+                  child: ListView(
+                    controller: scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics()),
+                    padding: EdgeInsets.zero,
+                    children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints:
+                              const BoxConstraints(maxWidth: _maxContentWidth),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                  hPad, _xl, hPad, bottomPadding),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: children,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Positioned(
+                  right: _lg,
+                  bottom: _lg + topButtonBottomOffset,
+                  child: _ScrollToTopButton(controller: scrollController),
+                ),
+              ],
             ),
           ),
         ],
@@ -1013,6 +1046,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _home(_Screen s) => _pageBackground(
         s: s,
         onRefresh: _pullRefresh,
+        scrollController: _homeScroll,
         header: _buildHeader(
           s: s,
           title: '${_greeting()}, ${_headerName(_userName, 'Admin')}',
@@ -1047,23 +1081,294 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ],
       );
 
-  Widget _eventsSection() => Column(
+  // ---- Upcoming events: filtering -------------------------------------------
+
+  /// Distinct, sorted organization names found in the upcoming events.
+  List<String> _eventOrgNames() {
+    final names = <String>{};
+    for (final e in homeEvents) {
+      final name = (e['org_name'] ?? '').toString().trim();
+      if (name.isNotEmpty) names.add(name);
+    }
+    final list = names.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  /// The selected organization, or '' if it no longer exists after a reload.
+  String _effectiveEventOrg() {
+    if (_eventOrg.isEmpty) return '';
+    return _eventOrgNames().contains(_eventOrg) ? _eventOrg : '';
+  }
+
+  bool get _hasEventFilters =>
+      _eventQuery.isNotEmpty ||
+      _effectiveEventOrg().isNotEmpty ||
+      _eventRange != _EventRange.all;
+
+  void _clearEventFilters() {
+    _eventSearchCtrl.clear();
+    setState(() {
+      _eventQuery = '';
+      _eventOrg = '';
+      _eventRange = _EventRange.all;
+    });
+  }
+
+  List<Map<String, dynamic>> _filteredEvents() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Week runs through the coming Sunday.
+    final weekEnd = today.add(Duration(days: 7 - today.weekday));
+    final org = _effectiveEventOrg();
+
+    return homeEvents.where((e) {
+      if (org.isNotEmpty &&
+          (e['org_name'] ?? '').toString().trim() != org) {
+        return false;
+      }
+      if (_eventQuery.isNotEmpty) {
+        final haystack = [
+          e['title'],
+          e['venue'],
+          e['location'],
+          e['org_name'],
+          e['description'],
+        ].map((v) => (v ?? '').toString()).join(' ').toLowerCase();
+        if (!haystack.contains(_eventQuery)) return false;
+      }
+      if (_eventRange != _EventRange.all) {
+        final date = DateTime.tryParse(e['date']?.toString() ?? '');
+        if (date == null) return false;
+        final day = DateTime(date.year, date.month, date.day);
+        switch (_eventRange) {
+          case _EventRange.today:
+            if (day != today) return false;
+            break;
+          case _EventRange.week:
+            if (day.isAfter(weekEnd)) return false;
+            break;
+          case _EventRange.month:
+            if (day.year != today.year || day.month != today.month) {
+              return false;
+            }
+            break;
+          case _EventRange.all:
+            break;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  String _rangeLabel(_EventRange r) {
+    switch (r) {
+      case _EventRange.all:
+        return 'All';
+      case _EventRange.today:
+        return 'Today';
+      case _EventRange.week:
+        return 'This week';
+      case _EventRange.month:
+        return 'This month';
+    }
+  }
+
+  Widget _eventSearchField() => TextField(
+        controller: _eventSearchCtrl,
+        onChanged: (v) => setState(() => _eventQuery = v.trim().toLowerCase()),
+        textInputAction: TextInputAction.search,
+        style: const TextStyle(fontSize: 14, color: dark),
+        decoration: InputDecoration(
+          hintText: 'Search title, venue or organization',
+          hintStyle: const TextStyle(fontSize: 13.5, color: muted),
+          prefixIcon:
+              const Icon(Icons.search_rounded, size: 20, color: muted),
+          suffixIcon: _eventQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  color: muted,
+                  onPressed: () {
+                    _eventSearchCtrl.clear();
+                    setState(() => _eventQuery = '');
+                  },
+                ),
+          filled: true,
+          fillColor: Colors.white,
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: line),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: line),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: green, width: 1.5),
+          ),
+        ),
+      );
+
+  Widget _eventOrgDropdown() {
+    final names = _eventOrgNames();
+    final value = _effectiveEventOrg();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: value.isEmpty ? line : green),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          menuMaxHeight: 320,
+          borderRadius: BorderRadius.circular(12),
+          dropdownColor: Colors.white,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: muted),
+          style: const TextStyle(fontSize: 14, color: dark),
+          items: [
+            const DropdownMenuItem<String>(
+              value: '',
+              child: Row(children: [
+                Icon(Icons.apartment_rounded, size: 18, color: muted),
+                SizedBox(width: 8),
+                Text('All organizations'),
+              ]),
+            ),
+            for (final name in names)
+              DropdownMenuItem<String>(
+                value: name,
+                child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (v) => setState(() => _eventOrg = v ?? ''),
+        ),
+      ),
+    );
+  }
+
+  Widget _eventRangeChips() => SizedBox(
+        height: 36,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final r in _EventRange.values)
+              Padding(
+                padding: const EdgeInsets.only(right: _sm),
+                child: ChoiceChip(
+                  label: Text(_rangeLabel(r)),
+                  selected: _eventRange == r,
+                  showCheckmark: false,
+                  onSelected: (_) => setState(() => _eventRange = r),
+                  backgroundColor: Colors.white,
+                  selectedColor: emeraldSoft,
+                  side: BorderSide(
+                      color: _eventRange == r ? emeraldBorder : line),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30)),
+                  labelStyle: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight:
+                        _eventRange == r ? FontWeight.w700 : FontWeight.w500,
+                    color: _eventRange == r ? emeraldDeep : muted,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+
+  Widget _eventFilters() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(
-            'Upcoming Events',
-            'Events already posted across organizations',
-            icon: Icons.event_rounded,
-          ),
-          const SizedBox(height: 14),
-          if (homeEvents.isEmpty)
-            _emptyCard(
-                'No upcoming events posted yet.', Icons.event_busy_rounded)
-          else
-            _grid(homeEvents.take(4).map(_eventCard).toList(),
-                minTileWidth: 420, gap: _md),
+          LayoutBuilder(builder: (context, box) {
+            if (box.maxWidth >= 520) {
+              return Row(children: [
+                Expanded(flex: 3, child: _eventSearchField()),
+                const SizedBox(width: _md),
+                Expanded(flex: 2, child: _eventOrgDropdown()),
+              ]);
+            }
+            return Column(children: [
+              _eventSearchField(),
+              const SizedBox(height: 10),
+              _eventOrgDropdown(),
+            ]);
+          }),
+          const SizedBox(height: 10),
+          _eventRangeChips(),
         ],
       );
+
+  Widget _eventsSection() {
+    final filtered = _filteredEvents();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Upcoming Events',
+          'Events already posted across organizations',
+          icon: Icons.event_rounded,
+          trailing: homeEvents.isEmpty ? null : _badge('${filtered.length}'),
+        ),
+        const SizedBox(height: 14),
+        if (homeEvents.isEmpty)
+          _emptyCard('No upcoming events posted yet.', Icons.event_busy_rounded)
+        else ...[
+          _eventFilters(),
+          const SizedBox(height: _md),
+          if (filtered.isEmpty) ...[
+            _emptyCard('No events match your filters.', Icons.search_off_rounded),
+            if (_hasEventFilters)
+              Padding(
+                padding: const EdgeInsets.only(top: _sm),
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: _clearEventFilters,
+                    style: TextButton.styleFrom(foregroundColor: green),
+                    icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
+                    label: const Text('Clear filters',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+          ] else ...[
+            if (_hasEventFilters)
+              Padding(
+                padding: const EdgeInsets.only(bottom: _sm),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(
+                        'Showing ${filtered.length} of ${homeEvents.length} events',
+                        style: const TextStyle(fontSize: 12, color: muted)),
+                  ),
+                  TextButton(
+                    onPressed: _clearEventFilters,
+                    style: TextButton.styleFrom(
+                      foregroundColor: green,
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Clear filters',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ]),
+              ),
+            _grid(filtered.map(_eventCard).toList(),
+                minTileWidth: 420, gap: _md),
+          ],
+        ],
+      ],
+    );
+  }
 
   Widget _proposalsSection() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1524,6 +1829,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return _pageBackground(
       s: s,
       onRefresh: _pullRefresh,
+      scrollController: _analyticsScroll,
       header: _buildHeader(
         s: s,
         title: 'Analytics',
@@ -1723,7 +2029,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _organizations(_Screen s) => _pageBackground(
         s: s,
         onRefresh: _pullRefresh,
+        scrollController: _orgsScroll,
         bottomPadding: 96, // room for the floating action button
+        topButtonBottomOffset: 64, // sit above the create-organization FAB
         header: _buildHeader(
           s: s,
           title: 'Organizations',
@@ -1999,6 +2307,96 @@ class _AdminDashboardState extends State<AdminDashboard> {
           orgName: org['name']?.toString() ?? 'Organization',
           initialTab: initialTab,
           focusProposalId: focusProposalId,
+        ),
+      ),
+    );
+  }
+}
+
+/// Green circular "back to top" button. Fades/scales in once the attached
+/// scrollable has moved past [_showAfter] pixels and animates smoothly back
+/// to the top when tapped.
+class _ScrollToTopButton extends StatefulWidget {
+  const _ScrollToTopButton({required this.controller});
+
+  final ScrollController controller;
+
+  @override
+  State<_ScrollToTopButton> createState() => _ScrollToTopButtonState();
+}
+
+class _ScrollToTopButtonState extends State<_ScrollToTopButton> {
+  static const double _showAfter = 320;
+  static const Color _green = Color(0xFF059669);
+
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScrollToTopButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onScroll);
+      widget.controller.addListener(_onScroll);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!widget.controller.hasClients) return;
+    final show = widget.controller.offset > _showAfter;
+    if (show != _visible && mounted) setState(() => _visible = show);
+  }
+
+  void _toTop() {
+    if (!widget.controller.hasClients) return;
+    widget.controller.animateTo(
+      0,
+      duration: const Duration(milliseconds: 550),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !_visible,
+      child: AnimatedOpacity(
+        opacity: _visible ? 1 : 0,
+        duration: const Duration(milliseconds: 200),
+        child: AnimatedScale(
+          scale: _visible ? 1 : .6,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: Tooltip(
+            message: 'Back to top',
+            child: Material(
+              color: _green,
+              elevation: 4,
+              shadowColor: Colors.black38,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _toTop,
+                child: const SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Icon(Icons.keyboard_arrow_up_rounded,
+                      color: Colors.white, size: 28),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

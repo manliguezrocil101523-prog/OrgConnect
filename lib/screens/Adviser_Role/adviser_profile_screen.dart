@@ -16,8 +16,7 @@ class AdviserProfileScreen extends StatefulWidget {
 
 class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
   static const _primary = Color(0xFF16A34A);
-
-  static const _bg = Color(0xFFE6F7EE);
+  static const _bg = Colors.white;
   static const _slate0F = Color(0xFF0F2D22);
   static const _slate94 = Color(0xFF64748B);
   static const _red = Color(0xFFDC2626);
@@ -52,16 +51,19 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
 
   Future<void> _load() async {
     final user = _db.auth.currentUser;
+
     if (user == null) {
       if (mounted) setState(() => _loading = false);
       return;
     }
+
     try {
       final profile = await _db
           .from('profiles')
           .select('name,email,contact,facebook,avatar_url')
           .eq('id', user.id)
           .maybeSingle();
+
       if (profile != null) {
         _name.text = '${profile['name'] ?? ''}';
         _email.text = '${profile['email'] ?? user.email ?? ''}';
@@ -87,7 +89,9 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
       type: FileType.image,
       withData: true,
     );
+
     final bytes = result?.files.single.bytes;
+
     if (bytes != null && mounted) {
       setState(() => _avatarBytes = bytes);
     }
@@ -95,45 +99,56 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
 
   Future<String?> _uploadAvatar() async {
     if (_avatarBytes == null) return null;
+
     final user = _db.auth.currentUser;
     if (user == null) return null;
 
     final path =
         'adviser_profiles/${user.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
     await _db.storage.from('avatar').uploadBinary(
-          path,
-          _avatarBytes!,
-          fileOptions: const FileOptions(
-            contentType: 'image/jpeg',
-            upsert: true,
-          ),
-        );
+      path,
+      _avatarBytes!,
+      fileOptions: const FileOptions(
+        contentType: 'image/jpeg',
+        upsert: true,
+      ),
+    );
+
     return _db.storage.from('avatar').getPublicUrl(path);
   }
 
   Future<void> _save() async {
     final user = _db.auth.currentUser;
-    if (user == null) return;
+    if (user == null || _saving) return;
+
     setState(() => _saving = true);
+
     try {
       final uploaded = await _uploadAvatar();
+
       final values = <String, dynamic>{
         'name': _name.text.trim(),
         'email': _email.text.trim(),
         'contact': _contact.text.trim(),
         'facebook': _facebook.text.trim(),
       };
+
       if (uploaded != null) {
         values['avatar_url'] = uploaded;
       }
+
       await _db.from('profiles').update(values).eq('id', user.id);
-      if (uploaded != null) _avatarUrl = uploaded;
+
       if (!mounted) return;
+
       setState(() {
+        if (uploaded != null) _avatarUrl = uploaded;
         _saving = false;
         _editing = false;
         _avatarBytes = null;
       });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Profile updated successfully.'),
@@ -143,6 +158,7 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not update profile: $e'),
@@ -154,139 +170,244 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
   }
 
   Future<void> _changePassword() async {
+    final currentPassword = TextEditingController();
     final password = TextEditingController();
     final confirm = TextEditingController();
+
+    bool obscureCurrent = true;
     bool obscurePassword = true;
     bool obscureConfirm = true;
     bool changing = false;
 
-    final changed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: const Row(
-            children: [
-              _IconBox(icon: Icons.lock_reset_rounded, color: _primary),
-              SizedBox(width: 10),
-              Text('Change Password'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: password,
-                obscureText: obscurePassword,
-                enabled: !changing,
-                decoration: InputDecoration(
-                  labelText: 'New password',
-                  hintText: 'At least 6 characters',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    onPressed: () => setDialogState(
-                      () => obscurePassword = !obscurePassword,
-                    ),
-                    icon: Icon(
-                      obscurePassword ? Icons.visibility_off : Icons.visibility,
-                    ),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: confirm,
-                obscureText: obscureConfirm,
-                enabled: !changing,
-                decoration: InputDecoration(
-                  labelText: 'Confirm password',
-                  prefixIcon: const Icon(Icons.verified_user_outlined),
-                  suffixIcon: IconButton(
-                    onPressed: () => setDialogState(
-                      () => obscureConfirm = !obscureConfirm,
-                    ),
-                    icon: Icon(
-                      obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                    ),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed:
-                  changing ? null : () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+    bool? changed;
+
+    try {
+      changed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
             ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: _primary),
-              onPressed: changing
-                  ? null
-                  : () async {
-                      final newPassword = password.text.trim();
-                      final confirmPassword = confirm.text.trim();
-                      if (newPassword.length < 6) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          const SnackBar(
-                            content:
-                                Text('Password must be at least 6 characters.'),
+            title: const Row(
+              children: [
+                _IconBox(
+                  icon: Icons.lock_reset_rounded,
+                  color: _primary,
+                ),
+                SizedBox(width: 10),
+                Flexible(child: Text('Change Password')),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: currentPassword,
+                      obscureText: obscureCurrent,
+                      enabled: !changing,
+                      autofocus: false,
+                      decoration: InputDecoration(
+                        labelText: 'Current password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          onPressed: changing
+                              ? null
+                              : () => setDialogState(
+                                    () => obscureCurrent = !obscureCurrent,
+                                  ),
+                          icon: Icon(
+                            obscureCurrent
+                                ? Icons.visibility_off
+                                : Icons.visibility,
                           ),
-                        );
-                        return;
-                      }
-                      if (newPassword != confirmPassword) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          const SnackBar(
-                            content: Text('Passwords do not match.'),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: password,
+                      obscureText: obscurePassword,
+                      enabled: !changing,
+                      decoration: InputDecoration(
+                        labelText: 'New password',
+                        hintText: 'At least 6 characters',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          onPressed: changing
+                              ? null
+                              : () => setDialogState(
+                                    () => obscurePassword = !obscurePassword,
+                                  ),
+                          icon: Icon(
+                            obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
                           ),
-                        );
-                        return;
-                      }
-                      setDialogState(() => changing = true);
-                      try {
-                        await _db.auth.updateUser(
-                          UserAttributes(password: newPassword),
-                        );
-                        if (dialogContext.mounted) {
-                          Navigator.pop(dialogContext, true);
-                        }
-                      } catch (e) {
-                        if (dialogContext.mounted) {
-                          setDialogState(() => changing = false);
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: confirm,
+                      obscureText: obscureConfirm,
+                      enabled: !changing,
+                      decoration: InputDecoration(
+                        labelText: 'Confirm password',
+                        prefixIcon: const Icon(Icons.verified_user_outlined),
+                        suffixIcon: IconButton(
+                          onPressed: changing
+                              ? null
+                              : () => setDialogState(
+                                    () => obscureConfirm = !obscureConfirm,
+                                  ),
+                          icon: Icon(
+                            obscureConfirm
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: changing
+                    ? null
+                    : () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: _primary,
+                ),
+                onPressed: changing
+                    ? null
+                    : () async {
+                        final oldPassword = currentPassword.text;
+                        final newPassword = password.text;
+                        final confirmPassword = confirm.text;
+
+                        void showDialogMessage(String message) {
+                          if (!dialogContext.mounted) return;
+
                           ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            SnackBar(
-                              content: Text('Could not change password: $e'),
-                            ),
+                            SnackBar(content: Text(message)),
                           );
                         }
-                      }
-                    },
-              child: changing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Update Password'),
-            ),
-          ],
-        ),
-      ),
-    );
 
-    password.dispose();
-    confirm.dispose();
+                        if (oldPassword.isEmpty) {
+                          showDialogMessage(
+                            'Please enter your current password.',
+                          );
+                          return;
+                        }
+
+                        if (newPassword.length < 6) {
+                          showDialogMessage(
+                            'Password must be at least 6 characters.',
+                          );
+                          return;
+                        }
+
+                        if (newPassword != confirmPassword) {
+                          showDialogMessage('Passwords do not match.');
+                          return;
+                        }
+
+                        if (newPassword == oldPassword) {
+                          showDialogMessage(
+                            'New password must be different from the current password.',
+                          );
+                          return;
+                        }
+
+                        setDialogState(() => changing = true);
+
+                        final email = _db.auth.currentUser?.email ??
+                            _email.text.trim();
+
+                        if (email.isEmpty) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => changing = false);
+                            showDialogMessage(
+                              'Unable to verify your account email.',
+                            );
+                          }
+                          return;
+                        }
+
+                        // Verify the current password before changing it.
+                        try {
+                          await _db.auth.signInWithPassword(
+                            email: email,
+                            password: oldPassword,
+                          );
+                        } catch (_) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => changing = false);
+                            showDialogMessage(
+                              'Current password is incorrect.',
+                            );
+                          }
+                          return;
+                        }
+
+                        if (!dialogContext.mounted) return;
+
+                        try {
+                          await _db.auth.updateUser(
+                            UserAttributes(password: newPassword),
+                          );
+
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, true);
+                          }
+                        } catch (e) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => changing = false);
+                            showDialogMessage(
+                              'Could not change password: $e',
+                            );
+                          }
+                        }
+                      },
+                child: changing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Update Password'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      currentPassword.dispose();
+      password.dispose();
+      confirm.dispose();
+    }
+
     if (changed == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -301,7 +422,9 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
         title: const Text('Log out?'),
         content: const Text(
           'You will need to sign in again to access the adviser dashboard.',
@@ -319,11 +442,14 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
         ],
       ),
     );
+
     if (shouldLogout != true || !mounted) return;
 
     try {
       await _db.auth.signOut();
+
       if (!mounted) return;
+
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const UnifiedLoginPage()),
         (_) => false,
@@ -361,6 +487,11 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
     final displayName =
         _name.text.trim().isEmpty ? 'Adviser' : _name.text.trim();
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth > 1000;
+    final horizontalPadding = screenWidth < 600 ? 16.0 : 24.0;
+    final contentMaxWidth = isDesktop ? 1000.0 : 720.0;
+
     return Scaffold(
       backgroundColor: _bg,
       body: Stack(
@@ -373,6 +504,7 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
                 status: 'ADVISER PROFILE',
                 avatarImage: avatar,
                 avatarEditing: _editing,
+                squareBottom: true,
                 onAvatarTap: () {
                   if (_editing) {
                     _pickAvatar();
@@ -381,10 +513,12 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
                   }
                 },
                 trailing: GestureDetector(
-                  onTap: () => setState(() {
-                    _editing = !_editing;
-                    if (!_editing) _avatarBytes = null;
-                  }),
+                  onTap: _saving
+                      ? null
+                      : () => setState(() {
+                            _editing = !_editing;
+                            if (!_editing) _avatarBytes = null;
+                          }),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -401,7 +535,9 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _editing ? Icons.close_rounded : Icons.edit_rounded,
+                          _editing
+                              ? Icons.close_rounded
+                              : Icons.edit_rounded,
                           color: Colors.white,
                           size: 15,
                         ),
@@ -424,195 +560,265 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
                   thumbVisibility: true,
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 48),
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      22,
+                      horizontalPadding,
+                      48,
+                    ),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 540),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _sectionLabel('Profile Details'),
-                            const SizedBox(height: 12),
-                            if (_editing) ...[
-                              _editCard(
-                                'Full Name',
-                                _name,
-                                Icons.person_rounded,
-                                _primary,
-                              ),
-                              _editCard(
-                                'Email',
-                                _email,
-                                Icons.email_rounded,
-                                const Color(0xFF0D9488),
-                              ),
-                              _editCard(
-                                'Contact',
-                                _contact,
-                                Icons.phone_rounded,
-                                _primary,
-                              ),
-                              _editCard(
-                                'Facebook / Social link',
-                                _facebook,
-                                Icons.facebook_rounded,
-                                const Color(0xFF2563EB),
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton.icon(
-                                onPressed: _saving ? null : _save,
-                                icon: _saving
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(Icons.check_rounded),
-                                label: Text(
-                                  _saving ? 'Saving...' : 'Save Profile',
-                                ),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _primary,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(double.infinity, 52),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                              ),
-                            ] else ...[
-                              _infoCard(
-                                Icons.person_rounded,
-                                'FULL NAME',
-                                _name.text,
-                                _primary,
-                              ),
-                              _infoCard(
-                                Icons.email_rounded,
-                                'EMAIL',
-                                _email.text,
-                                const Color(0xFF0D9488),
-                              ),
-                              _infoCard(
-                                Icons.phone_rounded,
-                                'CONTACT',
-                                _contact.text,
-                                _primary,
-                              ),
-                              _infoCard(
-                                Icons.facebook_rounded,
-                                'FACEBOOK',
-                                _facebook.text,
-                                const Color(0xFF2563EB),
-                              ),
-                            ],
-                            const SizedBox(height: 20),
-                            _sectionLabel('Account & Security'),
-                            const SizedBox(height: 12),
-                            Container(
-                              decoration: _cardDecoration(),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Column(
-                                  children: [
-                                    ListTile(
-                                      onTap: _changePassword,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 8,
+                        constraints: BoxConstraints(
+                          maxWidth: contentMaxWidth,
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _sectionLabel('Profile Details'),
+                                const SizedBox(height: 12),
+                                if (_editing) ...[
+                                  if (isDesktop) ...[
+                                    _twoCards(
+                                      _editCard(
+                                        'Full Name',
+                                        _name,
+                                        Icons.person_rounded,
+                                        _primary,
                                       ),
-                                      leading: const _IconBox(
-                                        icon: Icons.lock_reset_rounded,
-                                        color: _primary,
-                                      ),
-                                      title: const Text(
-                                        'Change Password',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: _slate0F,
-                                        ),
-                                      ),
-                                      subtitle: const Text(
-                                        'Update your account password securely',
-                                        style: TextStyle(
-                                          fontSize: 11.5,
-                                          color: _slate94,
-                                        ),
-                                      ),
-                                      trailing: const Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: _primary,
+                                      _editCard(
+                                        'Email',
+                                        _email,
+                                        Icons.email_rounded,
+                                        const Color(0xFF0D9488),
                                       ),
                                     ),
-                                    Divider(
-                                      height: 1,
-                                      indent: 76,
-                                      endIndent: 20,
-                                      color: Colors.grey.shade100,
+                                    _twoCards(
+                                      _editCard(
+                                        'Contact',
+                                        _contact,
+                                        Icons.phone_rounded,
+                                        _primary,
+                                      ),
+                                      _editCard(
+                                        'Facebook / Social link',
+                                        _facebook,
+                                        Icons.facebook_rounded,
+                                        const Color(0xFF2563EB),
+                                      ),
                                     ),
-                                    ListTile(
-                                      onTap: _logout,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 8,
-                                      ),
-                                      leading: const _IconBox(
-                                        icon: Icons.logout_rounded,
-                                        color: _red,
-                                      ),
-                                      title: const Text(
-                                        'Log Out',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: _red,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        _email.text.trim().isNotEmpty
-                                            ? 'Logged in as: ${_email.text.trim()}'
-                                            : 'Tap to sign out',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          color: _slate94,
-                                        ),
-                                      ),
-                                      trailing: Container(
-                                        width: 30,
-                                        height: 30,
-                                        decoration: BoxDecoration(
-                                          color: _red.withValues(alpha: .08),
-                                          borderRadius:
-                                              BorderRadius.circular(9),
-                                        ),
-                                        child: const Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: _red,
-                                          size: 18,
-                                        ),
-                                      ),
+                                  ] else ...[
+                                    _editCard(
+                                      'Full Name',
+                                      _name,
+                                      Icons.person_rounded,
+                                      _primary,
+                                    ),
+                                    _editCard(
+                                      'Email',
+                                      _email,
+                                      Icons.email_rounded,
+                                      const Color(0xFF0D9488),
+                                    ),
+                                    _editCard(
+                                      'Contact',
+                                      _contact,
+                                      Icons.phone_rounded,
+                                      _primary,
+                                    ),
+                                    _editCard(
+                                      'Facebook / Social link',
+                                      _facebook,
+                                      Icons.facebook_rounded,
+                                      const Color(0xFF2563EB),
                                     ),
                                   ],
+                                  const SizedBox(height: 8),
+                                  FilledButton.icon(
+                                    onPressed: _saving ? null : _save,
+                                    icon: _saving
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Icon(Icons.check_rounded),
+                                    label: Text(
+                                      _saving
+                                          ? 'Saving...'
+                                          : 'Save Profile',
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: _primary,
+                                      foregroundColor: Colors.white,
+                                      minimumSize:
+                                          const Size(double.infinity, 52),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  if (isDesktop) ...[
+                                    _twoCards(
+                                      _infoCard(
+                                        Icons.person_rounded,
+                                        'FULL NAME',
+                                        _name.text,
+                                        _primary,
+                                      ),
+                                      _infoCard(
+                                        Icons.email_rounded,
+                                        'EMAIL',
+                                        _email.text,
+                                        const Color(0xFF0D9488),
+                                      ),
+                                    ),
+                                    _twoCards(
+                                      _infoCard(
+                                        Icons.phone_rounded,
+                                        'CONTACT',
+                                        _contact.text,
+                                        _primary,
+                                      ),
+                                      _infoCard(
+                                        Icons.facebook_rounded,
+                                        'FACEBOOK',
+                                        _facebook.text,
+                                        const Color(0xFF2563EB),
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    _infoCard(
+                                      Icons.person_rounded,
+                                      'FULL NAME',
+                                      _name.text,
+                                      _primary,
+                                    ),
+                                    _infoCard(
+                                      Icons.email_rounded,
+                                      'EMAIL',
+                                      _email.text,
+                                      const Color(0xFF0D9488),
+                                    ),
+                                    _infoCard(
+                                      Icons.phone_rounded,
+                                      'CONTACT',
+                                      _contact.text,
+                                      _primary,
+                                    ),
+                                    _infoCard(
+                                      Icons.facebook_rounded,
+                                      'FACEBOOK',
+                                      _facebook.text,
+                                      const Color(0xFF2563EB),
+                                    ),
+                                  ],
+                                ],
+                                const SizedBox(height: 20),
+                                _sectionLabel('Account & Security'),
+                                const SizedBox(height: 12),
+                                Container(
+                                  decoration: _cardDecoration(),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Column(
+                                      children: [
+                                        ListTile(
+                                          onTap: _changePassword,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 18,
+                                            vertical: 8,
+                                          ),
+                                          leading: const _IconBox(
+                                            icon: Icons.lock_reset_rounded,
+                                            color: _primary,
+                                          ),
+                                          title: const Text(
+                                            'Change Password',
+                                            style: TextStyle(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: _slate0F,
+                                            ),
+                                          ),
+                                          subtitle: const Text(
+                                            'Update your account password securely',
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              color: _slate94,
+                                            ),
+                                          ),
+                                          trailing: const Icon(
+                                            Icons.chevron_right_rounded,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        Divider(
+                                          height: 1,
+                                          indent: 76,
+                                          endIndent: 20,
+                                          color: Colors.grey.shade200,
+                                        ),
+                                        ListTile(
+                                          onTap: _logout,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 18,
+                                            vertical: 8,
+                                          ),
+                                          leading: const _IconBox(
+                                            icon: Icons.logout_rounded,
+                                            color: _red,
+                                          ),
+                                          title: const Text(
+                                            'Log Out',
+                                            style: TextStyle(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: _red,
+                                            ),
+                                          ),
+                                          subtitle: Text(
+                                            _email.text.trim().isNotEmpty
+                                                ? 'Logged in as: ${_email.text.trim()}'
+                                                : 'Tap to sign out',
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 11.5,
+                                              color: _slate94,
+                                            ),
+                                          ),
+                                          trailing: const Icon(
+                                            Icons.chevron_right_rounded,
+                                            color: Colors.black87,
+                                            size: 22,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            const Center(
-                              child: Text(
-                                'OrgConnect Adviser • Profile',
-                                style: TextStyle(
-                                  color: Color(0xFF94A3A8),
-                                  fontSize: 11,
+                                const SizedBox(height: 16),
+                                const Center(
+                                  child: Text(
+                                    'OrgConnect Adviser • Profile',
+                                    style: TextStyle(
+                                      color: Color(0xFF94A3A8),
+                                      fontSize: 11,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          ],
+                              ],
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -640,7 +846,7 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
                               shape: BoxShape.circle,
                             ),
                             child: CircleAvatar(
-                              backgroundColor: Color(0xFFE8F5EC),
+                              backgroundColor: const Color(0xFFE8F5EC),
                               backgroundImage: avatar,
                               child: avatar == null
                                   ? const Icon(
@@ -675,6 +881,17 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
     );
   }
 
+  Widget _twoCards(Widget first, Widget second) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: first),
+        const SizedBox(width: 14),
+        Expanded(child: second),
+      ],
+    );
+  }
+
   Widget _sectionLabel(String text) => Row(
         children: [
           Container(
@@ -686,40 +903,37 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            text.toUpperCase(),
-            style: const TextStyle(
-              color: Color(0xFF087F5B),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
+          Flexible(
+            child: Text(
+              text.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF087F5B),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
             ),
           ),
         ],
       );
 
-  Widget _infoCard(IconData icon, String label, String value, Color color) {
+  Widget _infoCard(
+    IconData icon,
+    String label,
+    String value,
+    Color color,
+  ) {
     final empty = value.trim().isEmpty;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(15),
       decoration: _cardDecoration(),
       child: Row(
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  color.withValues(alpha: .14),
-                  color.withValues(alpha: .06),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: color, size: 21),
-          ),
+          Icon(icon, color: color, size: 23),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -727,6 +941,8 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
               children: [
                 Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
@@ -750,15 +966,6 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Icon(
-            empty
-                ? Icons.add_circle_outline_rounded
-                : Icons.check_circle_rounded,
-            color:
-                empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
-            size: 18,
-          ),
         ],
       ),
     );
@@ -769,42 +976,49 @@ class _AdviserProfileScreenState extends State<AdviserProfileScreen> {
     TextEditingController controller,
     IconData icon,
     Color color,
-  ) =>
-      Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: _cardDecoration(),
-        child: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            labelText: label,
-            prefixIcon: Icon(icon, color: color),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: BorderSide.none,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: _cardDecoration(),
+      child: TextField(
+        controller: controller,
+        maxLines: 1,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: color),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide(
+              color: color.withValues(alpha: .10),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: BorderSide(color: color.withValues(alpha: .10)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: const BorderSide(color: _primary, width: 1.5),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(
+              color: _primary,
+              width: 1.5,
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 
   BoxDecoration _cardDecoration() => BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: _primary.withValues(alpha: .055),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: Colors.black.withValues(alpha: .035),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
         ],
       );
@@ -814,16 +1028,13 @@ class _IconBox extends StatelessWidget {
   final IconData icon;
   final Color color;
 
-  const _IconBox({required this.icon, required this.color});
+  const _IconBox({
+    required this.icon,
+    required this.color,
+  });
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: .10),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(icon, color: color, size: 19),
-      );
+  Widget build(BuildContext context) {
+    return Icon(icon, color: color, size: 23);
+  }
 }
