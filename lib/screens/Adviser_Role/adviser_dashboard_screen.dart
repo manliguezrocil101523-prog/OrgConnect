@@ -28,7 +28,7 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
   static const green = Color(0xFF0D6343);
   static const dark = Color(0xFF163B2E);
   static const muted = Color(0xFF60776D);
-  static const bg = Color(0xFFF3F7F4);
+  static const bg = Colors.white;
   static const card = Color(0xFFFFFFFF);
   static const mint = Color(0xFFEAF4EE);
   static const line = Color(0xFFD8E7DD);
@@ -956,13 +956,9 @@ class _AdviserDashboardState extends State<AdviserDashboard> {
       SafeArea(
         top: false,
         child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFF0F6F2), Color(0xFFF6F9F7), Color(0xFFFFFFFF)],
-            ),
-          ),
+      decoration: const BoxDecoration(
+  color: Colors.white,
+),
           child: Column(
             children: [
               AppHeader(

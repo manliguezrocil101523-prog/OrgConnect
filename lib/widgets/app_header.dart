@@ -14,6 +14,8 @@ class AppHeader extends StatelessWidget {
     this.onAvatarTap,
     this.avatarEditing = false,
     this.onBack,
+    // Retained so existing screens that pass this argument continue to compile.
+    // The header now always has square corners at the bottom.
     this.squareBottom = false,
   });
 
@@ -29,13 +31,15 @@ class AppHeader extends StatelessWidget {
   final bool avatarEditing;
   final VoidCallback? onBack;
 
-  /// When true, the bottom corners are square.
-  /// The default preserves the existing rounded header for other screens.
+  /// Retained for compatibility with existing call sites.
+  /// Bottom corners are now square for every AppHeader instance, regardless
+  /// of this value.
   final bool squareBottom;
 
   static const double contentHeight = 140;
   static const double leadingSize = 64;
 
+  // Original brand colors are preserved.
   static const LinearGradient brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -60,14 +64,10 @@ class AppHeader extends StatelessWidget {
           width: double.infinity,
           height: contentHeight + topInset,
           clipBehavior: Clip.hardEdge,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: brandGradient,
-            borderRadius: squareBottom
-                ? BorderRadius.zero
-                : const BorderRadius.only(
-                    bottomLeft: Radius.circular(30),
-                    bottomRight: Radius.circular(30),
-                  ),
+            // Always square: no rounding along the bottom edge.
+            borderRadius: BorderRadius.zero,
           ),
           child: Stack(
             clipBehavior: Clip.hardEdge,

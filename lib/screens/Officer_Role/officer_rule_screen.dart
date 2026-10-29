@@ -929,7 +929,6 @@ class _OfficerHeader extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         gradient: AppHeader.brandGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Stack(
         children: [
@@ -1764,50 +1763,58 @@ class _HomeTabState extends State<_HomeTab> {
 
     return HomeLayout.capText(
       context,
-      ScrollConfiguration(
-        behavior: const _OfficerScrollBehavior(autoScrollbar: false),
-        child: Scrollbar(
-          controller: _scroll,
-          thumbVisibility: layout.isDesktop,
-          child: RefreshIndicator(
-            color: _OfficerColors.primary,
-            backgroundColor: _OfficerColors.surface,
-            onRefresh: widget.onRefresh,
-            child: ListView(
-              controller: _scroll,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              children: [
-                _OfficerHeader(
-                  title: '${_greetingFor(now)}, $displayName',
-                  subtitle: subtitle,
-                  status: '${_cleanOrgName(widget.orgName)} • $cleanPosition',
-                  leading: _HeaderAvatar(avatarUrl: widget.avatarUrl),
-                  trailing: _HeaderRefreshButton(
-                    busy: widget.refreshing || widget.loading,
-                    onPressed: _retry,
-                  ),
-                ),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: HomeBreakpoints.maxContentWidth,
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        layout.homeHPad,
-                        layout.sectionGap,
-                        layout.homeHPad,
-                        40,
-                      ),
-                      child: body,
-                    ),
-                  ),
-                ),
-              ],
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Keep the branded header fixed while only the dashboard content scrolls.
+          _OfficerHeader(
+            title: '${_greetingFor(now)}, $displayName',
+            subtitle: subtitle,
+            status: '${_cleanOrgName(widget.orgName)} • $cleanPosition',
+            leading: _HeaderAvatar(avatarUrl: widget.avatarUrl),
+            trailing: _HeaderRefreshButton(
+              busy: widget.refreshing || widget.loading,
+              onPressed: _retry,
             ),
           ),
-        ),
+          Expanded(
+            child: ScrollConfiguration(
+              behavior: const _OfficerScrollBehavior(autoScrollbar: false),
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: layout.isDesktop,
+                child: RefreshIndicator(
+                  color: _OfficerColors.primary,
+                  backgroundColor: _OfficerColors.surface,
+                  onRefresh: widget.onRefresh,
+                  child: ListView(
+                    controller: _scroll,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.zero,
+                    children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: HomeBreakpoints.maxContentWidth,
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              layout.homeHPad,
+                              layout.sectionGap,
+                              layout.homeHPad,
+                              40,
+                            ),
+                            child: body,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       maxScale: 1.3,
     );
@@ -3230,44 +3237,52 @@ class _OfficerOrganizationsTabState extends State<_OfficerOrganizationsTab> {
 
     return HomeLayout.capText(
       context,
-      ScrollConfiguration(
-        behavior: const _OfficerScrollBehavior(autoScrollbar: false),
-        child: Scrollbar(
-          controller: _scroll,
-          thumbVisibility: layout.isDesktop,
-          child: ListView(
-            controller: _scroll,
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            children: [
-              _OfficerHeader(
-                title: 'Organization',
-                subtitle: _cleanOrgName(widget.orgName),
-                status: 'OFFICER ORGANIZATION HUB',
-                leading: AnimatedBuilder(
-                  animation: AppState.instance,
-                  builder: (context, _) => _HeaderLogo(asset: _logo()),
-                ),
-              ),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: HomeBreakpoints.maxContentWidth,
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      layout.homeHPad,
-                      layout.sectionGap,
-                      layout.homeHPad,
-                      40,
-                    ),
-                    child: body,
-                  ),
-                ),
-              ),
-            ],
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Keep the branded header fixed while organization content scrolls.
+          _OfficerHeader(
+            title: 'Organization',
+            subtitle: _cleanOrgName(widget.orgName),
+            status: 'OFFICER ORGANIZATION HUB',
+            leading: AnimatedBuilder(
+              animation: AppState.instance,
+              builder: (context, _) => _HeaderLogo(asset: _logo()),
+            ),
           ),
-        ),
+          Expanded(
+            child: ScrollConfiguration(
+              behavior: const _OfficerScrollBehavior(autoScrollbar: false),
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: layout.isDesktop,
+                child: ListView(
+                  controller: _scroll,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: HomeBreakpoints.maxContentWidth,
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            layout.homeHPad,
+                            layout.sectionGap,
+                            layout.homeHPad,
+                            40,
+                          ),
+                          child: body,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       maxScale: 1.3,
     );
@@ -3765,7 +3780,6 @@ class _OfficerJoinedHeader extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         gradient: AppHeader.brandGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Stack(
         children: [

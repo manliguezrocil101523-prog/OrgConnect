@@ -717,23 +717,33 @@ class _OfficerEventsScreenState extends State<OfficerEventsScreen> {
     return f.status == 'published' ? _Filter.published : _Filter.review;
   }
 
+  // NOTE (overflow fix): this used to wrap the Row in IntrinsicHeight and use
+  // CrossAxisAlignment.stretch so the two cards in a row always matched
+  // height. That combination is unsafe here because each card's expandable
+  // section uses AnimatedSize: IntrinsicHeight has to query every child's
+  // intrinsic height to size the row, but AnimatedSize can only report its
+  // size for the current animation frame, not its settled target. Right as a
+  // card is tapped open/closed, that mismatch produced a one-frame
+  // "BOTTOM OVERFLOWED" error before snapping back. Removing IntrinsicHeight
+  // and switching to CrossAxisAlignment.start lets each card size itself
+  // independently (no forced equal-height stretch), which removes the
+  // conflict entirely. Visually, two cards in the same row may now have
+  // slightly different heights instead of always matching exactly.
   Widget _grid(List<Widget> items, int cols) {
     return Column(
       children: [
         for (var i = 0; i < items.length; i += cols)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var j = i; j < i + cols; j++) ...[
-                    if (j > i) const SizedBox(width: 12),
-                    Expanded(
-                        child: j < items.length ? items[j] : const SizedBox()),
-                  ],
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var j = i; j < i + cols; j++) ...[
+                  if (j > i) const SizedBox(width: 12),
+                  Expanded(
+                      child: j < items.length ? items[j] : const SizedBox()),
                 ],
-              ),
+              ],
             ),
           ),
       ],

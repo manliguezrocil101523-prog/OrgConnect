@@ -25,7 +25,7 @@ class OfficerApplicationsScreen extends StatelessWidget {
 
   static const _primary = Color(0xFF16A34A);
   static const _secondary = Color(0xFF0F766E);
-  static const _background = Color(0xFFF0FDF4);
+  static const _background = Colors.white;
   static const _success = Color(0xFF22C55E);
 
   // ── Status config ─────────────────────────────────────────────────────

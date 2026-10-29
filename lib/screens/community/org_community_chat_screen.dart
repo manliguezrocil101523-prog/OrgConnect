@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -26,12 +27,21 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
   List<Map<String, dynamic>> rows = [];
   bool loading = true, sending = false;
   RealtimeChannel? _channel;
+
+  // Green is now used only as a small accent (send button, focus ring, loader).
   static const green = Color(0xFF16A34A);
   static const bright = Color(0xFF22C55E);
-  static const bg = Color(0xFFF0FDF4);
-  static const dark = Color(0xFF12352A);
-  static const muted = Color(0xFF64748B);
+  static const bg = Color(0xFFFFFFFF);
+  static const dark = Color(0xFF111827);
+  static const muted = Color(0xFF6B7280);
+  static const border = Color(0xFFE5E7EB);
+  static const fieldBg = Color(0xFFF3F4F6);
+  static const bubbleOther = Color(0xFFF3F4F6);
+  static const bubbleMine = Color(0xFF1F2937);
   static const imageMarker = '[[ORGCONNECT_IMAGE]]';
+
+  // Max width of the content column on tablets / desktop / web.
+  static const double _contentMaxWidth = 900;
 
   // Legacy video-call messages were created by an older version of OrgConnect.
   // Video calling has been removed from the app, so these old database rows
@@ -283,17 +293,26 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     final edited = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit message'),
-        content: TextField(
-            controller: editCtrl,
-            autofocus: true,
-            maxLines: 5,
-            textCapitalization: TextCapitalization.sentences),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Edit message',
+            style: TextStyle(
+                fontSize: 17, fontWeight: FontWeight.w700, color: dark)),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+              controller: editCtrl,
+              autofocus: true,
+              maxLines: 5,
+              textCapitalization: TextCapitalization.sentences),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel')),
+              child: const Text('Cancel', style: TextStyle(color: muted))),
           FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: bubbleMine),
               onPressed: () =>
                   Navigator.pop(dialogContext, editCtrl.text.trim()),
               child: const Text('Save')),
@@ -333,14 +352,22 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete message?'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete message?',
+            style: TextStyle(
+                fontSize: 17, fontWeight: FontWeight.w700, color: dark)),
         content: const Text(
-            'This message will be removed for everyone in the community chat.'),
+            'This message will be removed for everyone in the community chat.',
+            style: TextStyle(color: muted, height: 1.4)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
+              child: const Text('Cancel', style: TextStyle(color: muted))),
           FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade600),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Delete')),
         ],
@@ -376,18 +403,23 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 560),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
-              leading: const Icon(Icons.edit_rounded),
+              leading: const Icon(Icons.edit_rounded, color: dark),
               title: const Text('Edit message'),
               onTap: () {
                 Navigator.pop(context);
                 _editMessage(row);
               }),
           ListTile(
-              leading: const Icon(Icons.delete_outline_rounded),
-              title: const Text('Delete message'),
+              leading: Icon(Icons.delete_outline_rounded,
+                  color: Colors.red.shade600),
+              title: Text('Delete message',
+                  style: TextStyle(color: Colors.red.shade600)),
               onTap: () {
                 Navigator.pop(context);
                 _deleteMessage(row);
@@ -411,7 +443,7 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message),
-        backgroundColor: error ? Colors.red.shade700 : green,
+        backgroundColor: error ? Colors.red.shade700 : bubbleMine,
         behavior: SnackBarBehavior.floating));
   }
 
@@ -422,6 +454,39 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     scroll.dispose();
     super.dispose();
   }
+
+  // ---------- Formatting helpers (display only) ----------
+
+  DateTime? _dateOf(Map<String, dynamic>? r) {
+    if (r == null) return null;
+    return DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
+  }
+
+  String _timeLabel(DateTime? d) {
+    if (d == null) return '';
+    final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    final m = d.minute.toString().padLeft(2, '0');
+    return '$h:$m ${d.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  String _dayLabel(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(d.year, d.month, d.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  // ---------- UI ----------
 
   @override
   Widget build(BuildContext context) {
@@ -439,17 +504,32 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
                 : null,
           ),
           Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator(color: green))
-                : rows.isEmpty
-                    ? _empty()
-                    : ListView.builder(
-                        controller: scroll,
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-                        itemCount: rows.length,
-                        itemBuilder: (_, i) => _message(rows[i]),
-                      ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+                child: loading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: green))
+                    : rows.isEmpty
+                        ? _empty()
+                        : LayoutBuilder(builder: (context, c) {
+                            final maxBubble =
+                                math.min(c.maxWidth * 0.78, 520.0);
+                            return ListView.builder(
+                              controller: scroll,
+                              physics: const BouncingScrollPhysics(),
+                              padding: EdgeInsets.fromLTRB(
+                                  c.maxWidth < 380 ? 10 : 16,
+                                  12,
+                                  c.maxWidth < 380 ? 10 : 16,
+                                  16),
+                              itemCount: rows.length,
+                              itemBuilder: (_, i) => _message(rows[i],
+                                  i > 0 ? rows[i - 1] : null, maxBubble),
+                            );
+                          }),
+              ),
+            ),
           ),
           _composer(),
         ],
@@ -457,65 +537,64 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     );
   }
 
-  Widget _orb(double size, Color color) => Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color));
+  Widget _empty() => Center(
+      child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                    color: fieldBg, shape: BoxShape.circle),
+                child: const Icon(Icons.forum_outlined, color: green, size: 32)),
+            const SizedBox(height: 16),
+            const Text('No messages yet',
+                style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w700, color: dark)),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Text(
+                  'Start a conversation with officers, advisers, and organization members.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: muted, height: 1.45, fontSize: 13.5)),
+            ),
+          ])));
 
-  Widget _chatLogo() => Container(
-        width: 72,
-        height: 72,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: .16),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: .30), width: 2)),
-        child: Container(
-          decoration: const BoxDecoration(
-              shape: BoxShape.circle, color: Color(0xFFE4F7EF)),
-          child: const Icon(Icons.forum_rounded, color: green, size: 34),
+  Widget _dateChip(String label) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+                color: fieldBg, borderRadius: BorderRadius.circular(20)),
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: muted)),
+          ),
         ),
       );
 
-  Widget _empty() => Center(
-      child: Container(
-          margin: const EdgeInsets.all(24),
-          padding: const EdgeInsets.all(27),
-          decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: green.withValues(alpha: .10)),
-              boxShadow: [
-                BoxShadow(
-                    color: green.withValues(alpha: .06),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8))
-              ]),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [green, bright]),
-                    shape: BoxShape.circle),
-                child: const Icon(Icons.forum_rounded,
-                    color: Colors.white, size: 34)),
-            const SizedBox(height: 14),
-            const Text('Your community space',
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w900, color: dark)),
-            const SizedBox(height: 6),
-            const Text(
-                'Start a conversation with officers, advisers, and organization members.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: muted, height: 1.4, fontSize: 12.5))
-          ])));
+  Widget _avatar(String name) {
+    final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+          color: const Color(0xFFE5E7EB),
+          shape: BoxShape.circle,
+          border: Border.all(color: border)),
+      child: Text(initial,
+          style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w700, color: dark)),
+    );
+  }
 
-  Widget _message(Map<String, dynamic> r) {
+  Widget _message(
+      Map<String, dynamic> r, Map<String, dynamic>? prev, double maxBubble) {
     // Defensive guard: legacy video-call rows are never rendered, even if a
     // stale realtime payload or cached list slips through.
     if (_isLegacyVideoCallMessage(r)) return const SizedBox.shrink();
@@ -525,86 +604,108 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
     final raw = r['message']?.toString() ?? '';
     final isImage = raw.startsWith(imageMarker);
     final imageUrl = isImage ? raw.substring(imageMarker.length).trim() : '';
-    return GestureDetector(
-      onLongPress: me ? () => _messageMenu(r) : null,
-      onSecondaryTap: me ? () => _messageMenu(r) : null,
-      child: Align(
-        alignment: me ? Alignment.centerRight : Alignment.centerLeft,
-        child: Stack(
-          clipBehavior: Clip.none,
+    final date = _dateOf(r);
+    final prevDate = _dateOf(prev);
+    final showDate =
+        date != null && (prevDate == null || !_sameDay(date, prevDate));
+    final showMenuButton = me && MediaQuery.sizeOf(context).width >= 700;
+    final imgW = math.max(120.0, math.min(maxBubble - 28, 320.0));
+    final imgH = imgW * 0.68;
+
+    final textColor = me ? Colors.white : dark;
+    final subColor = me ? Colors.white70 : muted;
+
+    final bubble = Container(
+      constraints: BoxConstraints(maxWidth: maxBubble),
+      padding: const EdgeInsets.fromLTRB(13, 9, 13, 8),
+      decoration: BoxDecoration(
+        color: me ? bubbleMine : bubbleOther,
+        borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(me ? 16 : 4),
+            bottomRight: Radius.circular(me ? 4 : 16)),
+      ),
+      child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              constraints: const BoxConstraints(maxWidth: 350),
-              margin: const EdgeInsets.only(bottom: 11),
-              padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
-              decoration: BoxDecoration(
-                gradient: me
-                    ? const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [green, bright])
-                    : const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFFF8FFFB), Color(0xFFDDF4E8)]),
-                borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(18),
-                    topRight: const Radius.circular(18),
-                    bottomLeft: Radius.circular(me ? 18 : 5),
-                    bottomRight: Radius.circular(me ? 5 : 18)),
-                border:
-                    me ? null : Border.all(color: green.withValues(alpha: .07)),
-                boxShadow: [
-                  BoxShadow(
-                      color: me
-                          ? green.withValues(alpha: .15)
-                          : Colors.black.withValues(alpha: .035),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5)),
-                ],
-              ),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('$name • $role',
-                        style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w900,
-                            color: me ? Colors.white70 : muted)),
-                    const SizedBox(height: 7),
-                    if (isImage)
-                      ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: Image.network(imageUrl,
-                              width: 300,
-                              height: 190,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                  width: 300,
-                                  height: 190,
-                                  color: bg,
-                                  child: const Icon(Icons.broken_image_rounded,
-                                      color: green, size: 34))))
-                    else
-                      Text(raw,
-                          style: TextStyle(
-                              color: me ? Colors.white : dark,
-                              height: 1.4,
-                              fontSize: 13)),
-                  ]),
+            Wrap(
+              spacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(me ? 'You' : name,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: textColor)),
+                Text(role,
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: subColor)),
+              ],
             ),
-            if (me && MediaQuery.sizeOf(context).width >= 700)
-              Positioned(
-                right: -46,
-                top: 2,
-                child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  elevation: 2,
-                  child: PopupMenuButton<String>(
+            const SizedBox(height: 5),
+            if (isImage)
+              ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(imageUrl,
+                      width: imgW,
+                      height: imgH,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (_, child, progress) => progress == null
+                          ? child
+                          : Container(
+                              width: imgW,
+                              height: imgH,
+                              color: Colors.white,
+                              child: const Center(
+                                  child: SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: muted)))),
+                      errorBuilder: (_, __, ___) => Container(
+                          width: imgW,
+                          height: imgH,
+                          color: Colors.white,
+                          child: const Icon(Icons.broken_image_outlined,
+                              color: muted, size: 34))))
+            else
+              Text(raw,
+                  style: TextStyle(color: textColor, height: 1.4, fontSize: 14)),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(_timeLabel(date),
+                  style: TextStyle(fontSize: 10, color: subColor)),
+            ),
+          ]),
+    );
+
+    return Column(
+      children: [
+        if (showDate) _dateChip(_dayLabel(date)),
+        GestureDetector(
+          onLongPress: me ? () => _messageMenu(r) : null,
+          onSecondaryTap: me ? () => _messageMenu(r) : null,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment:
+                  me ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (!me) ...[_avatar(name), const SizedBox(width: 8)],
+                if (showMenuButton)
+                  PopupMenuButton<String>(
                     tooltip: 'Message options',
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.more_horiz_rounded, size: 20),
+                    color: Colors.white,
+                    surfaceTintColor: Colors.transparent,
+                    icon: const Icon(Icons.more_horiz_rounded,
+                        size: 20, color: muted),
                     onSelected: (value) {
                       if (value == 'edit') _editMessage(r);
                       if (value == 'delete') _deleteMessage(r);
@@ -624,76 +725,91 @@ class _OrgCommunityChatScreenState extends State<OrgCommunityChatScreen> {
                               title: Text('Delete message'))),
                     ],
                   ),
-                ),
-              ),
-          ],
+                Flexible(child: bubble),
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
   Widget _composer() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: green.withValues(alpha: .10))),
-        boxShadow: const [
-          BoxShadow(
-              color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))
-        ],
+        border: Border(top: BorderSide(color: border)),
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            IconButton(
-              onPressed: sending ? null : _pickAndSendImages,
-              icon: const Icon(Icons.image_rounded, color: green),
-              tooltip: 'Send picture',
-            ),
-            Expanded(
-              child: TextField(
-                controller: ctrl,
-                minLines: 1,
-                maxLines: 4,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'Write a message...',
-                  filled: true,
-                  fillColor: bg,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: BorderSide.none),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(color: green, width: 1.5)),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-                onSubmitted: (_) => _send(),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  IconButton(
+                    onPressed: sending ? null : _pickAndSendImages,
+                    icon: const Icon(Icons.image_outlined, color: muted),
+                    tooltip: 'Send picture',
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: ctrl,
+                      minLines: 1,
+                      maxLines: 4,
+                      textCapitalization: TextCapitalization.sentences,
+                      style: const TextStyle(fontSize: 14.5, color: dark),
+                      decoration: InputDecoration(
+                        hintText: 'Write a message...',
+                        hintStyle: const TextStyle(color: muted),
+                        filled: true,
+                        fillColor: fieldBg,
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(22),
+                            borderSide: BorderSide.none),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(22),
+                            borderSide: BorderSide.none),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(22),
+                            borderSide:
+                                const BorderSide(color: green, width: 1.2)),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 11),
+                      ),
+                      onSubmitted: (_) => _send(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: sending ? const Color(0xFFD1D5DB) : green,
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: sending ? null : _send,
+                      icon: sending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.send_rounded,
+                              color: Colors.white, size: 20),
+                      tooltip: 'Send message',
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [green, bright]),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                onPressed: sending ? null : _send,
-                icon: sending
-                    ? const SizedBox(
-                        width: 19,
-                        height: 19,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.send_rounded, color: Colors.white),
-                tooltip: 'Send message',
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

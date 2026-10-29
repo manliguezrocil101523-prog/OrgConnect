@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// TODO: adjust this import path to wherever app_header.dart lives in your project.
+import '../../widgets/app_header.dart';
+
 class AdviserAccountsScreen extends StatefulWidget {
   final String orgId, orgName;
   const AdviserAccountsScreen(
@@ -11,11 +14,11 @@ class AdviserAccountsScreen extends StatefulWidget {
 }
 
 class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
-  static const green = Color(0xFF128058);
-  static const dark = Color(0xFF12352A);
-  static const muted = Color(0xFF4D6F62);
-  static const bg = Color(0xFFE6F7EE);
-  static const card = Color(0xFFF5FFF9);
+ static const green = Color(0xFF128058);
+static const dark = Color(0xFF12352A);
+static const muted = Color(0xFF4D6F62);
+static const bg = Colors.white;
+static const card = Colors.white;
 
   final db = Supabase.instance.client;
   bool loading = true;
@@ -183,30 +186,25 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: bg,
-      body: loading
-          ? const Center(child: CircularProgressIndicator(color: green))
-          : SafeArea(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFFF1FCF6),
-                      Color(0xFFE1F6EB),
-                      Color(0xFFD1EFDF)
-                    ],
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    // The green header stays fixed; scrolling starts with the
-                    // Students / Officers / Members section below it.
-                    _accountHeader(),
-                    Expanded(
-                      child: RefreshIndicator(
+    // No top SafeArea here: AppHeader already adds the status-bar inset itself
+    // and paints its gradient behind the status bar.
+return Scaffold(
+  backgroundColor: bg,
+  body: Container(
+    decoration: const BoxDecoration(
+      color: Colors.white,
+    ),
+    child: Column(
+          children: [
+            // Shared header: fixed, scrolling starts below it.
+            _accountHeader(),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                child: loading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: green))
+                    : RefreshIndicator(
                         color: green,
                         backgroundColor: card,
                         onRefresh: load,
@@ -254,92 +252,21 @@ class _AdviserAccountsScreenState extends State<AdviserAccountsScreen> {
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-    );
-  }
-
-  Widget _accountHeader() => SizedBox(
-      width: double.infinity,
-      height: 126,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF064E3B), Color(0xFF128058), Color(0xFF22C55E)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          borderRadius: BorderRadius.zero,
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              top: 4,
-              left: 0,
-              child: IconButton(
-                tooltip: 'Back',
-                onPressed: () => Navigator.maybePop(context),
-                icon: const Icon(Icons.arrow_back_rounded,
-                    color: Colors.white, size: 26),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(56, 25, 52, 8),
-              child: Row(
-                children: [
-                  Container(
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .15),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: .24),
-                          width: 1.4),
-                    ),
-                    child: const Icon(Icons.manage_accounts_rounded,
-                        color: Colors.white, size: 28),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'ORGANIZATION ACCOUNTS',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.0),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          widget.orgName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              height: 1.0),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
         ),
-      ));
+      ),
+    );
+  }
+
+  Widget _accountHeader() => AppHeader(
+        title: widget.orgName,
+        subtitle: 'Organization Accounts',
+        status: loading ? 'LOADING MEMBERS' : '${members.length} MEMBERS',
+        icon: Icons.manage_accounts_rounded,
+        onBack: () => Navigator.maybePop(context),
+      );
 
   Widget _memberCard(Map<String, dynamic> member, int index) {
     final p = member['profiles'];

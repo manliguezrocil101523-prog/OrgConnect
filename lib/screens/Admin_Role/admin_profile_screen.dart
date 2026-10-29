@@ -24,7 +24,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
   static const _muted = Color(0xFF6B7280);
   static const _hint = Color(0xFF9CA3AF);
   static const _red = Color(0xFFEF4444);
-  static const _redSoft = Color(0xFFFEE2E2);
 
   static const double _desktopBreakpoint = 1024;
 
@@ -802,14 +801,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Icon(
-            empty
-                ? Icons.add_circle_outline_rounded
-                : Icons.check_circle_rounded,
-            color: empty ? const Color(0xFFD1D5DB) : _primaryLight,
-            size: 20,
-          ),
         ],
       ),
     );
@@ -956,8 +947,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
             titleColor: _red,
             subtitle:
                 email.isNotEmpty ? 'Logged in as: $email' : 'Tap to sign out',
-            background: _red.withValues(alpha: .04),
-            borderColor: _redSoft,
             onTap: _logout,
           ),
         ],
@@ -1030,9 +1019,9 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(
+                const Icon(
                   Icons.chevron_right_rounded,
-                  color: color == _red ? _red : _hint,
+                  color: Colors.black,
                   size: 22,
                 ),
               ],
@@ -1157,17 +1146,15 @@ class _IconBox extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
         width: size,
         height: size,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(
-          icon,
-          color: color,
-          size: size * 0.48,
+        child: Center(
+          child: Icon(
+            icon,
+            color: color,
+            size: size * 0.48,
+          ),
         ),
       );
 }

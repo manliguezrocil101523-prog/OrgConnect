@@ -30,6 +30,8 @@ class OfficerProfileScreen extends StatefulWidget {
 
 class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
   static const _primary = Color(0xFF16A34A);
+  // Matches the dark-to-green gradient used by the profile header.
+  static const _headerStart = Color(0xFF064E3B);
   static const _secondary = Color(0xFF128058);
   static const _bg = Color(0xFFE6F7EE);
   static const _slate0F = Color(0xFF0F2D22);
@@ -204,8 +206,10 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
   }
 
   Future<void> _changePassword() async {
+    final currentPassword = TextEditingController();
     final password = TextEditingController();
     final confirm = TextEditingController();
+    bool obscureCurrentPassword = true;
     bool obscurePassword = true;
     bool obscureConfirm = true;
     bool changing = false;
@@ -229,6 +233,29 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                TextField(
+                  controller: currentPassword,
+                  obscureText: obscureCurrentPassword,
+                  enabled: !changing,
+                  decoration: InputDecoration(
+                    labelText: 'Current password',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      onPressed: () => setDialogState(
+                        () => obscureCurrentPassword = !obscureCurrentPassword,
+                      ),
+                      icon: Icon(
+                        obscureCurrentPassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 TextField(
                   controller: password,
                   obscureText: obscurePassword,
@@ -289,8 +316,17 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
               onPressed: changing
                   ? null
                   : () async {
+                      final oldPassword = currentPassword.text;
                       final newPassword = password.text.trim();
                       final confirmPassword = confirm.text.trim();
+                      if (oldPassword.isEmpty) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please enter your current password.'),
+                          ),
+                        );
+                        return;
+                      }
                       if (newPassword.length < 6) {
                         ScaffoldMessenger.of(dialogContext).showSnackBar(
                           const SnackBar(
@@ -310,6 +346,15 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                       }
                       setDialogState(() => changing = true);
                       try {
+                        final user = _db.auth.currentUser;
+                        final email = user?.email;
+                        if (user == null || email == null || email.isEmpty) {
+                          throw Exception('Unable to verify the current account.');
+                        }
+                        await _db.auth.signInWithPassword(
+                          email: email,
+                          password: oldPassword,
+                        );
                         await _db.auth.updateUser(
                           UserAttributes(password: newPassword),
                         );
@@ -343,6 +388,7 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
       ),
     );
 
+    currentPassword.dispose();
     password.dispose();
     confirm.dispose();
     if (changed == true && mounted) {
@@ -437,6 +483,7 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
               status: 'OFFICER PROFILE',
               avatarImage: avatar,
               avatarEditing: _editing,
+              squareBottom: true,
               onAvatarTap: () {
                 if (_editing) {
                   _pickAvatar();
@@ -459,27 +506,34 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                     }
                   }),
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: .15),
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: .30)),
+                        color: Colors.white.withValues(alpha: .30),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                            _editing ? Icons.close_rounded : Icons.edit_rounded,
-                            color: Colors.white,
-                            size: 15),
+                          _editing ? Icons.close_rounded : Icons.edit_rounded,
+                          color: Colors.white,
+                          size: 15,
+                        ),
                         const SizedBox(width: 5),
-                        Text(_editing ? 'Cancel' : 'Edit',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
+                        Text(
+                          _editing ? 'Cancel' : 'Edit',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -698,7 +752,7 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
               padding: const EdgeInsets.fromLTRB(18, 17, 14, 17),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [_primary, _secondary],
+                  colors: [_headerStart, _secondary],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -739,7 +793,10 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: Colors.white70),
+                const Icon(
+  Icons.chevron_right_rounded,
+  color: Colors.white,
+),
                 ],
               ),
             ),
@@ -780,7 +837,7 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                   ),
                   trailing: const Icon(
                     Icons.chevron_right_rounded,
-                    color: _primary,
+                    color: Colors.black,
                   ),
                 ),
                 Divider(
@@ -813,18 +870,10 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                         : 'Tap to sign out',
                     style: const TextStyle(fontSize: 11.5, color: _slate94),
                   ),
-                  trailing: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: _red.withValues(alpha: .08),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: const Icon(
-                      Icons.chevron_right_rounded,
-                      color: _red,
-                      size: 18,
-                    ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.black,
+                    size: 18,
                   ),
                 ),
               ],
@@ -890,19 +939,12 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
       decoration: _cardDecoration(),
       child: Row(
         children: [
-          Container(
+          SizedBox(
             width: 46,
             height: 46,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  color.withValues(alpha: .14),
-                  color.withValues(alpha: .06),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(14),
+            child: Center(
+              child: Icon(icon, color: color, size: 21),
             ),
-            child: Icon(icon, color: color, size: 21),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -933,15 +975,6 @@ class _OfficerProfileScreenState extends State<OfficerProfileScreen> {
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Icon(
-            empty
-                ? Icons.add_circle_outline_rounded
-                : Icons.check_circle_rounded,
-            color:
-                empty ? const Color(0xFFE2E8F0) : color.withValues(alpha: .65),
-            size: 18,
           ),
         ],
       ),
@@ -1000,13 +1033,11 @@ class _IconBox extends StatelessWidget {
   const _IconBox({required this.icon, required this.color});
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: .10),
-          borderRadius: BorderRadius.circular(11),
+        child: Center(
+          child: Icon(icon, color: color, size: 19),
         ),
-        child: Icon(icon, color: color, size: 19),
       );
 }

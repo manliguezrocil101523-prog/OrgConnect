@@ -20,7 +20,7 @@ class _OfficerOrgProfileScreenState extends State<OfficerOrgProfileScreen> {
   // ── Colors (matches officer dashboard palette) ────────────────────────────
   static const Color _primary = Color(0xFF16A34A);
   static const Color _secondary = Color(0xFF0F766E);
-  static const Color _background = Color(0xFFF0FDF4);
+  static const Color _background = Colors.white;
   static const Color _textDark = Color(0xFF0F172A);
   static const Color _textMuted = Color(0xFF94A3B8);
   static const Color _fieldBorder = Color(0xFFE2E8F0);

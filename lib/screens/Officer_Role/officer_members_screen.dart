@@ -38,7 +38,7 @@ class _OfficerMembersScreenState extends State<OfficerMembersScreen> {
   }
 
   static const _p = Color(0xFF16A34A); // primary
-  static const _bg = Color(0xFFF0FDF4); // background
+  static const _bg = Colors.white; // background
   static const _ok = Color(0xFF22C55E); // success
   static const _officerPositions = <String>[
     'President',
